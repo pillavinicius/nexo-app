@@ -6,9 +6,15 @@ export async function POST(req) {
 
     const payload = {
       model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      max_tokens: 8000,
       system: body.system,
       messages: body.messages,
+      tools: [
+        {
+          type: 'web_search_20250305',
+          name: 'web_search',
+        }
+      ],
     };
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -17,6 +23,7 @@ export async function POST(req) {
         'Content-Type': 'application/json',
         'x-api-key': process.env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'web-search-2025-03-05',
       },
       body: JSON.stringify(payload),
     });
@@ -31,4 +38,3 @@ export async function POST(req) {
     );
   }
 }
-
