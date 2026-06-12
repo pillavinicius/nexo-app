@@ -565,6 +565,38 @@ export default function NEXOApp() {
     }
   };
 
+  const handleContinue = async () => {
+    if (loading || messages.length === 0) return;
+    setLoading(true);
+    setError("");
+
+    const continueMsg = { role: "user", content: "Continue a análise do ponto onde parou. Não repita o que já foi dito — continue diretamente da próxima seção." };
+    const newMessages = [...messages, continueMsg];
+    setMessages(newMessages);
+
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 8000,
+          system: systemPrompt,
+          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      const text = data.content.filter(b => b.type === "text").map(b => b.text).join("\n");
+      setMessages([...newMessages, { role: "assistant", content: text }]);
+    } catch (err) {
+      setError(err.message);
+      setMessages(newMessages);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleKey = (e) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleRun();
   };
@@ -680,6 +712,11 @@ export default function NEXOApp() {
         .btn-run { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 8px 22px; background: var(--accent); color: #070B14; border: none; cursor: pointer; transition: all .15s; border-radius: 2px; }
         .btn-run:hover:not(:disabled) { filter: brightness(1.1); }
         .btn-run:disabled { background: #1C2A3C; color: #48596E; cursor: not-allowed; }
+        .btn-cont { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 10px 0; width: 100%; background: transparent; border: 1px dashed #2E4058; color: #48596E; cursor: pointer; transition: all .2s; border-radius: 2px; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-cont:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+        .btn-cont:disabled { opacity: .3; cursor: not-allowed; }
+        .btn-cont-arrow { font-size: 14px; }
+        .pg-indicator { font-family: 'JetBrains Mono', monospace; font-size: 8px; color: #2E4058; letter-spacing: 1px; }
 
         /* OUTPUT */
         .panel { border: 1px solid #1C2A3C; margin-bottom: 8px; position: relative; }
@@ -900,10 +937,24 @@ export default function NEXOApp() {
                 }
               </div>
             ))}
+            {/* BOTÃO CONTINUAR — aparece após cada resposta do assistente */}
+            {messages.length > 0 && messages[messages.length - 1].role === "assistant" && !loading && (
+              <button
+                className="btn-cont"
+                onClick={handleContinue}
+                disabled={loading}
+                style={{ "--accent": accentColor }}
+              >
+                <span className="btn-cont-arrow">▼</span>
+                <span>Continuar análise</span>
+                <span className="pg-indicator">Pág. {Math.floor(messages.filter(m => m.role === "assistant").length + 1)}</span>
+              </button>
+            )}
+
             {loading && (
               <div className="loading-r">
                 <div className="ldr"><span /><span /><span /></div>
-                Buscando dados · Processando motor NEXO...
+                Processando motor NEXO...
               </div>
             )}
             {error && <div className="err-box">✕ ERRO: {error}</div>}
