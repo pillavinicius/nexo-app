@@ -12,7 +12,11 @@ export async function POST(req) {
         'anthropic-version': '2023-06-01',
         'anthropic-beta': 'web-search-2025-03-05',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        ...body,
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8000,
+      }),
     });
 
     const data = await response.json();
