@@ -200,7 +200,7 @@ export default function NEXOApp() {
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 3000,
+        max_tokens: 4096,
         system: sys,
         messages: msgs,
       }),
@@ -211,8 +211,16 @@ export default function NEXOApp() {
       var raw = (data.content && data.content[0]) ? data.content[0].text : "{}";
       var s = raw.indexOf("{"); var e = raw.lastIndexOf("}");
       if (s !== -1 && e !== -1) raw = raw.slice(s, e+1);
-      raw = raw.replace(/,(\s*[}\]])/g, "$1");
-      return JSON.parse(raw);
+      raw = raw.replace(/,([\s]*[}\]])/g, "$1");
+      try { return JSON.parse(raw); }
+      catch(_) {
+        var op = (raw.match(/\[/g)||[]).length-(raw.match(/\]/g)||[]).length;
+        var ob = (raw.match(/\{/g)||[]).length-(raw.match(/\}/g)||[]).length;
+        raw = raw.replace(/,[^,]*$/, "");
+        for(var i=0;i<op;i++) raw+="]";
+        for(var j=0;j<ob;j++) raw+="}";
+        return JSON.parse(raw);
+      }
     });
   }
 
