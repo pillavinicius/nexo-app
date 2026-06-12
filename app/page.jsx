@@ -33,7 +33,9 @@ const ASSET_TYPES = [
 const SCAN_PROMPTS = {
   "fii": `Você é o motor NEXO — FII · SCAN.
 
-IMPORTANTE: Ao final do relatório, na última linha, escreva exatamente uma dessas frases:
+IMPORTANTE: Se o ticker digitado não existir, não for um FII válido na B3, ou você não tiver dados suficientes para analisá-lo, responda APENAS com a palavra: TICKER_INVALIDO
+
+Ao final do relatório de um ticker válido, na última linha, escreva exatamente uma dessas frases:
 - "VEREDITO_NEXO: APROVADO" (se passar em todos os filtros)
 - "VEREDITO_NEXO: VETADO" (se falhar em qualquer filtro eliminatório)
 - "VEREDITO_NEXO: WATCHLIST" (se passar mas com ressalvas relevantes)
@@ -78,7 +80,9 @@ VEREDITO_NEXO: [APROVADO/VETADO/WATCHLIST]`,
 
   "acao-br": `Você é o motor NEXO — Ação BR · SCAN.
 
-IMPORTANTE: Ao final do relatório, na última linha, escreva exatamente uma dessas frases:
+IMPORTANTE: Se o ticker não existir na B3 ou você não tiver dados suficientes, responda APENAS: TICKER_INVALIDO
+
+Ao final do relatório de um ticker válido, na última linha, escreva exatamente uma dessas frases:
 - "VEREDITO_NEXO: APROVADO"
 - "VEREDITO_NEXO: VETADO"
 - "VEREDITO_NEXO: WATCHLIST"
@@ -124,7 +128,8 @@ VEREDITO_NEXO: [APROVADO/VETADO/WATCHLIST]`,
 
   "etf-ext": `Você é o motor NEXO — ETF Exterior · SCAN (Trilho 1).
 
-IMPORTANTE: Ao final, escreva exatamente: "VEREDITO_NEXO: APROVADO", "VEREDITO_NEXO: VETADO" ou "VEREDITO_NEXO: WATCHLIST"
+IMPORTANTE: Se o ticker não existir ou não for um ETF válido, responda APENAS: TICKER_INVALIDO
+Ao final de um ticker válido, escreva: "VEREDITO_NEXO: APROVADO", "VEREDITO_NEXO: VETADO" ou "VEREDITO_NEXO: WATCHLIST"
 
 ETFs de referência: VWCE, CSPX, EQQQ, WSML (irlandeses ACC).
 
@@ -150,7 +155,8 @@ VEREDITO_NEXO: [APROVADO/VETADO/WATCHLIST]`,
 
   "stock-ext": `Você é o motor NEXO — Stock Picking Exterior · SCAN (Trilho 2).
 
-IMPORTANTE: Ao final, escreva exatamente: "VEREDITO_NEXO: APROVADO", "VEREDITO_NEXO: VETADO" ou "VEREDITO_NEXO: WATCHLIST"
+IMPORTANTE: Se o ticker não existir ou não for reconhecido, responda APENAS: TICKER_INVALIDO
+Ao final de um ticker válido, escreva: "VEREDITO_NEXO: APROVADO", "VEREDITO_NEXO: VETADO" ou "VEREDITO_NEXO: WATCHLIST"
 
 TRILHO 2: 20-30% carteira exterior. 5-8 teses. Máximo 5-7% por ativo.
 Temas: IA/Chips · Cloud/SaaS · Energia Oceânica · Biotech/Deep Tech · Infra Verde · Big Tech
@@ -400,16 +406,10 @@ export default function NEXOApp() {
     try {
       const text = await callAPI(newMessages, SCAN_PROMPTS[selectedType]);
       // Detecta ticker inválido ou não encontrado
-      const invalidSignals = [
-        "não foi possível encontrar", "ticker inválido", "não existe",
-        "ativo não encontrado", "não encontrado na b3", "não reconhecido",
-        "código não encontrado", "não localizei", "não há dados",
-      ];
-      const lowerText = text.toLowerCase();
-      const isInvalid = invalidSignals.some(s => lowerText.includes(s));
-      if (isInvalid) {
-        setMessages(messages); // reverte — não adiciona mensagem inválida
-        setError(`Ticker "${ticker.trim().toUpperCase()}" não encontrado. Verifique se o código está correto (ex: ITUB4, VALE3, MXRF11) e tente novamente.`);
+      // Detecta ticker inválido via marcador explícito no prompt
+      if (text.includes("TICKER_INVALIDO")) {
+        setMessages(messages);
+        setError(`Ticker "${ticker.trim().toUpperCase()}" não encontrado ou inválido. Verifique o código (ex: ITUB4, VALE3, MXRF11) e tente novamente.`);
         setLoading(false);
         return;
       }
@@ -510,22 +510,22 @@ export default function NEXOApp() {
           i++;
         }
         result.push(
-          <div key={"t"+i} style={{ overflowX:"auto", margin:"10px 0" }}>
-            <table style={{ width:"100%", borderCollapse:"collapse", fontFamily:"JetBrains Mono,monospace", fontSize:"11px" }}>
+          <div key={"t"+i} style={{ overflowX:"auto", margin:"10px 0", WebkitOverflowScrolling:"touch" }}>
+            <table style={{ minWidth:"100%", borderCollapse:"collapse", fontFamily:"JetBrains Mono,monospace", fontSize:"11px" }}>
               <thead>
-                <tr>{headers.map((h,j) => <th key={j} style={{ padding:"6px 8px", borderBottom:"1px solid #3A3020", color:"#C9A84C", textAlign:"left" }}>{h}</th>)}</tr>
+                <tr>{headers.map((h,j) => <th key={j} style={{ padding:"6px 10px", borderBottom:"1px solid #3A3020", color:"#C9A84C", textAlign:"left", whiteSpace:"nowrap", fontWeight:700 }}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {rows.map((row,j) => (
-                  <tr key={j} style={{ borderBottom:"1px solid #2A2318" }}>
-                    {row.map((cell,k) => <td key={k} style={{ padding:"5px 8px", color:"#D4C9A8" }}>{cell}</td>)}
+                  <tr key={j} style={{ borderBottom:"1px solid #1E1A0E" }}>
+                    {row.map((cell,k) => <td key={k} style={{ padding:"6px 10px", color:"#D4C9A8", verticalAlign:"top", lineHeight:"1.5" }}>{cell}</td>)}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         );
-        continue;
+                continue;
       }
       if (/^━+$/.test(line) || line.startsWith("──")) {
         result.push(<div key={i} className="nx-div" />);
@@ -549,11 +549,12 @@ export default function NEXOApp() {
 
     const lastAssistantIdx = [...messages].reverse().findIndex(m => m.role === "assistant");
   const lastAssistantMsg = messages.slice().reverse().find(m => m.role === "assistant");
-  const reportComplete = lastAssistantMsg && (
-    lastAssistantMsg.content.includes("PRÓXIMOS PASSOS") ||
-    lastAssistantMsg.content.includes("VEREDITO FINAL") ||
-    lastAssistantMsg.content.includes("ZONA DE ENTRADA BESST") ||
-    lastAssistantMsg.content.includes("SIZING SUGERIDO")
+  // Só considera completo se tiver PRÓXIMOS PASSOS *e* for a última mensagem E tiver pelo menos 800 chars
+  const reportComplete = lastAssistantMsg && lastAssistantMsg.content.length > 800 && (
+    (lastAssistantMsg.content.includes("PRÓXIMOS PASSOS") && lastAssistantMsg.content.includes("RISCOS")) ||
+    (lastAssistantMsg.content.includes("VEREDITO FINAL") && lastAssistantMsg.content.includes("RISCOS")) ||
+    (lastAssistantMsg.content.includes("ZONA DE ENTRADA BESST") && lastAssistantMsg.content.includes("CATALISADORES")) ||
+    (lastAssistantMsg.content.includes("SIZING SUGERIDO") && lastAssistantMsg.content.includes("CATALISADORES"))
   );
   const showContinue = !loading && lastAssistantIdx === 0 && messages.length > 0 && !reportComplete;
 
