@@ -158,6 +158,10 @@ export default function NEXOApp() {
   var _phase  = useState("scan"); var phase       = _phase[0];  var setPhase       = _phase[1];
   var _load   = useState(false);  var loading     = _load[0];   var setLoading     = _load[1];
   var _err    = useState("");     var error       = _err[0];    var setError       = _err[1];
+  var _fq     = useState("");     var followQ     = _fq[0];     var setFollowQ     = _fq[1];
+  var _furl   = useState("");     var followUrl   = _furl[0];   var setFollowUrl   = _furl[1];
+  var _fres   = useState(null);   var followRes   = _fres[0];   var setFollowRes   = _fres[1];
+  var _fload  = useState(false);  var followLoad  = _fload[0];  var setFollowLoad  = _fload[1];
   var outRef  = useRef(null);
 
   var canRun  = ticker.trim().length >= 3 && !loading;
@@ -171,6 +175,7 @@ export default function NEXOApp() {
   function reset() {
     setScanResult(null); setDeepResult(null);
     setPhase("scan"); setError("");
+    setFollowQ(""); setFollowUrl(""); setFollowRes(null);
   }
 
   function callAPI(ph) {
@@ -222,6 +227,30 @@ export default function NEXOApp() {
         return JSON.parse(raw);
       }
     });
+  }
+
+  function handleFollowUp() {
+    if (!followQ.trim() && !followUrl.trim()) return;
+    setFollowLoad(true); setFollowRes(null);
+    var t = ticker.trim().toUpperCase();
+    var ctx = "SCAN:" + (scanResult ? scanResult.veredito + " " + (scanResult.tese||"") : "") +
+      " DEEP:" + (deepResult ? deepResult.veredito_final + " BESST:" + (deepResult.zona_besst||"") : "");
+    var msgs = [{ role:"user", content: ctx + " Pergunta: " + followQ.trim() +
+      (followUrl.trim() ? " URL_adicional: " + followUrl.trim() : "") }];
+    fetch("/api/analyze", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        model:"claude-sonnet-4-6", max_tokens:1500,
+        system:"Voce e o analista NEXO. Responda a pergunta sobre o ativo " + t + " de forma objetiva e direta, usando dados e numeros. Responda em Portugues.",
+        messages: msgs,
+      }),
+    }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error.message);
+      var txt = (data.content && data.content[0]) ? data.content[0].text : "";
+      setFollowRes(txt);
+    }).catch(function(e) { setFollowRes("Erro: " + e.message); })
+    .finally(function() { setFollowLoad(false); });
   }
 
   function handleScan() {
@@ -369,6 +398,33 @@ export default function NEXOApp() {
         error&&React.createElement("div",{className:"err-box"},"Erro: "+error),
         scanResult&&!deepResult&&React.createElement(ScanReport,{r:scanResult}),
         deepResult&&React.createElement(DeepReport,{r:deepResult}),
+        deepResult&&React.createElement("div",{style:{marginTop:20,borderTop:"1px solid #2A2318",paddingTop:16}},
+          React.createElement("div",{style:{fontFamily:"JetBrains Mono,monospace",fontSize:9,color:"#C9A84C",letterSpacing:2,textTransform:"uppercase",marginBottom:10}},"Aprofundar Analise"),
+          React.createElement("div",{style:{fontFamily:"JetBrains Mono,monospace",fontSize:8,color:"#4A3E28",marginBottom:8}},"Cole um link adicional ou faca uma pergunta especifica sobre o ativo"),
+          React.createElement("div",{className:"field",style:{marginBottom:8}},
+            React.createElement("div",{className:"flbl"},"Link adicional (opcional)"),
+            React.createElement("input",{className:"finp-sm",value:followUrl,
+              placeholder:"https://ri.empresa.com.br/relatorio...",
+              onChange:function(e){setFollowUrl(e.target.value)}})),
+          React.createElement("div",{className:"field",style:{marginBottom:10}},
+            React.createElement("div",{className:"flbl"},"Pergunta ou foco especifico"),
+            React.createElement("textarea",{className:"ftxt",rows:3,value:followQ,
+              placeholder:"Ex: Qual impacto da queda da Selic no DY? Como fica o BESST se P/VP comprimir?",
+              onChange:function(e){setFollowQ(e.target.value)}})),
+          React.createElement("button",{
+            onClick:handleFollowUp,
+            disabled:followLoad||(!followQ.trim()&&!followUrl.trim()),
+            style:{fontFamily:"JetBrains Mono,monospace",fontSize:10,fontWeight:700,
+              letterSpacing:1.5,textTransform:"uppercase",padding:"9px 0",width:"100%",
+              background:"transparent",border:"1px solid #C9A84C",color:"#C9A84C",
+              cursor:"pointer",borderRadius:2,
+              opacity:followLoad||(!followQ.trim()&&!followUrl.trim())?0.3:1}},
+            followLoad?"Analisando...":"◈ Aprofundar →"),
+          followRes&&React.createElement("div",{style:{marginTop:12,padding:"12px 14px",
+            background:"rgba(201,168,76,.05)",border:"1px solid #2A2318"}},
+            React.createElement("div",{style:{fontFamily:"JetBrains Mono,monospace",fontSize:9,
+              color:"#C9A84C",letterSpacing:2,textTransform:"uppercase",marginBottom:8}},"Analise Complementar"),
+            React.createElement("div",{style:{fontSize:13,lineHeight:1.75,color:"#D4C9A8",whiteSpace:"pre-wrap"}},followRes))),
         scanResult&&!deepResult&&!loading&&canDeep&&React.createElement("div",{className:"deep-unlock"},
           React.createElement("div",null,
             React.createElement("div",{style:{fontFamily:"JetBrains Mono,monospace",fontSize:9,color:"#A8A8B8",letterSpacing:1}},
