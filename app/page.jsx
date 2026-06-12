@@ -283,7 +283,7 @@ export default function NEXOApp() {
 
   const typeObj = ASSET_TYPES.flatMap(g => g.types).find(t => t.id === assetType);
   const canRun  = assetType && ticker.trim() && !loading;
-  const canDeep = scanResult && scanResult.veredito !== "VETADO" && !loading;
+  const canDeep = scanResult && scanResult.veredito !== "VETADO" && !loading && phase !== "deep_done" && phase !== "deep";
 
   useEffect(() => {
     if (outputRef.current) outputRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -294,6 +294,9 @@ export default function NEXOApp() {
     setDeepResult(null);
     setPhase("scan");
     setError("");
+    setFollowUp("");
+    setFollowUpUrl("");
+    setFollowResult(null);
   };
 
   const callAPI = async (userPrompt, ph) => {
@@ -376,6 +379,52 @@ export default function NEXOApp() {
       const result = await callAPI(`NEXO DEEP ${ticker.trim().toUpperCase()}`, "deep");
       setDeepResult(result);
       setPhase("deep_done");
+    } catch(e) { setError(e.message); }
+    finally { setLoading(false); }
+  };
+
+  const handleFollowUp = async () => {
+    if (!followUp.trim() && !followUpUrl.trim()) return;
+    setLoading(true);
+    setError("");
+    setFollowResult(null);
+    try {
+      const body = {
+        assetType,
+        phase: "followup",
+        ticker: ticker.trim().toUpperCase(),
+        riUrl: followUpUrl.trim(),
+        extraCtx: followUp.trim(),
+        userPrompt: "NEXO FOLLOWUP " + ticker.trim().toUpperCase(),
+        scanSummary: [
+          scanResult ? "SCAN: " + scanResult.veredito + " | Score: " + scanResult.score_total + "/" + scanResult.score_max : "",
+          deepResult ? "DEEP: " + deepResult.veredito_final + " | BESST: " + (deepResult.zona_besst || "") : "",
+          followUp.trim() ? "Pergunta: " + followUp.trim() : "",
+        ].filter(Boolean).join("\n"),
+      };
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text);
+        if (data.error) throw new Error(data.error.message);
+        setFollowResult(data.resposta || data.analise || JSON.stringify(data, null, 2));
+      } catch(e) {
+        // If not JSON, show as text
+        const start = text.indexOf("{");
+        const end = text.lastIndexOf("}");
+        if (start !== -1 && end !== -1) {
+          try {
+            const d = JSON.parse(text.slice(start, end+1));
+            setFollowResult(d.resposta || d.analise || text.slice(start, end+1));
+          } catch(_) { setFollowResult(text.slice(0, 2000)); }
+        } else {
+          setFollowResult(text.slice(0, 2000));
+        }
+      }
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
   };
@@ -584,6 +633,58 @@ export default function NEXOApp() {
 
           {scanResult && !deepResult && <ScanReport r={scanResult} />}
           {deepResult && <DeepReport r={deepResult} />}
+
+          {/* FOLLOW-UP after Deep */}
+          {deepResult && (
+            <div style={{ marginTop:20, borderTop:"1px solid #2A2318", paddingTop:16 }}>
+              <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:9, color:"#C9A84C", letterSpacing:2, textTransform:"uppercase", marginBottom:10 }}>
+                Aprofundar Análise
+              </div>
+              <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:9, color:"#6A5C3A", marginBottom:8 }}>
+                Cole um link adicional (RI, relatório, notícia) ou faça uma pergunta específica sobre o ativo
+              </div>
+              <div className="field" style={{ marginBottom:8 }}>
+                <div className="flbl">Link adicional (opcional)</div>
+                <input className="finp-sm"
+                  value={followUpUrl}
+                  onChange={e => setFollowUpUrl(e.target.value)}
+                  placeholder="https://ri.empresa.com.br/relatorio-trimestral..."
+                />
+              </div>
+              <div className="field" style={{ marginBottom:10 }}>
+                <div className="flbl">Pergunta ou foco específico</div>
+                <textarea className="ftxt" rows={3}
+                  value={followUp}
+                  onChange={e => setFollowUp(e.target.value)}
+                  placeholder="Ex: Qual o impacto da renovacao do contrato com a Magazine Luiza? Como fica o DY se a Selic cair 200bps?"
+                />
+              </div>
+              <button
+                onClick={handleFollowUp}
+                disabled={loading || (!followUp.trim() && !followUpUrl.trim())}
+                style={{
+                  fontFamily:"JetBrains Mono,monospace", fontSize:10, fontWeight:700,
+                  letterSpacing:1.5, textTransform:"uppercase",
+                  padding:"9px 20px", width:"100%",
+                  background:"transparent", border:"1px solid #C9A84C",
+                  color:"#C9A84C", cursor:"pointer", borderRadius:2,
+                  opacity: (loading || (!followUp.trim() && !followUpUrl.trim())) ? 0.3 : 1,
+                }}
+              >
+                {loading ? "Analisando..." : "◈ Aprofundar →"}
+              </button>
+              {followResult && (
+                <div style={{ marginTop:12, padding:"12px 14px", background:"rgba(201,168,76,0.05)", border:"1px solid #2A2318" }}>
+                  <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:9, color:"#C9A84C", letterSpacing:2, textTransform:"uppercase", marginBottom:8 }}>
+                    Análise Complementar
+                  </div>
+                  <div style={{ fontSize:13, lineHeight:1.75, color:"#D4C9A8", whiteSpace:"pre-wrap" }}>
+                    {typeof followResult === "string" ? followResult : JSON.stringify(followResult, null, 2)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* UNLOCK DEEP */}
           {scanResult && !deepResult && !loading && canDeep && (
