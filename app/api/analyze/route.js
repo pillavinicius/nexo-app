@@ -282,8 +282,33 @@ JSON:
       return Response.json({ error: { message: `${data.error.type}: ${data.error.message}` } });
     }
 
-    const content = data.content?.[0]?.text || "{}";
-    return new Response(content, { headers: { "Content-Type": "application/json" } });
+    let rawText = data.content?.[0]?.text || "{}";
+    
+    // Clean up common JSON issues from model output
+    // 1. Extract only the JSON object (remove any text before/after)
+    const jsonStart = rawText.indexOf("{");
+    const jsonEnd = rawText.lastIndexOf("}");
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      rawText = rawText.slice(jsonStart, jsonEnd + 1);
+    }
+    
+    // 2. Fix common issues: trailing commas, unescaped quotes in strings
+    rawText = rawText
+      .replace(/,\s*}/g, "}")      // trailing comma before }
+      .replace(/,\s*]/g, "]")      // trailing comma before ]
+      .replace(/[ -]/g, " "); // control characters
+    
+    // 3. Validate before returning
+    try {
+      JSON.parse(rawText); // just validate
+    } catch(parseErr) {
+      // If still invalid, return a safe error JSON
+      return Response.json({ 
+        error: { message: "Erro ao processar resposta da análise. Tente novamente." }
+      });
+    }
+    
+    return new Response(rawText, { headers: { "Content-Type": "application/json" } });
 
   } catch (err) {
     return Response.json({ error: { message: err.message } }, { status: 500 });
