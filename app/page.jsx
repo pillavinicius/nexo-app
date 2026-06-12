@@ -538,9 +538,18 @@ export default function NEXOApp() {
   };
 
   const extractVerdict = (text) => {
+    // Explicit tags
     if (text.includes("VEREDITO_NEXO: APROVADO")) return "APROVADO";
     if (text.includes("VEREDITO_NEXO: VETADO"))   return "VETADO";
     if (text.includes("VEREDITO_NEXO: WATCHLIST")) return "WATCHLIST";
+    // Fallback: detect from scan completion signals
+    const lower = text.toLowerCase();
+    if (text.includes("Scan Completa") || text.includes("Encerrado")) {
+      if (lower.includes("vetado") || lower.includes("veto")) return "VETADO";
+      if (lower.includes("watchlist") || lower.includes("monitoramento")) return "WATCHLIST";
+      if (lower.includes("aprovado") || lower.includes("avança para deep")) return "APROVADO";
+      return "WATCHLIST"; // default se encerrou sem tag explícita
+    }
     return null;
   };
 
@@ -721,23 +730,29 @@ export default function NEXOApp() {
   };
 
     const lastAssistantIdx = [...messages].reverse().findIndex(m => m.role === "assistant");
-  // Junta todas as mensagens do assistente em texto único para checar completude
   const allAssistantText = messages
     .filter(m => m.role === "assistant")
     .map(m => m.content)
     .join(" ");
 
-  const scanComplete = scanVerdict !== null && (
-    allAssistantText.includes("CATALISADORES") &&
-    allAssistantText.includes("RISCOS") &&
-    allAssistantText.includes("LACUNAS PARA O DEEP")
+  // Scan completo: tem veredito OU sinais de encerramento
+  const scanComplete = scanVerdict !== null || (
+    allAssistantText.includes("Encerrado") ||
+    allAssistantText.includes("VEREDITO_NEXO") ||
+    allAssistantText.includes("Scan Completa") ||
+    allAssistantText.includes("Análise Completa") ||
+    (allAssistantText.includes("CATALISADORES") && allAssistantText.includes("RISCOS"))
   );
+
+  // Deep completo: tem próximos passos ou zona BESST
   const deepComplete = phase === "deep" && (
     allAssistantText.includes("PRÓXIMOS PASSOS") ||
     allAssistantText.includes("ZONA DE ENTRADA BESST") ||
-    allAssistantText.includes("SIZING SUGERIDO")
+    allAssistantText.includes("SIZING SUGERIDO") ||
+    allAssistantText.includes("Encerrado")
   );
-  const reportComplete = scanComplete || deepComplete;
+
+  const reportComplete = (phase === "scan" ? scanComplete : deepComplete);
   const showContinue = !loading && messages.length > 0 &&
     messages[messages.length - 1].role === "assistant" && !reportComplete;
 
