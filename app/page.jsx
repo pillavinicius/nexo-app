@@ -363,8 +363,6 @@ export default function NEXOApp() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 8000,
         system: systemPrompt,
         messages: msgs.map(m => ({ role: m.role, content: m.content })),
       }),
@@ -477,23 +475,61 @@ export default function NEXOApp() {
   };
 
   const fmt = (text) => {
-    // Remove tags de veredito interno do output visual
     const clean = text.replace(/VEREDITO_NEXO: (APROVADO|VETADO|WATCHLIST)/g, "");
-    return clean.split("\n").map((line, i) => {
-      if (/^━+$/.test(line) || line.startsWith("──")) return <div key={i} className="nx-div" />;
-      if (/^#{1,3}\s/.test(line)) return <div key={i} className="nx-h">{line.replace(/^#+ /, "")}</div>;
-      if (/^[▸•]\s/.test(line)) {
-        const html = line.slice(2).replace(/\*\*(.+?)\*\*/g, '<span class="nx-b">$1</span>');
-        return <div key={i} className="nx-bl"><span className="nx-bm">{line[0]}</span><span dangerouslySetInnerHTML={{ __html: html }} /></div>;
+    const lines = clean.split("\n");
+    const result = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const nextLine = lines[i + 1] || "";
+      // Tabela markdown
+      if (line.includes("|") && /^[|\s\-:]+$/.test(nextLine)) {
+        const headers = line.split("|").map(h => h.trim()).filter(Boolean);
+        const rows = [];
+        i += 2;
+        while (i < lines.length && lines[i].includes("|")) {
+          rows.push(lines[i].split("|").map(c => c.trim()).filter(Boolean));
+          i++;
+        }
+        result.push(
+          <div key={"t"+i} style={{ overflowX:"auto", margin:"10px 0" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontFamily:"JetBrains Mono,monospace", fontSize:"11px" }}>
+              <thead>
+                <tr>{headers.map((h,j) => <th key={j} style={{ padding:"6px 8px", borderBottom:"1px solid #3A3020", color:"#C9A84C", textAlign:"left" }}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {rows.map((row,j) => (
+                  <tr key={j} style={{ borderBottom:"1px solid #2A2318" }}>
+                    {row.map((cell,k) => <td key={k} style={{ padding:"5px 8px", color:"#D4C9A8" }}>{cell}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+        continue;
       }
-      if (line.startsWith("**") && line.endsWith("**")) return <div key={i} className="nx-bold">{line.slice(2,-2)}</div>;
-      if (line.trim() === "") return <div key={i} style={{ height: 5 }} />;
-      const html = line.replace(/\*\*(.+?)\*\*/g, "<span class=\"nx-b\">$1</span>");
-      return <div key={i} className="nx-line" dangerouslySetInnerHTML={{ __html: html }} />;
-    });
+      if (/^━+$/.test(line) || line.startsWith("──")) {
+        result.push(<div key={i} className="nx-div" />);
+      } else if (/^#{1,3}\s/.test(line)) {
+        result.push(<div key={i} className="nx-h">{line.replace(/^#+ /, "")}</div>);
+      } else if (/^[▸•]\s/.test(line)) {
+        const html = line.slice(2).replace(/\*\*(.+?)\*\*/g, '<span class="nx-b">$1</span>');
+        result.push(<div key={i} className="nx-bl"><span className="nx-bm">{line[0]}</span><span dangerouslySetInnerHTML={{ __html: html }} /></div>);
+      } else if (line.startsWith("**") && line.endsWith("**") && line.length > 4) {
+        result.push(<div key={i} className="nx-bold">{line.slice(2,-2)}</div>);
+      } else if (line.trim() === "") {
+        result.push(<div key={i} style={{ height: 5 }} />);
+      } else {
+        const html = line.replace(/\*\*(.+?)\*\*/g, '<span class="nx-b">$1</span>');
+        result.push(<div key={i} className="nx-line" dangerouslySetInnerHTML={{ __html: html }} />);
+      }
+      i++;
+    }
+    return result;
   };
 
-  const lastAssistantIdx = [...messages].reverse().findIndex(m => m.role === "assistant");
+    const lastAssistantIdx = [...messages].reverse().findIndex(m => m.role === "assistant");
   const showContinue = !loading && lastAssistantIdx === 0 && messages.length > 0;
 
   return (
