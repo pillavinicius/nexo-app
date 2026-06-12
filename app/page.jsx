@@ -15,16 +15,16 @@ const ASSET_TYPES = [
     group: "BR",
     groupColor: "#C9A84C",
     types: [
-      { id: "fii",       label: "FII",          icon: "⬡", desc: "Fundos Imobiliários · B3",                    examples: "MXRF11, KNRI11, HGLG11, XPML11" },
-      { id: "acao-br",   label: "Ação BR",       icon: "◈", desc: "Todas as ações B3 · setor detectado auto",   examples: "WEGE3, VALE3, ITUB4, RENT3, SBSP3" },
+      { id: "fii",       label: "FII",          icon: "🏢", desc: "Fundos Imobiliários · B3",                    examples: "MXRF11, KNRI11, HGLG11, XPML11" },
+      { id: "acao-br",   label: "Ação BR",       icon: "📈", desc: "Todas as ações B3 · setor detectado auto",   examples: "WEGE3, VALE3, ITUB4, RENT3, SBSP3" },
     ],
   },
   {
     group: "Exterior",
     groupColor: "#A8A8B8",
     types: [
-      { id: "etf-ext",   label: "ETF",           icon: "◧", desc: "Trilho 1 · ETFs irlandeses ACC",             examples: "VWCE, CSPX, EQQQ, WSML" },
-      { id: "stock-ext", label: "Stock Picking",  icon: "⬢", desc: "Trilho 2 · Temático concentrado",           examples: "NVDA, MSFT, ASML, TSM, NEE" },
+      { id: "etf-ext",   label: "ETF",           icon: "🌍", desc: "Trilho 1 · ETFs irlandeses ACC",             examples: "VWCE, CSPX, EQQQ, WSML" },
+      { id: "stock-ext", label: "Stock Picking",  icon: "🔭", desc: "Trilho 2 · Temático concentrado",           examples: "NVDA, MSFT, ASML, TSM, NEE" },
     ],
   },
 ];
@@ -548,15 +548,25 @@ export default function NEXOApp() {
   };
 
     const lastAssistantIdx = [...messages].reverse().findIndex(m => m.role === "assistant");
-  const lastAssistantMsg = messages.slice().reverse().find(m => m.role === "assistant");
-  // Só considera completo se tiver PRÓXIMOS PASSOS *e* for a última mensagem E tiver pelo menos 800 chars
-  const reportComplete = lastAssistantMsg && lastAssistantMsg.content.length > 800 && (
-    (lastAssistantMsg.content.includes("PRÓXIMOS PASSOS") && lastAssistantMsg.content.includes("RISCOS")) ||
-    (lastAssistantMsg.content.includes("VEREDITO FINAL") && lastAssistantMsg.content.includes("RISCOS")) ||
-    (lastAssistantMsg.content.includes("ZONA DE ENTRADA BESST") && lastAssistantMsg.content.includes("CATALISADORES")) ||
-    (lastAssistantMsg.content.includes("SIZING SUGERIDO") && lastAssistantMsg.content.includes("CATALISADORES"))
+  // Junta todas as mensagens do assistente em texto único para checar completude
+  const allAssistantText = messages
+    .filter(m => m.role === "assistant")
+    .map(m => m.content)
+    .join(" ");
+
+  const scanComplete = scanVerdict !== null && (
+    allAssistantText.includes("CATALISADORES") &&
+    allAssistantText.includes("RISCOS") &&
+    allAssistantText.includes("LACUNAS PARA O DEEP")
   );
-  const showContinue = !loading && lastAssistantIdx === 0 && messages.length > 0 && !reportComplete;
+  const deepComplete = phase === "deep" && (
+    allAssistantText.includes("PRÓXIMOS PASSOS") ||
+    allAssistantText.includes("ZONA DE ENTRADA BESST") ||
+    allAssistantText.includes("SIZING SUGERIDO")
+  );
+  const reportComplete = scanComplete || deepComplete;
+  const showContinue = !loading && messages.length > 0 &&
+    messages[messages.length - 1].role === "assistant" && !reportComplete;
 
   return (
     <>
@@ -783,6 +793,7 @@ export default function NEXOApp() {
         .empty-s { font-family: 'JetBrains Mono', monospace; font-size: 7.5px; color: #4A3E28; letter-spacing: 1px; }
 
         .msg { margin-bottom: 22px; animation: fi .2s ease; }
+        .msg-cont { margin-bottom: 22px; animation: fi .2s ease; padding-top: 0; }
         @keyframes fi { from{opacity:0;transform:translateY(3px)} to{opacity:1;transform:none} }
 
         .mrole {
@@ -957,7 +968,17 @@ export default function NEXOApp() {
             ref={tickerRef}
             className="ticker-inp"
             value={ticker}
-            onChange={e => setTicker(e.target.value)}
+            onChange={e => {
+              const newVal = e.target.value;
+              setTicker(newVal);
+              // Reset análise se ticker mudar após uma análise ter sido iniciada
+              if (messages.length > 0) {
+                setMessages([]);
+                setScanVerdict(null);
+                setPhase("scan");
+                setError("");
+              }
+            }}
             onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleRunScan(); }}
             placeholder={selectedTypeObj ? `Ex: ${selectedTypeObj.examples.split(",")[0].trim()}` : "Selecione a classe acima"}
             disabled={!selectedType}
@@ -1031,17 +1052,29 @@ export default function NEXOApp() {
               const isDeepMsg = msg.role === "user" && msg.content.includes("DEEP NEXO");
               const isContMsg = msg.role === "user" && msg.content.includes("Continue a análise");
               if (isContMsg) return null;
+
               const isLastAssistant = msg.role === "assistant" && i === messages.length - 1;
+
+              // Verifica se a mensagem anterior visível também era do assistente
+              // (após filtrar mensagens de "continuar") — se sim, não mostra o header
+              const prevVisibleMsg = messages.slice(0, i).reverse().find(m =>
+                !(m.role === "user" && m.content.includes("Continue a análise"))
+              );
+              const isContinuation = msg.role === "assistant" && prevVisibleMsg?.role === "assistant";
+
+              const deepStartIdx = messages.findIndex(m => m.content?.includes("DEEP NEXO"));
+              const isDeepResponse = msg.role === "assistant" && deepStartIdx >= 0 && i > deepStartIdx;
+
               return (
-                <div key={i} className="msg" ref={isLastAssistant ? newContentRef : null}>
-                  <div className={`mrole ${isDeepMsg ? "deep" : msg.role}`}>
-                    {msg.role === "user"
-                      ? (isDeepMsg ? "◈ Deep NEXO" : "⬡ Scan")
-                      : (phase === "deep" && i > messages.findIndex(m => m.content?.includes("DEEP NEXO"))
-                          ? "◈ NEXO · Deep"
-                          : "⬡ NEXO · Scan")}
-                    <div className="rline" />
-                  </div>
+                <div key={i} className={isContinuation ? "msg-cont" : "msg"} ref={isLastAssistant ? newContentRef : null}>
+                  {!isContinuation && (
+                    <div className={`mrole ${isDeepMsg ? "deep" : msg.role}`}>
+                      {msg.role === "user"
+                        ? (isDeepMsg ? "◈ Deep NEXO" : "⬡ Scan")
+                        : (isDeepResponse ? "◈ NEXO · Deep" : "⬡ NEXO · Scan")}
+                      <div className="rline" />
+                    </div>
+                  )}
                   {msg.role === "user"
                     ? <div className="mu">{msg.content.split("\n\n")[0]}</div>
                     : <div className="ma">{fmt(msg.content)}</div>
