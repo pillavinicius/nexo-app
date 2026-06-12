@@ -21,9 +21,9 @@ export async function POST(req) {
       } catch(e) {}
     }
 
-    const userContent = (scanSummary ? "SCAN:" + scanSummary + " " : "") +
-      ticker +
-      (extraCtx ? " " + extraCtx : "") +
+    const userContent = "Analyze ticker: " + ticker +
+      (extraCtx ? " Focus: " + extraCtx : "") +
+      (scanSummary ? " SCAN_CONTEXT:" + scanSummary : "") +
       riContent;
 
     // Compact JSON schemas
@@ -31,25 +31,11 @@ export async function POST(req) {
 
     const DEEP_SCHEMA = '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","lacunas_respondidas":[{"lacuna":"","resposta":""}],"modelo_preco":[{"camada":"C1","valor_justo":"","metodologia":"","premissas":""},{"camada":"C2","valor_justo":"","metodologia":"","premissas":""},{"camada":"C3","valor_justo":"","metodologia":"","premissas":""}],"zona_convergida":"","zona_besst":"","desconto_atual":"","sensibilidade":[{"cenario":"","impacto":"","detalhe":""}],"catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","gatilho":""}],"proximos_passos":["","",""]}';
 
-    const systems = {
-      "scan-fii": "NEXO FII analyst. Return ONLY JSON matching this schema: " + SCAN_SCHEMA + " Rules: liquidity<R$300k=VETO. Governance 5 dims(estrutura,gestor,conselho,auditoria,concentracao) nota1=VETO. KPIs: P/VP,DY12m,spread-NTN-B(2.5-4pp=ok),vacancia,prazo-contratos. score_dimensoes 6 items. tese=2 lines perception vs reality. 3 lacunas_deep. Respond Portuguese. Be concise.",
+    const SCAN_PROMPT = "You are the NEXO investment analyst. Auto-detect the asset type and segment from the ticker: BR FII, BR stock (Utilities/Varejo/Saude/Tech/Industria/Banco/Commodity), international ETF, or international stock. If ticker does not exist return {\"ticker_invalido\":true}. Return ONLY valid JSON matching this schema: " + SCAN_SCHEMA + " Rules by type: FII(liquidity<R$300k=VETO,Gov5dims,KPIs:P/VP,DY12m,spread-NTN-B,vacancia,prazo-contratos), BR-stock(liquidity<R$300k=VETO,Gov5dims,segment-KPIs), ETF(KPIs:TER,tracking-diff,AUM,domicilio,ACC/DIST,score_max=25,governanca=[]), Intl-stock(ADV<1M=VETO,Gov:board/CEO/Big4/Wells-Notice,thematic-purity,score_max=50). Always: score_dimensoes 5-6 items, tese=2 lines perception-vs-reality, 3 lacunas_deep. Respond in Portuguese. Be concise.";
 
-      "scan-acao-br": "NEXO BR stock analyst. Return ONLY JSON: " + SCAN_SCHEMA + " Rules: detect segment(Utilities/Varejo/Saude/Tech/Industria/Banco/Commodity) set segmento. liquidity<R$300k=VETO. Gov5dims nota1=VETO. Segment KPIs. score_dimensoes 6 items. tese=2 lines. 3 lacunas_deep. Portuguese. Concise.",
+    const DEEP_PROMPT = "You are the NEXO deep analyst. Return ONLY valid JSON: " + DEEP_SCHEMA + " Use scan context to apply correct price model. FII: C1=P/VP-cycle,C2=yield-spread-NTN-B,C3=moat. BR-stock: C1/C2/C3 by segment. ETF: C1=cost,C2=concentration,C3=Markowitz. Intl: theme-model. BESST=15-25%below-zone. Answer each lacuna with specific numbers. Max 2 sensibilidade scenarios. Max 3 proximos_passos. Respond Portuguese. Be very concise.";
 
-      "scan-etf-ext": "NEXO ETF analyst. Return ONLY JSON: " + SCAN_SCHEMA + " score_max=25. governanca=[]. KPIs: TER,tracking-diff,AUM,domicilio,ACC/DIST,replicacao,top10%. score_dimensoes 5 items. Portuguese. Concise.",
-
-      "scan-stock-ext": "NEXO intl stock analyst. Return ONLY JSON: " + SCAN_SCHEMA + " score_max=50. ADV<1M=VETO. Gov: board,CEO-incentives,Big4,Wells-Notice=VETO. Thematic purity>50%. KPIs by theme. Portuguese. Concise.",
-
-      "deep-fii": "NEXO FII deep analyst. Return ONLY JSON: " + DEEP_SCHEMA + " 3-layer model: C1=P/VP-Soros-cycle, C2=yield-spread-NTN-B, C3=location-moat. BESST=15-25%below. Selic+-200bps sensitivity. Answer each lacuna. Specific numbers. Portuguese.",
-
-      "deep-acao-br": "NEXO BR stock deep analyst. Return ONLY JSON: " + DEEP_SCHEMA + " Apply segment model from scan context. BESST=15-25%below. Macro scenarios. Answer each lacuna. Specific numbers. Portuguese.",
-
-      "deep-etf-ext": "NEXO ETF deep analyst. Return ONLY JSON: " + DEEP_SCHEMA + " C1=total-cost, C2=concentration-risk, C3=Markowitz-fit. Trilho1 sizing. Portuguese.",
-
-      "deep-stock-ext": "NEXO intl stock deep analyst. Return ONLY JSON: " + DEEP_SCHEMA + " Theme price model. Max5-7%portfolio. Answer each lacuna. Portuguese.",
-    };
-
-    const systemPrompt = systems[phase + "-" + assetType] || systems["scan-fii"];
+    const systemPrompt = phase === "deep" ? DEEP_PROMPT : SCAN_PROMPT;
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
