@@ -186,11 +186,8 @@ export default function NEXOApp() {
 
     var summary = null;
     if (ph === "deep" && scanResult) {
-      summary = "Veredito:" + scanResult.veredito +
-        " Score:" + scanResult.score_total + "/" + scanResult.score_max +
-        " Segmento:" + (scanResult.segmento||"") +
-        " Tese:" + (scanResult.tese||"") +
-        " Lacunas:" + (scanResult.lacunas_deep||[]).join(",");
+      var lacunas = (scanResult.lacunas_deep||[]).slice(0,3).join("|");
+      summary = scanResult.veredito + "|" + scanResult.segmento + "|" + lacunas;
     }
 
     var msgs = [{
