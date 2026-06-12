@@ -231,6 +231,40 @@ const Note = ({ children, style }) => (
   <div style={{ fontSize:11, color:"#8A7A58", marginTop:2, lineHeight:1.5, ...style }}>{children}</div>
 );
 
+const ScoreBar = ({ score, max = 5 }) => {
+  const pct = Math.min((score / max) * 100, 100);
+  const color = score >= max * 0.7 ? "#C9A84C" : score >= max * 0.4 ? "#A8A8B8" : "#8B3A3A";
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+      <div style={{ flex:1, height:4, background:"#2A2318", borderRadius:2 }}>
+        <div style={{ width:`${pct}%`, height:"100%", background:color, borderRadius:2, transition:"width .4s" }} />
+      </div>
+      <span style={{ fontFamily:"JetBrains Mono,monospace", fontSize:11, color, minWidth:30 }}>
+        {score}/{max}
+      </span>
+    </div>
+  );
+};
+
+const Badge = ({ text, type }) => {
+  const colors = {
+    APROVADO:  { bg:"rgba(201,168,76,0.15)",  border:"#C9A84C", text:"#C9A84C" },
+    WATCHLIST: { bg:"rgba(168,168,184,0.15)", border:"#A8A8B8", text:"#A8A8B8" },
+    VETADO:    { bg:"rgba(139,58,58,0.15)",   border:"#C87070", text:"#C87070" },
+    PASS:      { bg:"rgba(100,180,100,0.12)", border:"#6DB46D", text:"#6DB46D" },
+    FAIL:      { bg:"rgba(200,112,112,0.12)", border:"#C87070", text:"#C87070" },
+    ALERTA:    { bg:"rgba(210,160,60,0.12)",  border:"#D2A03C", text:"#D2A03C" },
+  };
+  const c = colors[text] || colors[type] || colors.ALERTA;
+  return (
+    <span style={{
+      fontFamily:"JetBrains Mono,monospace", fontSize:10, fontWeight:700,
+      letterSpacing:1, padding:"2px 8px",
+      background:c.bg, border:`1px solid ${c.border}`, color:c.text,
+    }}>{text}</span>
+  );
+};
+
 export default function NEXOApp() {
   const [assetType,   setAssetType]   = useState(null);
   const [ticker,      setTicker]      = useState("");
@@ -339,40 +373,6 @@ export default function NEXOApp() {
   };
 
   // ── RENDER HELPERS ──────────────────────────────────────────────
-  const ScoreBar = ({ score, max = 5 }) => {
-    const pct = Math.min((score / max) * 100, 100);
-    const color = score >= max * 0.7 ? "#C9A84C" : score >= max * 0.4 ? "#A8A8B8" : "#8B3A3A";
-    return (
-      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-        <div style={{ flex:1, height:4, background:"#2A2318", borderRadius:2 }}>
-          <div style={{ width:`${pct}%`, height:"100%", background:color, borderRadius:2, transition:"width .4s" }} />
-        </div>
-        <span style={{ fontFamily:"JetBrains Mono,monospace", fontSize:11, color, minWidth:30 }}>
-          {score}/{max}
-        </span>
-      </div>
-    );
-  };
-
-  const Badge = ({ text, type }) => {
-    const colors = {
-      APROVADO:  { bg:"rgba(201,168,76,0.15)",  border:"#C9A84C", text:"#C9A84C" },
-      WATCHLIST: { bg:"rgba(168,168,184,0.15)", border:"#A8A8B8", text:"#A8A8B8" },
-      VETADO:    { bg:"rgba(139,58,58,0.15)",   border:"#C87070", text:"#C87070" },
-      PASS:      { bg:"rgba(100,180,100,0.12)", border:"#6DB46D", text:"#6DB46D" },
-      FAIL:      { bg:"rgba(200,112,112,0.12)", border:"#C87070", text:"#C87070" },
-      ALERTA:    { bg:"rgba(210,160,60,0.12)",  border:"#D2A03C", text:"#D2A03C" },
-    };
-    const c = colors[text] || colors[type] || colors.ALERTA;
-    return (
-      <span style={{
-        fontFamily:"JetBrains Mono,monospace", fontSize:10, fontWeight:700,
-        letterSpacing:1, padding:"2px 8px",
-        background:c.bg, border:`1px solid ${c.border}`, color:c.text,
-      }}>{text}</span>
-    );
-  };
-
   return (
     <>
       <style>{`
