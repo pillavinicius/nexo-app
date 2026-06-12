@@ -24,8 +24,9 @@ export async function POST(req) {
       "followup": "You are the NEXO investment analyst. Answer the user question concisely with data and numbers. Return JSON: {\"resposta\":\"string in Portuguese with line breaks for readability\"}."
     };
 
-    const key = phase + "-" + assetType;
-    const systemPrompt = PROMPTS[key] || PROMPTS["scan-fii"];
+    // Support both "scan"+"fii" and "scan-fii" formats
+    const key = (phase + "-" + assetType).replace("followup-", "followup");
+    const systemPrompt = PROMPTS[key] || PROMPTS[phase + "-fii"] || PROMPTS["scan-fii"];
 
     let riContent = "";
     if (riUrl && riUrl.startsWith("http")) {
