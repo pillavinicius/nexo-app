@@ -544,12 +544,13 @@ export default function NEXOApp() {
     return null;
   };
 
-  const callAPI = async (msgs, systemPrompt) => {
+  const callAPI = async (msgs, _systemPrompt, phase) => {
     const res = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        system: systemPrompt,
+        assetType: selectedType,
+        phase: phase || "scan",
         messages: msgs.map(m => ({ role: m.role, content: m.content })),
       }),
     });
@@ -577,7 +578,7 @@ export default function NEXOApp() {
     setMessages(newMessages);
 
     try {
-      const text = await callAPI(newMessages, SCAN_PROMPTS[selectedType]);
+      const text = await callAPI(newMessages, null, "scan");
       // Detecta ticker inválido ou não encontrado
       // Detecta ticker inválido via marcador explícito no prompt
       if (text.includes("TICKER_INVALIDO")) {
@@ -611,7 +612,7 @@ export default function NEXOApp() {
     setMessages(newMessages);
 
     try {
-      const text = await callAPI(newMessages, DEEP_PROMPTS[selectedType]);
+      const text = await callAPI(newMessages, null, "deep");
       setMessages([...newMessages, { role: "assistant", content: text }]);
     } catch (err) {
       setError(err.message);
@@ -630,9 +631,8 @@ export default function NEXOApp() {
     const newMessages = [...messages, continueMsg];
     setMessages(newMessages);
 
-    const currentPrompt = phase === "scan" ? SCAN_PROMPTS[selectedType] : DEEP_PROMPTS[selectedType];
     try {
-      const text = await callAPI(newMessages, currentPrompt);
+      const text = await callAPI(newMessages, null, phase);
       const verdict = extractVerdict(text);
       if (verdict && phase === "scan") setScanVerdict(verdict);
       setMessages([...newMessages, { role: "assistant", content: text }]);
