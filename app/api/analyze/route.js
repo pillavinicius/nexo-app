@@ -6,7 +6,7 @@ export async function POST(req) {
 
     const payload = {
       model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
+      max_tokens: 4096,
       system: body.system,
       messages: body.messages,
     };
@@ -22,11 +22,19 @@ export async function POST(req) {
     });
 
     const data = await response.json();
+
+    // Retorna erro detalhado se houver
+    if (data.error) {
+      return Response.json({ 
+        error: { message: `API Error [${data.error.type}]: ${data.error.message}` }
+      });
+    }
+
     return Response.json(data);
 
   } catch (error) {
     return Response.json(
-      { error: { message: error.message } },
+      { error: { message: `Route Error: ${error.message}` } },
       { status: 500 }
     );
   }
