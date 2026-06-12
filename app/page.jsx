@@ -478,17 +478,17 @@ export default function NEXOApp() {
 
   const fmt = (text) => {
     // Remove tags de veredito interno do output visual
-    const clean = text.replace(/VEREDITO_NEXO:\s*(APROVADO|VETADO|WATCHLIST)/g, "");
+    const clean = text.replace(/VEREDITO_NEXO: (APROVADO|VETADO|WATCHLIST)/g, "");
     return clean.split("\n").map((line, i) => {
       if (/^━+$/.test(line) || line.startsWith("──")) return <div key={i} className="nx-div" />;
-      if (/^#{1,3}\s/.test(line)) return <div key={i} className="nx-h">{line.replace(/^#+\s/, "")}</div>;
+      if (/^#{1,3}\s/.test(line)) return <div key={i} className="nx-h">{line.replace(/^#+ /, "")}</div>;
       if (/^[▸•]\s/.test(line)) {
         const html = line.slice(2).replace(/\*\*(.+?)\*\*/g, '<span class="nx-b">$1</span>');
         return <div key={i} className="nx-bl"><span className="nx-bm">{line[0]}</span><span dangerouslySetInnerHTML={{ __html: html }} /></div>;
       }
-      if (/^\*\*(.+)\*\*$/.test(line)) return <div key={i} className="nx-bold">{line.replace(/\*\*/g, "")}</div>;
+      if (line.startsWith("**") && line.endsWith("**")) return <div key={i} className="nx-bold">{line.slice(2,-2)}</div>;
       if (line.trim() === "") return <div key={i} style={{ height: 5 }} />;
-      const html = line.replace(/\*\*(.+?)\*\*/g, '<span class="nx-b">$1</span>');
+      const html = line.replace(/\*\*(.+?)\*\*/g, "<span class=\"nx-b\">$1</span>");
       return <div key={i} className="nx-line" dangerouslySetInnerHTML={{ __html: html }} />;
     });
   };
@@ -980,13 +980,7 @@ export default function NEXOApp() {
                     <div className="rline" />
                   </div>
                   {msg.role === "user"
-                    ? <div className="mu">{msg.content.replace(/
-
-Contexto adicional:.*/, "").replace(/
-
-Identifique.*/, "").replace(/
-
-Busque.*/, "")}</div>
+                    ? <div className="mu">{msg.content.split("\n\n")[0]}</div>
                     : <div className="ma">{fmt(msg.content)}</div>
                   }
                 </div>
