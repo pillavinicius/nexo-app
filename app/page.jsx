@@ -218,6 +218,20 @@ function DeepReport(props) {
   );
 }
 
+function detectAssetType(t) {
+  var tk = (t || "").toUpperCase().trim();
+  if (!tk) return "fii";
+  // BR FIIs end in 11
+  if (/^[A-Z]{4}11$/.test(tk)) return "fii";
+  // BR stocks end in 3,4,5,6,7,8,9
+  if (/^[A-Z]{4}[3-9]$/.test(tk) || /^[A-Z]{4}[0-9]{1,2}$/.test(tk)) return "acao-br";
+  // Known ETFs
+  if (["VWCE","CSPX","EQQQ","WSML","IWDA","SWDA","VUSA","VAGF"].indexOf(tk) !== -1) return "etf-ext";
+  // Default international stock if no .SA pattern
+  if (tk.length <= 5 && /^[A-Z]+$/.test(tk)) return "stock-ext";
+  return "acao-br";
+}
+
 export default function NEXOApp() {
   var stateAssetType   = useState("auto");  // always auto-detect
   var stateTickerV     = useState("");
@@ -268,7 +282,7 @@ export default function NEXOApp() {
         " Lacunas: " + (scanResult.lacunas_deep || []).join(", ");
     }
     var body = JSON.stringify({
-      assetType: assetType,
+      assetType: detectAssetType(ticker),
       phase: ph,
       ticker: ticker.trim().toUpperCase(),
       riUrl: riUrl ? riUrl.trim() : "",
