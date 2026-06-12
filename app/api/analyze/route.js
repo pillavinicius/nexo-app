@@ -79,7 +79,7 @@ export async function POST(req) {
     try {
       return Response.json(JSON.parse(raw));
     } catch(err) {
-      return Response.json({ error: { message: "JSON invalido. Tente novamente." } });
+      return Response.json({ error: { message: "Raw: " + raw.slice(0, 200) } });
     }
 
   } catch (err) {
