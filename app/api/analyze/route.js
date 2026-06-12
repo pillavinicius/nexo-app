@@ -1,57 +1,48 @@
+export const maxDuration = 60;
+
 export async function POST(req) {
   try {
-    const body = await req.json();
-    const { assetType, phase, ticker, riUrl, extraCtx, scanSummary } = body;
+    const { assetType, phase, ticker, riUrl, extraCtx, scanSummary } = await req.json();
+
+    const PROMPTS = {
+      "scan-fii": "You are a Brazilian FII investment analyst using the NEXO framework. Return ONLY a valid JSON object (no markdown, no explanation). If ticker is invalid return {\"ticker_invalido\":true}. JSON schema: {\"ticker\":\"string\",\"nome\":\"string\",\"segmento\":\"string\",\"veredito\":\"APROVADO|WATCHLIST|VETADO\",\"motivo_veto\":\"string or null\",\"score_total\":0,\"score_max\":30,\"score_resumo\":\"string\",\"filtros\":[{\"nome\":\"string\",\"valor\":\"string\",\"status\":\"PASS|FAIL\",\"nota\":\"string\"}],\"governanca\":[{\"dimensao\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"kpis\":[{\"nome\":\"string\",\"valor\":\"string\",\"benchmark\":\"string\",\"status\":\"PASS|FAIL|ALERTA\"}],\"score_dimensoes\":[{\"nome\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"tese\":\"string\",\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"probabilidade\":\"string\"}],\"lacunas_deep\":[\"string\"]}. Rules: liquidity <R$300k/day=VETO. Governance 5 dims nota 1=VETO. Respond in Portuguese.",
+
+      "scan-acao-br": "You are a Brazilian stock analyst using the NEXO framework. Return ONLY valid JSON (no markdown). If ticker invalid return {\"ticker_invalido\":true}. Auto-detect segment (Utilities/Varejo/Saude/Tech/Industria/Banco/Commodity). JSON: {\"ticker\":\"string\",\"nome\":\"string\",\"segmento\":\"string\",\"veredito\":\"APROVADO|WATCHLIST|VETADO\",\"motivo_veto\":\"string or null\",\"score_total\":0,\"score_max\":30,\"score_resumo\":\"string\",\"filtros\":[{\"nome\":\"string\",\"valor\":\"string\",\"status\":\"PASS|FAIL\",\"nota\":\"string\"}],\"governanca\":[{\"dimensao\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"kpis\":[{\"nome\":\"string\",\"valor\":\"string\",\"benchmark\":\"string\",\"status\":\"PASS|FAIL|ALERTA\"}],\"score_dimensoes\":[{\"nome\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"tese\":\"string\",\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"probabilidade\":\"string\"}],\"lacunas_deep\":[\"string\"]}. Rules: liquidity <R$300k=VETO. Governance 5 dims nota 1=VETO. Respond in Portuguese.",
+
+      "scan-etf-ext": "You are an ETF analyst using the NEXO framework. Return ONLY valid JSON. If invalid return {\"ticker_invalido\":true}. JSON: {\"ticker\":\"string\",\"nome\":\"string\",\"segmento\":\"string\",\"veredito\":\"APROVADO|WATCHLIST|VETADO\",\"motivo_veto\":\"string or null\",\"score_total\":0,\"score_max\":25,\"score_resumo\":\"string\",\"filtros\":[{\"nome\":\"string\",\"valor\":\"string\",\"status\":\"PASS|FAIL\",\"nota\":\"string\"}],\"governanca\":[],\"kpis\":[{\"nome\":\"string\",\"valor\":\"string\",\"benchmark\":\"string\",\"status\":\"PASS|FAIL|ALERTA\"}],\"score_dimensoes\":[{\"nome\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"tese\":\"string\",\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"probabilidade\":\"string\"}],\"lacunas_deep\":[\"string\"]}. Respond in Portuguese.",
+
+      "scan-stock-ext": "You are an international stock analyst using the NEXO framework. Return ONLY valid JSON. If invalid return {\"ticker_invalido\":true}. JSON: {\"ticker\":\"string\",\"nome\":\"string\",\"segmento\":\"string\",\"veredito\":\"APROVADO|WATCHLIST|VETADO\",\"motivo_veto\":\"string or null\",\"score_total\":0,\"score_max\":50,\"score_resumo\":\"string\",\"filtros\":[{\"nome\":\"string\",\"valor\":\"string\",\"status\":\"PASS|FAIL\",\"nota\":\"string\"}],\"governanca\":[{\"dimensao\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"kpis\":[{\"nome\":\"string\",\"valor\":\"string\",\"benchmark\":\"string\",\"status\":\"PASS|FAIL|ALERTA\"}],\"score_dimensoes\":[{\"nome\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"tese\":\"string\",\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"probabilidade\":\"string\"}],\"lacunas_deep\":[\"string\"]}. Respond in Portuguese.",
+
+      "deep-fii": "You are a Brazilian FII deep analyst using NEXO framework. Return ONLY valid JSON. JSON: {\"ticker\":\"string\",\"veredito_final\":\"COMPRAR|MONITORAR|AGUARDAR|EVITAR\",\"lacunas_respondidas\":[{\"lacuna\":\"string\",\"resposta\":\"string\"}],\"modelo_preco\":[{\"camada\":\"string\",\"valor_justo\":\"string\",\"metodologia\":\"string\",\"premissas\":\"string\"}],\"zona_convergida\":\"string\",\"zona_besst\":\"string\",\"desconto_atual\":\"string\",\"sensibilidade\":[{\"cenario\":\"string\",\"impacto\":\"string\",\"detalhe\":\"string\"}],\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"gatilho\":\"string\"}],\"proximos_passos\":[\"string\"]}. Price model: C1=P/VP Soros cycle, C2=yield spread vs NTN-B, C3=location moat. BESST=15-25% below converged zone. Respond in Portuguese.",
+
+      "deep-acao-br": "You are a Brazilian stock deep analyst using NEXO framework. Return ONLY valid JSON. JSON: {\"ticker\":\"string\",\"veredito_final\":\"COMPRAR|MONITORAR|AGUARDAR|EVITAR\",\"lacunas_respondidas\":[{\"lacuna\":\"string\",\"resposta\":\"string\"}],\"modelo_preco\":[{\"camada\":\"string\",\"valor_justo\":\"string\",\"metodologia\":\"string\",\"premissas\":\"string\"}],\"zona_convergida\":\"string\",\"zona_besst\":\"string\",\"desconto_atual\":\"string\",\"sensibilidade\":[{\"cenario\":\"string\",\"impacto\":\"string\",\"detalhe\":\"string\"}],\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"gatilho\":\"string\"}],\"proximos_passos\":[\"string\"]}. Apply correct 3-layer model by segment. BESST=15-25% below converged. Respond in Portuguese.",
+
+      "deep-etf-ext": "You are an ETF deep analyst using NEXO framework. Return ONLY valid JSON. JSON: {\"ticker\":\"string\",\"veredito_final\":\"APORTAR|MONITORAR|AGUARDAR\",\"lacunas_respondidas\":[{\"lacuna\":\"string\",\"resposta\":\"string\"}],\"modelo_preco\":[{\"camada\":\"string\",\"valor_justo\":\"string\",\"metodologia\":\"string\",\"premissas\":\"string\"}],\"zona_convergida\":\"string\",\"zona_besst\":\"string\",\"desconto_atual\":\"string\",\"sensibilidade\":[{\"cenario\":\"string\",\"impacto\":\"string\",\"detalhe\":\"string\"}],\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"gatilho\":\"string\"}],\"proximos_passos\":[\"string\"]}. Focus: total cost, Markowitz diversification, Trilho 1 sizing. Respond in Portuguese.",
+
+      "deep-stock-ext": "You are an international stock deep analyst using NEXO framework. Return ONLY valid JSON. JSON: {\"ticker\":\"string\",\"veredito_final\":\"POSICAO_PLENA|POSICAO_PARCIAL|WATCHLIST|EVITAR\",\"lacunas_respondidas\":[{\"lacuna\":\"string\",\"resposta\":\"string\"}],\"modelo_preco\":[{\"camada\":\"string\",\"valor_justo\":\"string\",\"metodologia\":\"string\",\"premissas\":\"string\"}],\"zona_convergida\":\"string\",\"zona_besst\":\"string\",\"desconto_atual\":\"string\",\"sensibilidade\":[{\"cenario\":\"string\",\"impacto\":\"string\",\"detalhe\":\"string\"}],\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"gatilho\":\"string\"}],\"proximos_passos\":[\"string\"]}. Respond in Portuguese.",
+
+      "followup": "You are the NEXO investment analyst. Answer the user question concisely with data and numbers. Return JSON: {\"resposta\":\"string in Portuguese with line breaks for readability\"}."
+    };
+
+    const key = phase + "-" + assetType;
+    const systemPrompt = PROMPTS[key] || PROMPTS["scan-fii"];
 
     let riContent = "";
     if (riUrl && riUrl.startsWith("http")) {
       try {
         const r = await fetch(riUrl, {
           headers: { "User-Agent": "Mozilla/5.0" },
-          signal: AbortSignal.timeout(6000)
+          signal: AbortSignal.timeout(5000)
         });
         const html = await r.text();
-        riContent = "\n\nRI DATA:\n" + html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 3000);
+        riContent = "\nRI: " + html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 2000);
       } catch(e) {}
     }
 
-    const ctx = "Ticker: " + ticker +
-      (extraCtx ? "\nContext: " + extraCtx : "") +
+    const userContent = (scanSummary ? "SCAN:\n" + scanSummary + "\n\n" : "") +
+      "Ticker: " + ticker +
+      (extraCtx ? "\nFocus: " + extraCtx : "") +
       riContent;
-
-    const SCAN = {
-      "fii": "You are the NEXO motor for Brazilian FIIs (Real Estate Investment Funds). Respond ONLY with a valid JSON object, no text before or after.\n\nIf ticker does not exist: {\"ticker_invalido\": true}\n\nRequired JSON structure:\n{\"ticker\":\"string\",\"nome\":\"string\",\"segmento\":\"string\",\"veredito\":\"APROVADO|WATCHLIST|VETADO\",\"motivo_veto\":\"string or null\",\"score_total\":0,\"score_max\":30,\"score_resumo\":\"string\",\"filtros\":[{\"nome\":\"string\",\"valor\":\"string\",\"status\":\"PASS|FAIL\",\"nota\":\"string\"}],\"governanca\":[{\"dimensao\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"kpis\":[{\"nome\":\"string\",\"valor\":\"string\",\"benchmark\":\"string\",\"status\":\"PASS|FAIL|ALERTA\"}],\"score_dimensoes\":[{\"nome\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"tese\":\"string\",\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"probabilidade\":\"string\"}],\"lacunas_deep\":[\"string\"]}\n\nRules:\n- Liquidez media diaria < R$300k = VETO (veredito=VETADO)\n- Governanca 0B: 5 dimensions, nota 1 in any = VETO\n- Dimensions: 1.Estrutura/regulamento 2.Track record gestor 3.Conselho consultivo 4.Qualidade contabil 5.Concentracao risco\n- KPIs: P/VP, DY 12m, yield spread vs NTN-B (2.5-4pp healthy), vacancia fisica, prazo contratos\n- Principle: 80% of price = human behavior/cycles. Price history = narrative only\n- Respond in Portuguese",
-
-      "acao-br": "You are the NEXO motor for Brazilian stocks (B3). Respond ONLY with valid JSON, no text before or after.\n\nIf ticker does not exist: {\"ticker_invalido\": true}\n\nAuto-detect segment (Utilities/Varejo/Saude/Tech/Industria/Banco/Commodity) and apply correct KPIs.\n\nRequired JSON:\n{\"ticker\":\"string\",\"nome\":\"string\",\"segmento\":\"string\",\"veredito\":\"APROVADO|WATCHLIST|VETADO\",\"motivo_veto\":\"string or null\",\"score_total\":0,\"score_max\":30,\"score_resumo\":\"string\",\"filtros\":[{\"nome\":\"string\",\"valor\":\"string\",\"status\":\"PASS|FAIL\",\"nota\":\"string\"}],\"governanca\":[{\"dimensao\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"kpis\":[{\"nome\":\"string\",\"valor\":\"string\",\"benchmark\":\"string\",\"status\":\"PASS|FAIL|ALERTA\"}],\"score_dimensoes\":[{\"nome\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"tese\":\"string\",\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"probabilidade\":\"string\"}],\"lacunas_deep\":[\"string\"]}\n\nRules:\n- Liquidity < R$300k/day = VETO\n- Governance 0B: 5 dims, nota 1 = VETO: 1.Estrutura/tag-along 2.Conselho independencia 3.Interferencia politica 4.Compliance 5.Auditoria\n- Insider 0C: buying=alignment, selling=alert\n- Apply segment-specific KPIs\n- Respond in Portuguese",
-
-      "etf-ext": "You are the NEXO motor for Exterior ETFs (Track 1). Respond ONLY with valid JSON.\n\nIf ticker invalid: {\"ticker_invalido\": true}\n\nJSON: {\"ticker\":\"string\",\"nome\":\"string\",\"segmento\":\"string\",\"veredito\":\"APROVADO|WATCHLIST|VETADO\",\"motivo_veto\":\"string or null\",\"score_total\":0,\"score_max\":25,\"score_resumo\":\"string\",\"filtros\":[{\"nome\":\"string\",\"valor\":\"string\",\"status\":\"PASS|FAIL\",\"nota\":\"string\"}],\"governanca\":[],\"kpis\":[{\"nome\":\"string\",\"valor\":\"string\",\"benchmark\":\"string\",\"status\":\"PASS|FAIL|ALERTA\"}],\"score_dimensoes\":[{\"nome\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"tese\":\"string\",\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"probabilidade\":\"string\"}],\"lacunas_deep\":[\"string\"]}\n\nKey KPIs: TER, tracking difference, AUM, domicile (Ireland=preferred), ACC vs DIST, replication method, top10 holdings %. Respond in Portuguese.",
-
-      "stock-ext": "You are the NEXO motor for Exterior Stock Picking (Track 2). Respond ONLY with valid JSON.\n\nIf ticker invalid: {\"ticker_invalido\": true}\n\nJSON: {\"ticker\":\"string\",\"nome\":\"string\",\"segmento\":\"string\",\"veredito\":\"APROVADO|WATCHLIST|VETADO\",\"motivo_veto\":\"string or null\",\"score_total\":0,\"score_max\":50,\"score_resumo\":\"string\",\"filtros\":[{\"nome\":\"string\",\"valor\":\"string\",\"status\":\"PASS|FAIL\",\"nota\":\"string\"}],\"governanca\":[{\"dimensao\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"kpis\":[{\"nome\":\"string\",\"valor\":\"string\",\"benchmark\":\"string\",\"status\":\"PASS|FAIL|ALERTA\"}],\"score_dimensoes\":[{\"nome\":\"string\",\"nota\":0,\"obs\":\"string\"}],\"tese\":\"string\",\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"probabilidade\":\"string\"}],\"lacunas_deep\":[\"string\"]}\n\nThematic purity >50% revenue required. Score IA: enabler/aplicador/ameacado. Respond in Portuguese."
-    };
-
-    const DEEP = {
-      "fii": "You are the NEXO Deep motor for Brazilian FIIs. Respond ONLY with valid JSON.\n\nJSON: {\"ticker\":\"string\",\"veredito_final\":\"COMPRAR|MONITORAR|AGUARDAR|EVITAR\",\"lacunas_respondidas\":[{\"lacuna\":\"string\",\"resposta\":\"string\"}],\"modelo_preco\":[{\"camada\":\"string\",\"valor_justo\":\"string\",\"metodologia\":\"string\",\"premissas\":\"string\"}],\"zona_convergida\":\"string\",\"zona_besst\":\"string\",\"desconto_atual\":\"string\",\"sensibilidade\":[{\"cenario\":\"string\",\"impacto\":\"string\",\"detalhe\":\"string\"}],\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"gatilho\":\"string\"}],\"proximos_passos\":[\"string\"]}\n\nPrice model 3 layers: C1=P/VP market cycle (Soros reflexivity), C2=Yield spread vs NTN-B (2.5-4pp healthy), C3=Location moat and asset quality. BESST entry = 15-25% below converged zone. Respond in Portuguese.",
-
-      "acao-br": "You are the NEXO Deep motor for Brazilian stocks. Respond ONLY with valid JSON.\n\nJSON: {\"ticker\":\"string\",\"veredito_final\":\"COMPRAR|MONITORAR|AGUARDAR|EVITAR\",\"lacunas_respondidas\":[{\"lacuna\":\"string\",\"resposta\":\"string\"}],\"modelo_preco\":[{\"camada\":\"string\",\"valor_justo\":\"string\",\"metodologia\":\"string\",\"premissas\":\"string\"}],\"zona_convergida\":\"string\",\"zona_besst\":\"string\",\"desconto_atual\":\"string\",\"sensibilidade\":[{\"cenario\":\"string\",\"impacto\":\"string\",\"detalhe\":\"string\"}],\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"gatilho\":\"string\"}],\"proximos_passos\":[\"string\"]}\n\nApply correct 3-layer price model by segment. BESST = 15-25% below converged zone. Do NOT repeat Scan filters. Focus on lacunas and price model. Respond in Portuguese.",
-
-      "etf-ext": "You are the NEXO Deep motor for Exterior ETFs. Respond ONLY with valid JSON.\n\nJSON: {\"ticker\":\"string\",\"veredito_final\":\"APORTAR|MONITORAR|AGUARDAR\",\"lacunas_respondidas\":[{\"lacuna\":\"string\",\"resposta\":\"string\"}],\"modelo_preco\":[{\"camada\":\"string\",\"valor_justo\":\"string\",\"metodologia\":\"string\",\"premissas\":\"string\"}],\"zona_convergida\":\"string\",\"zona_besst\":\"string\",\"desconto_atual\":\"string\",\"sensibilidade\":[{\"cenario\":\"string\",\"impacto\":\"string\",\"detalhe\":\"string\"}],\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"gatilho\":\"string\"}],\"proximos_passos\":[\"string\"]}\n\nFocus: total cost of ownership, real diversification (Markowitz N effective), stress test 2008/2020/2022, Trilho 1 sizing. Respond in Portuguese.",
-
-      "stock-ext": "You are the NEXO Deep motor for Exterior Stock Picking. Respond ONLY with valid JSON.\n\nJSON: {\"ticker\":\"string\",\"veredito_final\":\"POSICAO_PLENA|POSICAO_PARCIAL|WATCHLIST|EVITAR\",\"lacunas_respondidas\":[{\"lacuna\":\"string\",\"resposta\":\"string\"}],\"modelo_preco\":[{\"camada\":\"string\",\"valor_justo\":\"string\",\"metodologia\":\"string\",\"premissas\":\"string\"}],\"zona_convergida\":\"string\",\"zona_besst\":\"string\",\"desconto_atual\":\"string\",\"sensibilidade\":[{\"cenario\":\"string\",\"impacto\":\"string\",\"detalhe\":\"string\"}],\"catalisadores\":[{\"descricao\":\"string\",\"prazo\":\"string\",\"impacto\":\"string\"}],\"riscos\":[{\"descricao\":\"string\",\"severidade\":\"ALTO|MEDIO|BAIXO\",\"gatilho\":\"string\"}],\"proximos_passos\":[\"string\"]}\n\nApply theme-specific price model (Chips/SaaS/Cleantech/Biotech/BigTech). Max 5-7% portfolio per asset. Respond in Portuguese."
-    };
-
-    const FOLLOWUP = "You are the NEXO investment analyst. Answer the user question about the asset objectively and concisely. Return a JSON object: {\"resposta\": \"string with your answer in Portuguese, formatted with line breaks\"}. Be direct, use data and numbers where possible.";
-
-    let systemPrompt, userContent;
-    if (phase === "followup") {
-      systemPrompt = FOLLOWUP;
-      userContent = (scanSummary ? "CONTEXT:\n" + scanSummary + "\n\n" : "") + ctx;
-    } else if (phase === "deep") {
-      systemPrompt = DEEP[assetType] || DEEP["fii"];
-      userContent = "NEXO DEEP analysis for " + ticker + (scanSummary ? "\n\nSCAN SUMMARY:\n" + scanSummary : "") + "\n\n" + ctx;
-    } else {
-      systemPrompt = SCAN[assetType] || SCAN["fii"];
-      userContent = "NEXO SCAN analysis for " + ticker + "\n\n" + ctx;
-    }
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -62,38 +53,31 @@ export async function POST(req) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 4096,
+        max_tokens: 2048,
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }],
       }),
+      signal: AbortSignal.timeout(55000),
     });
 
-    const responseText = await response.text();
-    const data = JSON.parse(responseText);
+    const data = await response.json();
 
     if (data.error) {
       return Response.json({ error: { message: data.error.type + ": " + data.error.message } });
     }
 
-    let rawText = (data.content && data.content[0] && data.content[0].text) ? data.content[0].text : "{}";
+    let raw = (data.content && data.content[0]) ? data.content[0].text : "{}";
 
-    // Extract JSON
-    const jStart = rawText.indexOf("{");
-    const jEnd = rawText.lastIndexOf("}");
-    if (jStart !== -1 && jEnd !== -1) {
-      rawText = rawText.slice(jStart, jEnd + 1);
-    }
+    const s = raw.indexOf("{");
+    const e = raw.lastIndexOf("}");
+    if (s !== -1 && e !== -1) raw = raw.slice(s, e + 1);
 
-    // Clean
-    rawText = rawText
-      .replace(/,\s*\}/g, "}")
-      .replace(/,\s*\]/g, "]");
+    raw = raw.replace(/,(\s*[}\]])/g, "$1");
 
     try {
-      const parsed = JSON.parse(rawText);
-      return Response.json(parsed);
-    } catch(e) {
-      return Response.json({ error: { message: "Formato de resposta invalido. Tente novamente." } });
+      return Response.json(JSON.parse(raw));
+    } catch(err) {
+      return Response.json({ error: { message: "Formato invalido. Tente novamente." } });
     }
 
   } catch (err) {
