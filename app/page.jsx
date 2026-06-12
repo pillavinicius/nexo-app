@@ -297,6 +297,19 @@ export default function NEXOApp() {
   };
 
   const callAPI = async (userPrompt, ph) => {
+    // For Deep, send only essential scan info (not full JSON to avoid payload issues)
+    let scanSummary = null;
+    if (ph === "deep" && scanResult) {
+      scanSummary = [
+        `Ticker: ${scanResult.ticker} - ${scanResult.nome}`,
+        `Segmento: ${scanResult.segmento || ""}`,
+        `Veredito Scan: ${scanResult.veredito}`,
+        `Score: ${scanResult.score_total}/${scanResult.score_max}`,
+        `Tese: ${scanResult.tese || ""}`,
+        `Lacunas: ${(scanResult.lacunas_deep || []).join(" | ")}`,
+        `Riscos principais: ${(scanResult.riscos || []).slice(0,3).map(r => r.descricao).join(" | ")}`,
+      ].join("\n");
+    }
     const body = {
       assetType,
       phase: ph,
@@ -304,7 +317,7 @@ export default function NEXOApp() {
       riUrl: riUrl.trim(),
       extraCtx: extraCtx.trim(),
       userPrompt,
-      scanSummary: ph === "deep" && scanResult ? JSON.stringify(scanResult) : null,
+      scanSummary,
     };
     const res = await fetch("/api/analyze", {
       method: "POST",
