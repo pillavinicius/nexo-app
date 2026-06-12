@@ -60,7 +60,7 @@ export async function POST(req) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 2000,
+        max_tokens: 3000,
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }],
       }),
@@ -79,7 +79,7 @@ export async function POST(req) {
     try {
       return Response.json(JSON.parse(raw));
     } catch(err) {
-      return Response.json({ error: { message: "Raw: " + raw.slice(0, 200) } });
+      return Response.json({ error: { message: "JSON truncado. Tente novamente." } });
     }
 
   } catch (err) {
