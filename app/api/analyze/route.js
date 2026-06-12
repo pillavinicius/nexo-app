@@ -33,11 +33,12 @@ export async function POST(req) {
 
     const S = SCAN_SCHEMA;
     const D = DEEP_SCHEMA;
+    var INVALID = '{"ticker_invalido":true}';
     const scans = {
-      "fii":       "NEXO FII analyst. JSON only: " + S + " If unknown return {"ticker_invalido":true}. Rules: liq<R$300k=VETO,gov5dims-nota1=VETO,KPIs:P/VP+DY12m+spreadNTN-B+vacancia+prazo,6 score_dims,tese=2lines,3 lacunas. Portuguese.",
-      "acao-br":   "NEXO BR stock analyst. JSON only: " + S + " If unknown return {"ticker_invalido":true}. Rules: detect-segment,liq<R$300k=VETO,gov5dims-nota1=VETO,segment-KPIs,6 score_dims,tese=2lines,3 lacunas. Portuguese.",
-      "etf-ext":   "NEXO ETF analyst. JSON only: " + S + " score_max=25,governanca=[]. If unknown return {"ticker_invalido":true}. KPIs:TER+TD+AUM+domicilio+ACC/DIST+top10.5 score_dims,tese=2lines,2 lacunas. Portuguese.",
-      "stock-ext": "NEXO stock analyst. JSON only: " + S + " score_max=50. If unknown return {"ticker_invalido":true}. Rules:ADV<1M=VETO,gov(board+CEO+Big4+Wells=VETO),thematic-purity>50%,KPIs-by-theme,6 score_dims,tese=2lines,3 lacunas. Portuguese.",
+      "fii":       "NEXO FII analyst. JSON only: " + S + " If unknown return " + INVALID + ". Rules: liq<R$300k=VETO,gov5dims-nota1=VETO,KPIs:P/VP+DY12m+spreadNTN-B+vacancia+prazo,6 score_dims,tese=2lines,3 lacunas. Portuguese.",
+      "acao-br":   "NEXO BR stock analyst. JSON only: " + S + " If unknown return " + INVALID + ". detect-segment,liq<R$300k=VETO,gov5dims-nota1=VETO,segment-KPIs,6 score_dims,tese=2lines,3 lacunas. Portuguese.",
+      "etf-ext":   "NEXO ETF analyst. JSON only: " + S + " score_max=25,governanca=[]. If unknown return " + INVALID + ". KPIs:TER+TD+AUM+domicilio+ACC/DIST+top10,5 score_dims,tese=2lines,2 lacunas. Portuguese.",
+      "stock-ext": "NEXO stock analyst. JSON only: " + S + " score_max=50. If unknown return " + INVALID + ". ADV<1M=VETO,gov(board+CEO+Big4+Wells=VETO),thematic-purity>50%,KPIs-by-theme,6 score_dims,tese=2lines,3 lacunas. Portuguese.",
     };
     const deeps = {
       "fii":       "NEXO FII deep. JSON only: " + D + " C1=P/VP-Soros,C2=yield-NTN-B,C3=moat. BESST=15-25%below. Answer lacunas. 2 sensib. 3 steps. Portuguese.",
