@@ -1,5 +1,3 @@
-export const runtime = 'edge';
-
 export async function POST(req) {
   try {
     const { assetType, phase, messages } = await req.json();
@@ -14,12 +12,13 @@ export async function POST(req) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 4096,
-        system: `Motor NEXO - ${assetType} - ${phase}. Analise o ativo solicitado.`,
+        system: `Motor NEXO - ${assetType} - ${phase}. Analise o ativo solicitado de forma completa.`,
         messages: messages,
       }),
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    const data = JSON.parse(text);
     return Response.json(data);
 
   } catch (err) {
