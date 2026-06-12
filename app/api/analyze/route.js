@@ -1,14 +1,24 @@
 export const runtime = 'edge';
 
 export async function POST(req) {
+  let body;
+  
   try {
-    const body = await req.json();
+    const raw = await req.text();
+    body = JSON.parse(raw);
+  } catch (parseError) {
+    return Response.json(
+      { error: { message: `JSON Parse Error: ${parseError.message}` } },
+      { status: 400 }
+    );
+  }
 
+  try {
     const payload = {
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
-      system: body.system,
-      messages: body.messages,
+      system: body.system || '',
+      messages: body.messages || [],
     };
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -23,10 +33,9 @@ export async function POST(req) {
 
     const data = await response.json();
 
-    // Retorna erro detalhado se houver
     if (data.error) {
-      return Response.json({ 
-        error: { message: `API Error [${data.error.type}]: ${data.error.message}` }
+      return Response.json({
+        error: { message: `Anthropic [${data.error.type}]: ${data.error.message}` }
       });
     }
 
@@ -34,7 +43,7 @@ export async function POST(req) {
 
   } catch (error) {
     return Response.json(
-      { error: { message: `Route Error: ${error.message}` } },
+      { error: { message: `Fetch Error: ${error.message}` } },
       { status: 500 }
     );
   }
