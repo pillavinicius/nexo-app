@@ -336,10 +336,17 @@ export default function NEXOApp() {
   const canRun = selectedType && ticker.trim() && !loading;
   const canDeep = scanVerdict === "APROVADO" || scanVerdict === "WATCHLIST";
 
+  const newContentRef = useRef(null);
+
   useEffect(() => {
-    if (outputRef.current && messages.length > 0)
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
-  }, [messages, loading]);
+    if (!outputRef.current || messages.length === 0) return;
+    // Ao continuar análise, scrolla para o início do novo conteúdo, não o final
+    if (newContentRef.current) {
+      setTimeout(() => {
+        newContentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    }
+  }, [messages.length]);
 
   const handleSelectType = (id) => {
     setSelectedType(id);
@@ -392,11 +399,22 @@ export default function NEXOApp() {
 
     try {
       const text = await callAPI(newMessages, SCAN_PROMPTS[selectedType]);
+      // Detecta ticker inválido ou não encontrado
+      const invalidSignals = [
+        "não foi possível encontrar", "ticker inválido", "não existe",
+        "ativo não encontrado", "não encontrado na b3", "não reconhecido",
+        "código não encontrado", "não localizei", "não há dados",
+      ];
+      const lowerText = text.toLowerCase();
+      const isInvalid = invalidSignals.some(s => lowerText.includes(s));
+      if (isInvalid) {
+        setMessages(messages); // reverte — não adiciona mensagem inválida
+        setError(`Ticker "${ticker.trim().toUpperCase()}" não encontrado. Verifique se o código está correto (ex: ITUB4, VALE3, MXRF11) e tente novamente.`);
+        setLoading(false);
+        return;
+      }
       const verdict = extractVerdict(text);
-      // Remove a tag do output visível
-      const cleanText = text.replace(/VEREDITO_NEXO:\s*(APROVADO|VETADO|WATCHLIST)/g, "").trim();
-      const assistantMsg = { role: "assistant", content: text }; // mantém original no histórico
-      setMessages([...newMessages, assistantMsg]);
+      setMessages([...newMessages, { role: "assistant", content: text }]);
       setScanVerdict(verdict);
     } catch (err) {
       setError(err.message);
@@ -530,7 +548,14 @@ export default function NEXOApp() {
   };
 
     const lastAssistantIdx = [...messages].reverse().findIndex(m => m.role === "assistant");
-  const showContinue = !loading && lastAssistantIdx === 0 && messages.length > 0;
+  const lastAssistantMsg = messages.slice().reverse().find(m => m.role === "assistant");
+  const reportComplete = lastAssistantMsg && (
+    lastAssistantMsg.content.includes("PRÓXIMOS PASSOS") ||
+    lastAssistantMsg.content.includes("VEREDITO FINAL") ||
+    lastAssistantMsg.content.includes("ZONA DE ENTRADA BESST") ||
+    lastAssistantMsg.content.includes("SIZING SUGERIDO")
+  );
+  const showContinue = !loading && lastAssistantIdx === 0 && messages.length > 0 && !reportComplete;
 
   return (
     <>
@@ -1004,9 +1029,10 @@ export default function NEXOApp() {
             {messages.map((msg, i) => {
               const isDeepMsg = msg.role === "user" && msg.content.includes("DEEP NEXO");
               const isContMsg = msg.role === "user" && msg.content.includes("Continue a análise");
-              if (isContMsg) return null; // oculta mensagem de "continuar" no chat
+              if (isContMsg) return null;
+              const isLastAssistant = msg.role === "assistant" && i === messages.length - 1;
               return (
-                <div key={i} className="msg">
+                <div key={i} className="msg" ref={isLastAssistant ? newContentRef : null}>
                   <div className={`mrole ${isDeepMsg ? "deep" : msg.role}`}>
                     {msg.role === "user"
                       ? (isDeepMsg ? "◈ Deep NEXO" : "⬡ Scan")
