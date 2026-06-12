@@ -284,31 +284,29 @@ JSON:
 
     let rawText = data.content?.[0]?.text || "{}";
     
-    // Clean up common JSON issues from model output
-    // 1. Extract only the JSON object (remove any text before/after)
+    // Extract JSON object from response
     const jsonStart = rawText.indexOf("{");
     const jsonEnd = rawText.lastIndexOf("}");
     if (jsonStart !== -1 && jsonEnd !== -1) {
       rawText = rawText.slice(jsonStart, jsonEnd + 1);
     }
     
-    // 2. Fix common issues: trailing commas, unescaped quotes in strings
+    // Fix common JSON issues
     rawText = rawText
-      .replace(/,\s*}/g, "}")      // trailing comma before }
-      .replace(/,\s*]/g, "]")      // trailing comma before ]
-      .replace(/[ -]/g, " "); // control characters
+      .replace(/,[ \t\r\n]*}/g, "}")
+      .replace(/,[ \t\r\n]*]/g, "]")
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
     
-    // 3. Validate before returning
+    // Validate
     try {
-      JSON.parse(rawText); // just validate
+      const parsed = JSON.parse(rawText);
+      return Response.json(parsed);
     } catch(parseErr) {
-      // If still invalid, return a safe error JSON
+      // Last resort: return error with raw snippet for debugging
       return Response.json({ 
-        error: { message: "Erro ao processar resposta da análise. Tente novamente." }
+        error: { message: "JSON inválido na resposta. Tente novamente." }
       });
     }
-    
-    return new Response(rawText, { headers: { "Content-Type": "application/json" } });
 
   } catch (err) {
     return Response.json({ error: { message: err.message } }, { status: 500 });
