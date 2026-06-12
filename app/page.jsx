@@ -322,11 +322,22 @@ export default function NEXOApp() {
       userPrompt,
       scanSummary,
     };
-    const res = await fetch("/api/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 58000);
+    let res;
+    try {
+      res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch(fetchErr) {
+      if (fetchErr.name === "AbortError") throw new Error("Tempo limite excedido. Tente novamente.");
+      throw fetchErr;
+    } finally {
+      clearTimeout(timeoutId);
+    }
     const text = await res.text();
     
     // Try direct parse first
