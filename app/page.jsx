@@ -219,7 +219,7 @@ function DeepReport(props) {
 }
 
 export default function NEXOApp() {
-  var stateAssetType   = useState(null);
+  var stateAssetType   = useState("auto");  // always auto-detect
   var stateTickerV     = useState("");
   var stateRiUrl       = useState("");
   var stateExtraCtx    = useState("");
@@ -229,7 +229,7 @@ export default function NEXOApp() {
   var stateLoading     = useState(false);
   var stateError       = useState("");
 
-  var assetType    = stateAssetType[0];   var setAssetType    = stateAssetType[1];
+  var assetType    = "auto";
   var ticker       = stateTickerV[0];     var setTicker       = stateTickerV[1];
   var riUrl        = stateRiUrl[0];       var setRiUrl        = stateRiUrl[1];
   var extraCtx     = stateExtraCtx[0];    var setExtraCtx     = stateExtraCtx[1];
@@ -242,7 +242,7 @@ export default function NEXOApp() {
   var outputRef = useRef(null);
   var accent = assetType ? (ASSET_TYPES.find(function(g) { return g.types.some(function(t) { return t.id === assetType; }); }) || {color:"#C9A84C"}).color : "#C9A84C";
   var typeObj = ASSET_TYPES.flatMap(function(g) { return g.types; }).find(function(t) { return t.id === assetType; });
-  var canRun  = assetType && ticker.trim() && !loading;
+  var canRun  = ticker.trim().length >= 3 && !loading;
   var canDeep = scanResult && scanResult.veredito !== "VETADO" && !loading && phase !== "deep" && phase !== "deep_done";
 
   useEffect(function() {
@@ -406,34 +406,22 @@ export default function NEXOApp() {
           );
         })
       ),
-      React.createElement("div", { className:"slbl" },
-        React.createElement("div", { className:"snum"+(assetType?" on":"") }, "1"),
-        "Classe de Ativo",
-        React.createElement("div", { className:"sline" })
+      React.createElement("div", { style:{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14} },
+        [
+          {icon:"🏢",label:"FII"},
+          {icon:"📈",label:"Acao BR"},
+          {icon:"🌍",label:"ETF"},
+          {icon:"🔭",label:"Stock"},
+        ].map(function(t) {
+          return React.createElement("div", { key:t.label,
+            style:{fontFamily:"JetBrains Mono,monospace",fontSize:11,padding:"6px 12px",
+              border:"1px solid #2A2318",color:"#6A5C3A",display:"flex",alignItems:"center",gap:6,borderRadius:2}
+          },
+            React.createElement("span", {style:{fontSize:13}}, t.icon),
+            t.label
+          );
+        })
       ),
-      ASSET_TYPES.map(function(g) {
-        return React.createElement("div", { key:g.group, className:"type-grp" },
-          React.createElement("div", { className:"grp-lbl", style:{color:g.color} },
-            g.group === "BR" ? "BR · B3" : "Exterior · Global"
-          ),
-          React.createElement("div", { className:"type-btns" },
-            g.types.map(function(t) {
-              var sel = assetType === t.id;
-              return React.createElement("button", {
-                key:t.id, className:"tbt",
-                style: sel ? {borderColor:g.color,color:g.color,background:"rgba(201,168,76,0.08)"} : {},
-                onClick:function() { setAssetType(t.id); reset(); setTicker(""); }
-              },
-                React.createElement("span", { style:{fontSize:15} }, t.icon),
-                React.createElement("span", null,
-                  React.createElement("div", null, t.label),
-                  React.createElement("div", { className:"tbt-desc" }, t.desc)
-                )
-              );
-            })
-          )
-        );
-      }),
       React.createElement("div", { className:"slbl" },
         React.createElement("div", { className:"snum"+(ticker.trim()?" on":"") }, "2"),
         "Ticker",
@@ -444,12 +432,12 @@ export default function NEXOApp() {
         React.createElement("input", {
           className:"finp",
           value:ticker,
-          onChange:function(e) { setTicker(e.target.value); if(scanResult||deepResult) reset(); },
-          placeholder: typeObj ? ("Ex: " + typeObj.ex.split(",")[0].trim()) : "Selecione a classe acima",
+          onChange:function(e) { setTicker(e.target.value.toUpperCase()); if(scanResult||deepResult) reset(); },
+          placeholder: "Ex: KNSC11, VALE3, VWCE, NVDA",
           disabled:!assetType,
           maxLength:12
         }),
-        assetType && React.createElement("div", { className:"fex" }, "Ex: " + (typeObj ? typeObj.ex : ""))
+        React.createElement("div", { className:"fex" }, "FIIs, Acoes BR, ETFs ou Stocks internacionais - deteccao automatica")
       ),
       React.createElement("div", { className:"slbl" },
         React.createElement("div", { className:"snum"+(riUrl.trim()?" on":"") }, "3"),
