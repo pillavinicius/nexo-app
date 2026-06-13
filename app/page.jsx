@@ -67,6 +67,7 @@ function Badge({ text }) {
         color: c[0],
         background: c[1],
         display: "inline-block",
+        whiteSpace: "nowrap",
       }}
     >
       {value}
@@ -94,16 +95,16 @@ function ScoreBar({ score, max = 5 }) {
 
 function Sec({ title, children }) {
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: 18 }}>
       <div
         style={{
           fontFamily: "JetBrains Mono, monospace",
           fontSize: 9,
           color: "#C9A84C",
-          letterSpacing: 2,
+          letterSpacing: 3,
           textTransform: "uppercase",
-          marginBottom: 8,
-          paddingBottom: 4,
+          marginBottom: 10,
+          paddingBottom: 6,
           borderBottom: "1px solid #2A2318",
         }}
       >
@@ -116,18 +117,49 @@ function Sec({ title, children }) {
 
 function Row({ label, right, children }) {
   return (
-    <div style={{ padding: "5px 0", borderBottom: "1px solid #1E1A0E" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-        <span style={{ fontSize: 12, color: "#D4C9A8", flex: 1 }}>{asText(label)}</span>
-        <span style={{ flexShrink: 0 }}>{right}</span>
+    <div style={{ padding: "7px 0", borderBottom: "1px solid #1E1A0E" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+        <span style={{ fontSize: 12, color: "#D4C9A8", flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+          {asText(label)}
+        </span>
+
+        <span
+          style={{
+            flexShrink: 0,
+            maxWidth: "55%",
+            textAlign: "right",
+            overflowWrap: "anywhere",
+            fontSize: 12,
+            color: "#C9A84C",
+          }}
+        >
+          {right}
+        </span>
       </div>
       {children}
     </div>
   );
 }
 
+function DetailBlock({ title, value, note }) {
+  return (
+    <div
+      style={{
+        padding: "10px 0",
+        borderBottom: "1px solid #1E1A0E",
+        overflowWrap: "anywhere",
+        wordBreak: "normal",
+      }}
+    >
+      <div style={{ fontSize: 13, color: "#E8D5A3", marginBottom: 4 }}>{asText(title)}</div>
+      {value && <div style={{ fontSize: 12, color: "#A89060", lineHeight: 1.6 }}>{asText(value)}</div>}
+      {note && <div style={{ fontSize: 11, color: "#6A5C3A", lineHeight: 1.5, marginTop: 3 }}>{asText(note)}</div>}
+    </div>
+  );
+}
+
 function Note({ children, col }) {
-  return <div style={{ fontSize: 11, color: col || "#8A7A58", marginTop: 2, lineHeight: 1.5 }}>{children}</div>;
+  return <div style={{ fontSize: 11, color: col || "#8A7A58", marginTop: 3, lineHeight: 1.5 }}>{children}</div>;
 }
 
 function ScanReport({ r }) {
@@ -140,10 +172,10 @@ function ScanReport({ r }) {
   const lacunas = asArray(r?.lacunas_deep);
 
   return (
-    <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8" }}>
+    <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8", overflowX: "hidden" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, gap: 8 }}>
-        <div>
-          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 16, fontWeight: 700, color: "#E8D5A3" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 16, fontWeight: 700, color: "#E8D5A3", overflowWrap: "anywhere" }}>
             {asText(r?.ticker)} <span style={{ fontSize: 12, color: "#8A7A58", fontWeight: 400 }}>· {asText(r?.nome)}</span>
           </div>
           {r?.segmento && <div style={{ fontSize: 11, color: "#6A5C3A" }}>{asText(r.segmento)}</div>}
@@ -207,9 +239,7 @@ function ScanReport({ r }) {
       {catalisadores.length > 0 && (
         <Sec title="Catalisadores">
           {catalisadores.map((c, i) => (
-            <Row key={i} label={c?.descricao} right={<span style={{ fontSize: 11, color: "#6A5C3A" }}>{asText(c?.prazo)}</span>}>
-              {c?.impacto && <Note>{asText(c.impacto)}</Note>}
-            </Row>
+            <DetailBlock key={i} title={c?.descricao} value={c?.impacto} note={c?.prazo} />
           ))}
         </Sec>
       )}
@@ -227,9 +257,9 @@ function ScanReport({ r }) {
       {lacunas.length > 0 && (
         <Sec title="Lacunas para o Deep">
           {lacunas.map((l, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", borderBottom: "1px solid #1E1A0E" }}>
+            <div key={i} style={{ display: "flex", gap: 8, padding: "5px 0", borderBottom: "1px solid #1E1A0E" }}>
               <span style={{ color: "#C9A84C", opacity: 0.6 }}>◈</span>
-              <span style={{ fontSize: 12, color: "#A89060" }}>{asText(l)}</span>
+              <span style={{ fontSize: 12, color: "#A89060", overflowWrap: "anywhere" }}>{asText(l)}</span>
             </div>
           ))}
         </Sec>
@@ -247,9 +277,9 @@ function DeepReport({ r }) {
   const steps = asArray(r?.passos || r?.proximos_passos);
 
   return (
-    <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8" }}>
+    <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8", overflowX: "hidden" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, gap: 8 }}>
-        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 14, fontWeight: 700, color: "#E8D5A3" }}>
+        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 14, fontWeight: 700, color: "#E8D5A3", minWidth: 0 }}>
           {asText(r?.ticker)} · Deep NEXO
         </div>
         {r?.veredito_final && <Badge text={r.veredito_final} />}
@@ -258,10 +288,7 @@ function DeepReport({ r }) {
       {lacs.length > 0 && (
         <Sec title="Respostas as Lacunas">
           {lacs.map((l, i) => (
-            <div key={i} style={{ padding: "6px 0", borderBottom: "1px solid #1E1A0E" }}>
-              <div style={{ fontSize: 11, color: "#C9A84C" }}>◈ {asText(l?.q || l?.lacuna)}</div>
-              <div style={{ fontSize: 12, color: "#A89060" }}>{asText(l?.r || l?.resposta || l)}</div>
-            </div>
+            <DetailBlock key={i} title={l?.q || l?.lacuna || "Lacuna"} value={l?.r || l?.resposta || l} />
           ))}
         </Sec>
       )}
@@ -269,32 +296,30 @@ function DeepReport({ r }) {
       {precs.length > 0 && (
         <Sec title="Modelo de Preco - 3 Camadas">
           {precs.map((c, i) => (
-            <Row
+            <DetailBlock
               key={i}
-              label={c?.c || c?.camada || "Camada"}
-              right={<span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "#C9A84C" }}>{asText(c?.vj || c?.valor_justo)}</span>}
-            >
-              {(c?.met || c?.metodologia) && <Note>{asText(c?.met || c?.metodologia)}</Note>}
-              {(c?.prem || c?.premissas) && <Note col="#6A5C3A">{asText(c?.prem || c?.premissas)}</Note>}
-            </Row>
+              title={(c?.c || c?.camada || "Camada") + (c?.vj || c?.valor_justo ? " · " + asText(c?.vj || c?.valor_justo) : "")}
+              value={c?.met || c?.metodologia}
+              note={c?.prem || c?.premissas}
+            />
           ))}
         </Sec>
       )}
 
       {(r?.zona || r?.zona_convergida) && (
         <Sec title="Zona Convergida · BESST">
-          <Note col="#E8D5A3">{asText(r?.zona || r?.zona_convergida)}</Note>
-          {(r?.besst || r?.zona_besst) && <Note>Entrada BESST: {asText(r?.besst || r?.zona_besst)}</Note>}
-          {(r?.desconto || r?.desconto_atual) && <Note>Desconto atual: {asText(r?.desconto || r?.desconto_atual)}</Note>}
+          <DetailBlock
+            title={r?.zona || r?.zona_convergida}
+            value={r?.besst || r?.zona_besst ? "Entrada BESST: " + asText(r?.besst || r?.zona_besst) : ""}
+            note={r?.desconto || r?.desconto_atual ? "Desconto atual: " + asText(r?.desconto || r?.desconto_atual) : ""}
+          />
         </Sec>
       )}
 
       {macs.length > 0 && (
         <Sec title="Sensibilidade Macro">
           {macs.map((s, i) => (
-            <Row key={i} label={s?.s || s?.cenario} right={<span style={{ fontSize: 12, color: "#A89060" }}>{asText(s?.i || s?.impacto)}</span>}>
-              {s?.detalhe && <Note>{asText(s.detalhe)}</Note>}
-            </Row>
+            <DetailBlock key={i} title={s?.s || s?.cenario} value={s?.i || s?.impacto} note={s?.detalhe} />
           ))}
         </Sec>
       )}
@@ -302,9 +327,7 @@ function DeepReport({ r }) {
       {cats.length > 0 && (
         <Sec title="Catalisadores">
           {cats.map((c, i) => (
-            <Row key={i} label={c?.d || c?.descricao} right={<span style={{ fontSize: 11, color: "#6A5C3A" }}>{asText(c?.p || c?.prazo)}</span>}>
-              {c?.impacto && <Note>{asText(c.impacto)}</Note>}
-            </Row>
+            <DetailBlock key={i} title={c?.d || c?.descricao} value={c?.impacto} note={c?.p || c?.prazo} />
           ))}
         </Sec>
       )}
@@ -312,9 +335,12 @@ function DeepReport({ r }) {
       {risks.length > 0 && (
         <Sec title="Riscos">
           {risks.map((risco, i) => (
-            <Row key={i} label={risco?.d || risco?.descricao} right={<Badge text={risco?.sev || risco?.severidade || "MEDIO"} />}>
-              {(risco?.g || risco?.gatilho) && <Note col="#C87070">Gatilho: {asText(risco?.g || risco?.gatilho)}</Note>}
-            </Row>
+            <DetailBlock
+              key={i}
+              title={risco?.d || risco?.descricao}
+              value={"Severidade: " + asText(risco?.sev || risco?.severidade || "MEDIO")}
+              note={risco?.g || risco?.gatilho ? "Gatilho: " + asText(risco?.g || risco?.gatilho) : ""}
+            />
           ))}
         </Sec>
       )}
@@ -322,9 +348,9 @@ function DeepReport({ r }) {
       {steps.length > 0 && (
         <Sec title="Proximos Passos">
           {steps.map((p, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", borderBottom: "1px solid #1E1A0E" }}>
+            <div key={i} style={{ display: "flex", gap: 8, padding: "5px 0", borderBottom: "1px solid #1E1A0E" }}>
               <span style={{ color: "#C9A84C", opacity: 0.5 }}>▸</span>
-              <span style={{ fontSize: 12, color: "#A89060" }}>{asText(p)}</span>
+              <span style={{ fontSize: 12, color: "#A89060", overflowWrap: "anywhere" }}>{asText(p)}</span>
             </div>
           ))}
         </Sec>
@@ -332,7 +358,6 @@ function DeepReport({ r }) {
     </div>
   );
 }
-
 export default function NEXOApp() {
   const [scanResult, setScanResult] = useState(null);
   const [deepResult, setDeepResult] = useState(null);
@@ -346,11 +371,17 @@ export default function NEXOApp() {
   const [followUrl, setFollowUrl] = useState("");
   const [followRes, setFollowRes] = useState("");
   const [followLoad, setFollowLoad] = useState(false);
+  const [ended, setEnded] = useState(false);
 
   const outRef = useRef(null);
 
   const canRun = ticker.trim().length >= 3 && !loading;
-  const canDeep = scanResult && scanResult.veredito !== "VETADO" && !loading && phase !== "deep" && phase !== "deep_done";
+  const canDeep =
+    scanResult &&
+    scanResult.veredito !== "VETADO" &&
+    !loading &&
+    phase !== "deep" &&
+    phase !== "deep_done";
 
   useEffect(() => {
     if (outRef.current && (scanResult || deepResult || error)) {
@@ -366,9 +397,10 @@ export default function NEXOApp() {
     setFollowQ("");
     setFollowUrl("");
     setFollowRes("");
+    setEnded(false);
   }
 
-  async function callAPI(ph) {
+  async function callAPI(ph, overrideCtx = "") {
     const t = ticker.trim().toUpperCase();
     const tp = detectType(t);
 
@@ -391,7 +423,7 @@ export default function NEXOApp() {
         assetType: tp,
         ticker: t,
         scanSummary: summary,
-        extraCtx: extraCtx ? extraCtx.trim() : "",
+        extraCtx: overrideCtx || (extraCtx ? extraCtx.trim() : ""),
       }),
     });
 
@@ -455,6 +487,7 @@ export default function NEXOApp() {
       const r = await callAPI("deep");
       setDeepResult(r);
       setPhase("deep_done");
+      setEnded(false);
     } catch (e) {
       setError(e?.message || "Erro desconhecido");
       setPhase("scan_done");
@@ -468,51 +501,22 @@ export default function NEXOApp() {
 
     setFollowLoad(true);
     setFollowRes("");
+    setEnded(false);
 
     try {
-      const t = ticker.trim().toUpperCase();
-      const tp = detectType(t);
-
       const contexto =
-        "Pergunta complementar: " +
-        followQ.trim() +
-        (followUrl.trim() ? "\nLink adicional: " + followUrl.trim() : "") +
-        "\n\nContexto do Deep anterior: " +
+        "Aprofundamento adicional do Deep NEXO.\n" +
+        (followUrl.trim() ? "Link ou fonte adicional: " + followUrl.trim() + "\n" : "") +
+        (followQ.trim() ? "Pergunta/foco do usuario: " + followQ.trim() + "\n" : "") +
+        "\nUse o Deep anterior como contexto, mas responda de forma objetiva e complementar.\n" +
+        "Deep anterior:\n" +
         JSON.stringify(deepResult || {});
 
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phase: "deep",
-          assetType: tp,
-          ticker: t,
-          scanSummary: JSON.stringify(scanResult || {}),
-          extraCtx: contexto,
-        }),
-      });
+      const r = await callAPI("deep", contexto);
 
-      const txt = await res.text();
-
-      let data;
-
-      try {
-        data = JSON.parse(txt);
-      } catch {
-        data = { resposta: txt };
-      }
-
-      if (data?.error) {
-        throw new Error(asText(data.error.message || data.error));
-      }
-
-      if (typeof data === "string") {
-        setFollowRes(data);
-      } else if (data?.resposta) {
-        setFollowRes(asText(data.resposta));
-      } else {
-        setFollowRes(JSON.stringify(data, null, 2));
-      }
+      setFollowRes(JSON.stringify(r, null, 2));
+      setDeepResult(r);
+      setPhase("deep_done");
     } catch (e) {
       setFollowRes("Erro: " + (e?.message || "erro desconhecido"));
     } finally {
@@ -520,11 +524,18 @@ export default function NEXOApp() {
     }
   }
 
+  function handleEndDeep() {
+    setEnded(true);
+    setFollowQ("");
+    setFollowUrl("");
+    setFollowRes("");
+  }
+
   const CSS = `
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     body{background:#131008;color:#D4C9A8;font-family:'Inter',sans-serif;min-height:100vh}
-    .app{max-width:960px;margin:0 auto;padding:0 16px 48px}
+    .app{max-width:960px;margin:0 auto;padding:0 16px 48px;overflow-x:hidden}
     .hdr{border-bottom:1px solid #2A2318;padding:10px 0 8px;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
     .logo-box{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:#E8D5A3;letter-spacing:3px}
     .logo-s{font-family:'JetBrains Mono',monospace;font-size:9px;color:#4A3E28;letter-spacing:2.5px;text-transform:uppercase}
@@ -538,35 +549,44 @@ export default function NEXOApp() {
     .quad.N .q-l{color:#C9A84C}.quad.E .q-l{color:#D4D4E0}.quad.X .q-l{color:#A8A8B8}.quad.O .q-l{color:#E8D5A3}
     .q-n{font-size:8px;color:#6A5C3A;letter-spacing:1px;text-transform:uppercase}
     .types{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-    .slbl{font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#4A3E28;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:8px}
-    .snum{width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;border:1px solid #4A3E28;color:#4A3E28;flex-shrink:0}
-    .snum.on{border-color:#C9A84C;color:#C9A84C}
-    .sline{flex:1;height:1px;background:#2A2318}
+    .type-card{font-family:'JetBrains Mono',monospace;font-size:11px;padding:6px 12px;border:1px solid #2A2318;color:#4A3E28;display:flex;align-items:center;gap:6px;border-radius:2px}
     .field{border:1px solid #2A2318;padding:10px 14px 8px;margin-bottom:8px}
     .flbl{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
     .finp{width:100%;background:transparent;border:none;outline:none;font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#E8D5A3;letter-spacing:1.5px;text-transform:uppercase}
     .finp::placeholder{color:#2A2318;font-weight:300;font-size:13px;letter-spacing:0;text-transform:none}
     .finp-sm{width:100%;background:transparent;border:none;outline:none;font-family:'JetBrains Mono',monospace;font-size:12px;color:#A89060}
     .finp-sm::placeholder{color:#2A2318}
-    .ftxt{width:100%;background:transparent;border:none;outline:none;resize:none;font-family:'JetBrains Mono',monospace;font-size:11px;color:#6A5C3A;line-height:1.5;max-height:80px;overflow-y:auto}
+    .ftxt{width:100%;background:transparent;border:none;outline:none;resize:none;font-family:'JetBrains Mono',monospace;font-size:11px;color:#A89060;line-height:1.5;max-height:100px;overflow-y:auto}
     .ftxt::placeholder{color:#2A2318}
     .fex{font-family:'JetBrains Mono',monospace;font-size:7.5px;color:#3A3020;margin-top:4px}
     .actions{display:flex;gap:7px;margin-bottom:10px}
     .btn-scan{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:linear-gradient(135deg,#C9A84C,#E8D5A3);color:#131008;border:none;cursor:pointer;border-radius:2px;flex:1}
     .btn-deep{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:transparent;border:1px solid #A8A8B8;color:#A8A8B8;cursor:pointer;border-radius:2px;flex:1}
     .btn-cl{font-family:'JetBrains Mono',monospace;font-size:9px;color:#6A5C3A;background:transparent;border:1px solid #2A2318;padding:9px 13px;cursor:pointer;letter-spacing:1px;text-transform:uppercase;border-radius:2px}
-    .output{border:1px solid #2A2318;padding:20px 16px;margin-bottom:8px;min-height:120px;position:relative}
+    .btn-end{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 14px;background:transparent;border:1px solid #6A5C3A;color:#6A5C3A;cursor:pointer;border-radius:2px;flex:1}
+    .output{border:1px solid #2A2318;padding:20px 16px;margin-bottom:8px;min-height:120px;position:relative;overflow-x:hidden}
     .out-lbl{position:absolute;top:-1px;left:12px;font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;background:#131008;padding:0 6px;letter-spacing:1.5px;text-transform:uppercase}
     .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:140px;gap:8px;opacity:.2}
     .empty-g{font-family:'JetBrains Mono',monospace;font-size:26px;color:#C9A84C}
     .empty-t{font-family:'JetBrains Mono',monospace;font-size:9px;color:#6A5C3A;letter-spacing:2px;text-transform:uppercase}
     .loading-r{display:flex;align-items:center;gap:10px;padding:20px 0;font-family:'JetBrains Mono',monospace;font-size:10px;color:#6A5C3A;letter-spacing:1px;justify-content:center}
-    .err-box{font-family:'JetBrains Mono',monospace;font-size:10px;color:#C87070;background:rgba(200,112,112,.06);border:1px solid rgba(200,112,112,.2);border-left:2px solid #C87070;padding:9px 12px;margin:8px 0;white-space:pre-wrap}
+    .err-box{font-family:'JetBrains Mono',monospace;font-size:10px;color:#C87070;background:rgba(200,112,112,.06);border:1px solid rgba(200,112,112,.2);border-left:2px solid #C87070;padding:9px 12px;margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}
     .deep-unlock{margin-top:16px;padding:12px 14px;border:1px solid #A8A8B8;background:rgba(168,168,184,.05);display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .follow-box{margin-top:20px;border-top:1px solid #2A2318;padding-top:16px}
+    .follow-title{font-family:'JetBrains Mono',monospace;font-size:9px;color:#C9A84C;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
+    .follow-actions{display:flex;gap:8px;margin-top:10px}
+    .follow-result{margin-top:12px;padding:12px 14px;background:rgba(201,168,76,.05);border:1px solid #2A2318;font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;color:#A89060}
+    .ended-box{margin-top:16px;padding:12px 14px;border:1px solid #2A2318;background:rgba(201,168,76,.04);font-family:'JetBrains Mono',monospace;font-size:10px;color:#C9A84C;letter-spacing:1px;text-transform:uppercase}
     .footer{display:flex;gap:12px;flex-wrap:wrap;padding:10px 0 0;border-top:1px solid #1E1A0E;margin-top:4px}
     .fc{font-family:'JetBrains Mono',monospace;font-size:7.5px;color:#3A3020;letter-spacing:.8px;display:flex;align-items:center;gap:4px}
     .fd{width:4px;height:4px;border-radius:50%;flex-shrink:0}
-    @media(max-width:600px){.quads{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:600px){
+      .quads{grid-template-columns:repeat(2,1fr)}
+      .actions{flex-direction:column}
+      .follow-actions{flex-direction:column}
+      .deep-unlock{flex-direction:column;align-items:stretch}
+      .btn-deep,.btn-scan,.btn-cl,.btn-end{width:100%}
+    }
   `;
 
   return (
@@ -598,6 +618,20 @@ export default function NEXOApp() {
           ))}
         </div>
 
+        <div className="types">
+          {[
+            { i: "🏢", l: "FII" },
+            { i: "📈", l: "Acao BR" },
+            { i: "🌍", l: "ETF" },
+            { i: "🔭", l: "Stock" },
+          ].map((t) => (
+            <div key={t.l} className="type-card">
+              <span style={{ fontSize: 13 }}>{t.i}</span>
+              {t.l}
+            </div>
+          ))}
+        </div>
+
         <div className="field">
           <div className="flbl">Ticker</div>
           <input
@@ -613,17 +647,28 @@ export default function NEXOApp() {
               if (e.key === "Enter") handleScan();
             }}
           />
-          <div className="fex">FIIs · Acoes BR · ETFs · Stocks</div>
+          <div className="fex">FIIs · Acoes BR · ETFs · Stocks — tipo detectado automaticamente</div>
         </div>
 
         <div className="field">
           <div className="flbl">Link RI / Dados Oficiais</div>
-          <input className="finp-sm" value={riUrl} placeholder="https://ri.empresa.com.br..." onChange={(e) => setRiUrl(e.target.value)} />
+          <input
+            className="finp-sm"
+            value={riUrl}
+            placeholder="https://ri.empresa.com.br..."
+            onChange={(e) => setRiUrl(e.target.value)}
+          />
         </div>
 
         <div className="field">
           <div className="flbl">Contexto adicional</div>
-          <textarea className="ftxt" rows={2} value={extraCtx} placeholder="Foco em KPI especifico, tese, duvida pontual..." onChange={(e) => setExtraCtx(e.target.value)} />
+          <textarea
+            className="ftxt"
+            rows={2}
+            value={extraCtx}
+            placeholder="Foco em KPI especifico, tese, duvida pontual..."
+            onChange={(e) => setExtraCtx(e.target.value)}
+          />
         </div>
 
         <div className="actions">
@@ -633,11 +678,21 @@ export default function NEXOApp() {
             </button>
           )}
 
-          <button className="btn-scan" onClick={handleScan} disabled={!canRun} style={!canRun ? { background: "#2A2318", color: "#4A3E28", cursor: "not-allowed" } : {}}>
+          <button
+            className="btn-scan"
+            onClick={handleScan}
+            disabled={!canRun}
+            style={!canRun ? { background: "#2A2318", color: "#4A3E28", cursor: "not-allowed" } : {}}
+          >
             {loading && phase === "scan" ? "Analisando..." : "Executar Scan →"}
           </button>
 
-          <button className="btn-deep" onClick={handleDeep} disabled={!canDeep} style={!canDeep ? { opacity: 0.25, cursor: "not-allowed" } : {}}>
+          <button
+            className="btn-deep"
+            onClick={handleDeep}
+            disabled={!canDeep}
+            style={!canDeep ? { opacity: 0.25, cursor: "not-allowed" } : {}}
+          >
             Deep NEXO
           </button>
         </div>
@@ -652,7 +707,11 @@ export default function NEXOApp() {
             </div>
           )}
 
-          {loading && <div className="loading-r">{phase === "deep" ? "Processando Deep NEXO..." : "Processando Scan NEXO..."}</div>}
+          {loading && (
+            <div className="loading-r">
+              {phase === "deep" ? "Processando Deep NEXO..." : "Processando Scan NEXO..."}
+            </div>
+          )}
 
           {error && <div className="err-box">Erro: {error}</div>}
 
@@ -666,19 +725,82 @@ export default function NEXOApp() {
                 <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#A8A8B8", letterSpacing: 1 }}>
                   Scan {asText(scanResult.veredito)} — Deep NEXO disponivel
                 </div>
+                <div style={{ fontSize: 8, color: "#4A3E28", marginTop: 2 }}>Continua das lacunas identificadas</div>
               </div>
               <button className="btn-deep" style={{ flex: "none", padding: "7px 14px" }} onClick={handleDeep}>
                 Iniciar Deep →
               </button>
             </div>
           )}
+
+          {deepResult && !ended && (
+            <div className="follow-box">
+              <div className="follow-title">Aprofundamento Pos-Deep</div>
+
+              <div className="field">
+                <div className="flbl">Link adicional opcional</div>
+                <input
+                  className="finp-sm"
+                  value={followUrl}
+                  placeholder="Cole aqui link de fato relevante, documento RI, release, página oficial..."
+                  onChange={(e) => setFollowUrl(e.target.value)}
+                />
+              </div>
+
+              <div className="field">
+                <div className="flbl">Pergunta ou foco opcional</div>
+                <textarea
+                  className="ftxt"
+                  rows={3}
+                  value={followQ}
+                  placeholder="Ex: aprofundar impacto da Selic, risco fiscal, guidance, dívida, payout..."
+                  onChange={(e) => setFollowQ(e.target.value)}
+                />
+              </div>
+
+              <div className="follow-actions">
+                <button
+                  className="btn-deep"
+                  onClick={handleFollowUp}
+                  disabled={followLoad || (!followQ.trim() && !followUrl.trim())}
+                  style={
+                    followLoad || (!followQ.trim() && !followUrl.trim())
+                      ? { opacity: 0.3, cursor: "not-allowed" }
+                      : {}
+                  }
+                >
+                  {followLoad ? "Aprofundando..." : "Aprofundar Deep →"}
+                </button>
+
+                <button className="btn-end" onClick={handleEndDeep}>
+                  Encerrar
+                </button>
+              </div>
+
+              {followRes && <div className="follow-result">{followRes}</div>}
+            </div>
+          )}
+
+          {deepResult && ended && (
+            <div className="ended-box">
+              Deep encerrado · análise concluída
+            </div>
+          )}
         </div>
 
         <div className="footer">
-          <div className="fc"><div className="fd" style={{ background: "#C9A84C" }} />Liq. min. R$300k BR</div>
-          <div className="fc"><div className="fd" style={{ background: "#A8A8B8" }} />ADV min. US$1M Ext</div>
-          <div className="fc"><div className="fd" style={{ background: "#C87070" }} />0B: nota 1=veto</div>
-          <div className="fc"><div className="fd" style={{ background: "#E8D5A3" }} />BESST: 15-25% abaixo</div>
+          {[
+            { c: "#C9A84C", t: "Liq. min. R$300k BR" },
+            { c: "#A8A8B8", t: "ADV min. US$1M Ext" },
+            { c: "#C87070", t: "0B: nota 1=veto" },
+            { c: "#E8D5A3", t: "BESST: 15-25% abaixo" },
+            { c: "#6A5C3A", t: "Beta v3.0" },
+          ].map((c, i) => (
+            <div key={i} className="fc">
+              <div className="fd" style={{ background: c.c }} />
+              {c.t}
+            </div>
+          ))}
         </div>
       </div>
     </>
