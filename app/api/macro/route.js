@@ -18,6 +18,15 @@ function daysAgoBR(days) {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+function yyyymmdd(date) {
+  const d = new Date(date);
+  return (
+    d.getFullYear() +
+    String(d.getMonth() + 1).padStart(2, "0") +
+    String(d.getDate()).padStart(2, "0")
+  );
+}
+
 function mmddyyyy(date) {
   const d = new Date(date);
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -59,6 +68,7 @@ async function getSGS(code, label, days = 45) {
       date: last?.data || null,
       source: "BCB SGS",
       ok: !!last,
+      mode: "automatic",
     };
   } catch (e) {
     return {
@@ -67,6 +77,7 @@ async function getSGS(code, label, days = 45) {
       date: null,
       source: "BCB SGS",
       ok: false,
+      mode: "manual_fallback",
       error: e.message,
     };
   }
@@ -96,6 +107,7 @@ async function getPTAXUSD() {
       date: last?.dataHoraCotacao || null,
       source: "BCB PTAX",
       ok: !!last,
+      mode: "automatic",
     };
   } catch (e) {
     return {
@@ -104,34 +116,30 @@ async function getPTAXUSD() {
       date: null,
       source: "BCB PTAX",
       ok: false,
+      mode: "manual_fallback",
       error: e.message,
     };
   }
 }
 
 async function getStooqDaily(symbols, label) {
+  const today = new Date();
+  const past = new Date();
+  past.setDate(today.getDate() - 20);
+
+  const d1 = yyyymmdd(past);
+  const d2 = yyyymmdd(today);
+
   for (const symbol of symbols) {
     try {
-      const today = new Date();
-      const past = new Date();
-      past.setDate(today.getDate() - 15);
-
-      const d1 =
-        past.getFullYear() +
-        String(past.getMonth() + 1).padStart(2, "0") +
-        String(past.getDate()).padStart(2, "0");
-
-      const d2 =
-        today.getFullYear() +
-        String(today.getMonth() + 1).padStart(2, "0") +
-        String(today.getDate()).padStart(2, "0");
-
       const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&d1=${d1}&d2=${d2}&i=d`;
 
       const csv = await fetchText(url);
-      const lines = csv.trim().split("\n");
+      const lines = csv.trim().split("\n").filter(Boolean);
 
-      if (lines.length < 2 || csv.toLowerCase().includes("no data")) continue;
+      if (lines.length < 2 || csv.toLowerCase().includes("no data")) {
+        continue;
+      }
 
       const last = lines[lines.length - 1].split(",");
       const date = last[0];
@@ -146,6 +154,7 @@ async function getStooqDaily(symbols, label) {
         date,
         source: "Stooq",
         ok: true,
+        mode: "automatic",
       };
     } catch (_) {}
   }
@@ -157,6 +166,7 @@ async function getStooqDaily(symbols, label) {
     date: null,
     source: "Stooq",
     ok: false,
+    mode: "manual_fallback",
     error: "Não encontrado nos símbolos testados",
   };
 }
@@ -177,6 +187,7 @@ async function getFredCSV(series, label) {
           date,
           source: "FRED",
           ok: true,
+          mode: "automatic",
         };
       }
     }
@@ -189,6 +200,7 @@ async function getFredCSV(series, label) {
       date: null,
       source: "FRED",
       ok: false,
+      mode: "manual_fallback",
       error: e.message,
     };
   }
@@ -207,31 +219,46 @@ export async function GET() {
       ifix,
       fedFunds,
     ] = await Promise.all([
-      getSGS(432, "Selic Meta % a.a.", 120),
-      getSGS(11, "Selic diária", 45),
-      getSGS(12, "CDI diário", 45),
-      getSGS(433, "IPCA mensal", 120),
+      getSGS(432, "Selic Meta % a.a.", 180),
+      getSGS(11, "Selic diária", 60),
+      getSGS(12, "CDI diário", 60),
+      getSGS(433, "IPCA mensal", 180),
       getPTAXUSD(),
-      getStooqDaily(["^spx"], "S&P 500 pontos"),
-      getStooqDaily(["^bvsp", "^ibov", "bvsp", "ibov"], "Ibovespa pontos"),
-      getStooqDaily(["ifix", "^ifix"], "IFIX pontos"),
+
+      getStooqDaily(
+        ["^spx", "spy.us", "voo.us", "ivv.us"],
+        "S&P 500 pontos"
+      ),
+
+      getStooqDaily(
+        ["^bvp", "^bvsp", "bvsp", "ibov"],
+        "Ibovespa pontos"
+      ),
+
+      getStooqDaily(
+        ["ifix", "^ifix", "xfix11.sa"],
+        "IFIX pontos"
+      ),
+
       getFredCSV("FEDFUNDS", "Fed Funds Rate"),
     ]);
 
     return Response.json({
       ok: true,
       updated_at: new Date().toISOString(),
+
       automatic: {
         selic_meta: selicMeta,
         selic_diaria: selicDiaria,
         cdi_diario: cdi,
         ipca_mensal: ipca,
         usd_ptax: usd,
+        fed_funds: fedFunds,
         sp500_pontos: sp500,
         ibovespa_pontos: ibov,
         ifix_pontos: ifix,
-        fed_funds: fedFunds,
       },
+
       manual_required: {
         pl_ibovespa: "manual",
         pl_sp500: "manual",
@@ -239,6 +266,10 @@ export async function GET() {
         top10_sp500: "manual/futuro",
         juros_futuro_brasil: "manual/futuro",
       },
+
+      priority_rule:
+        "Se o usuário informar valor manual, usar o manual. Se manual vazio, usar automático. Se automático indisponível, marcar como não informado.",
+
       note:
         "Dados gratuitos coletados de fontes públicas. P/L, composição top 10 e juros futuros permanecem manuais por enquanto.",
     });
