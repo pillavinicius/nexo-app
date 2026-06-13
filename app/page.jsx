@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 
-function detectType(t: string) {
+function detectType(t) {
   const tk = (t || "").toUpperCase().trim();
 
   if (!tk) return "fii";
@@ -18,11 +18,11 @@ function detectType(t: string) {
   return "acao-br";
 }
 
-function asArray(v: any) {
+function asArray(v) {
   return Array.isArray(v) ? v : [];
 }
 
-function asText(v: any) {
+function asText(v) {
   if (v === null || v === undefined) return "";
   if (typeof v === "string") return v;
   if (typeof v === "number") return String(v);
@@ -34,10 +34,10 @@ function asText(v: any) {
   }
 }
 
-function Badge({ text }: { text: any }) {
+function Badge({ text }) {
   const value = asText(text || "N/D").toUpperCase();
 
-  const colors: any = {
+  const colors = {
     APROVADO: ["#C9A84C", "rgba(201,168,76,.15)"],
     WATCHLIST: ["#A8A8B8", "rgba(168,168,184,.15)"],
     VETADO: ["#C87070", "rgba(200,112,112,.15)"],
@@ -74,7 +74,7 @@ function Badge({ text }: { text: any }) {
   );
 }
 
-function ScoreBar({ score, max = 5 }: { score: any; max?: any }) {
+function ScoreBar({ score, max = 5 }) {
   const s = Number(score || 0);
   const m = Number(max || 5);
   const pct = Math.max(0, Math.min((s / m) * 100, 100));
@@ -92,7 +92,7 @@ function ScoreBar({ score, max = 5 }: { score: any; max?: any }) {
   );
 }
 
-function Sec({ title, children }: any) {
+function Sec({ title, children }) {
   return (
     <div style={{ marginBottom: 16 }}>
       <div
@@ -114,7 +114,7 @@ function Sec({ title, children }: any) {
   );
 }
 
-function Row({ label, right, children }: any) {
+function Row({ label, right, children }) {
   return (
     <div style={{ padding: "5px 0", borderBottom: "1px solid #1E1A0E" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
@@ -126,11 +126,11 @@ function Row({ label, right, children }: any) {
   );
 }
 
-function Note({ children, col }: any) {
+function Note({ children, col }) {
   return <div style={{ fontSize: 11, color: col || "#8A7A58", marginTop: 2, lineHeight: 1.5 }}>{children}</div>;
 }
 
-function ScanReport({ r }: any) {
+function ScanReport({ r }) {
   const filtros = asArray(r?.filtros);
   const governanca = asArray(r?.governanca);
   const kpis = asArray(r?.kpis);
@@ -158,7 +158,7 @@ function ScanReport({ r }: any) {
 
       {filtros.length > 0 && (
         <Sec title="Filtros Eliminatorios">
-          {filtros.map((f: any, i: number) => (
+          {filtros.map((f, i) => (
             <Row key={i} label={f?.nome} right={<Badge text={f?.status} />}>
               {f?.valor && <span style={{ color: "#8A7A58", fontSize: 11 }}>{asText(f.valor)}</span>}
               {f?.nota && <Note>{asText(f.nota)}</Note>}
@@ -169,7 +169,7 @@ function ScanReport({ r }: any) {
 
       {governanca.length > 0 && (
         <Sec title="Governanca 0B">
-          {governanca.map((g: any, i: number) => (
+          {governanca.map((g, i) => (
             <Row key={i} label={g?.dimensao} right={<ScoreBar score={g?.nota} />}>
               {g?.obs && <Note>{asText(g.obs)}</Note>}
             </Row>
@@ -179,7 +179,7 @@ function ScanReport({ r }: any) {
 
       {kpis.length > 0 && (
         <Sec title="KPIs">
-          {kpis.map((k: any, i: number) => (
+          {kpis.map((k, i) => (
             <Row key={i} label={k?.nome} right={<Badge text={k?.status} />}>
               <span style={{ color: "#A89060", fontSize: 12 }}>{asText(k?.valor)}</span>
               {k?.benchmark && <span style={{ color: "#6A5C3A", fontSize: 11 }}> ref: {asText(k.benchmark)}</span>}
@@ -190,7 +190,7 @@ function ScanReport({ r }: any) {
 
       {scoreDimensoes.length > 0 && (
         <Sec title="Score por Dimensao">
-          {scoreDimensoes.map((d: any, i: number) => (
+          {scoreDimensoes.map((d, i) => (
             <Row key={i} label={d?.nome} right={<ScoreBar score={d?.nota} />}>
               {d?.obs && <Note>{asText(d.obs)}</Note>}
             </Row>
@@ -206,7 +206,7 @@ function ScanReport({ r }: any) {
 
       {catalisadores.length > 0 && (
         <Sec title="Catalisadores">
-          {catalisadores.map((c: any, i: number) => (
+          {catalisadores.map((c, i) => (
             <Row key={i} label={c?.descricao} right={<span style={{ fontSize: 11, color: "#6A5C3A" }}>{asText(c?.prazo)}</span>}>
               {c?.impacto && <Note>{asText(c.impacto)}</Note>}
             </Row>
@@ -216,7 +216,7 @@ function ScanReport({ r }: any) {
 
       {riscos.length > 0 && (
         <Sec title="Riscos">
-          {riscos.map((risco: any, i: number) => (
+          {riscos.map((risco, i) => (
             <Row key={i} label={risco?.descricao} right={<Badge text={risco?.severidade} />}>
               {risco?.probabilidade && <Note>{asText(risco.probabilidade)}</Note>}
             </Row>
@@ -226,7 +226,7 @@ function ScanReport({ r }: any) {
 
       {lacunas.length > 0 && (
         <Sec title="Lacunas para o Deep">
-          {lacunas.map((l: any, i: number) => (
+          {lacunas.map((l, i) => (
             <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", borderBottom: "1px solid #1E1A0E" }}>
               <span style={{ color: "#C9A84C", opacity: 0.6 }}>◈</span>
               <span style={{ fontSize: 12, color: "#A89060" }}>{asText(l)}</span>
@@ -238,7 +238,7 @@ function ScanReport({ r }: any) {
   );
 }
 
-function DeepReport({ r }: any) {
+function DeepReport({ r }) {
   const lacs = asArray(r?.lacunas || r?.lacunas_respondidas);
   const precs = asArray(r?.preco || r?.modelo_preco);
   const macs = asArray(r?.macro || r?.sensibilidade);
@@ -257,7 +257,7 @@ function DeepReport({ r }: any) {
 
       {lacs.length > 0 && (
         <Sec title="Respostas as Lacunas">
-          {lacs.map((l: any, i: number) => (
+          {lacs.map((l, i) => (
             <div key={i} style={{ padding: "6px 0", borderBottom: "1px solid #1E1A0E" }}>
               <div style={{ fontSize: 11, color: "#C9A84C" }}>◈ {asText(l?.q || l?.lacuna)}</div>
               <div style={{ fontSize: 12, color: "#A89060" }}>{asText(l?.r || l?.resposta || l)}</div>
@@ -268,7 +268,7 @@ function DeepReport({ r }: any) {
 
       {precs.length > 0 && (
         <Sec title="Modelo de Preco - 3 Camadas">
-          {precs.map((c: any, i: number) => (
+          {precs.map((c, i) => (
             <Row
               key={i}
               label={c?.c || c?.camada || "Camada"}
@@ -291,7 +291,7 @@ function DeepReport({ r }: any) {
 
       {macs.length > 0 && (
         <Sec title="Sensibilidade Macro">
-          {macs.map((s: any, i: number) => (
+          {macs.map((s, i) => (
             <Row key={i} label={s?.s || s?.cenario} right={<span style={{ fontSize: 12, color: "#A89060" }}>{asText(s?.i || s?.impacto)}</span>}>
               {s?.detalhe && <Note>{asText(s.detalhe)}</Note>}
             </Row>
@@ -301,7 +301,7 @@ function DeepReport({ r }: any) {
 
       {cats.length > 0 && (
         <Sec title="Catalisadores">
-          {cats.map((c: any, i: number) => (
+          {cats.map((c, i) => (
             <Row key={i} label={c?.d || c?.descricao} right={<span style={{ fontSize: 11, color: "#6A5C3A" }}>{asText(c?.p || c?.prazo)}</span>}>
               {c?.impacto && <Note>{asText(c.impacto)}</Note>}
             </Row>
@@ -311,7 +311,7 @@ function DeepReport({ r }: any) {
 
       {risks.length > 0 && (
         <Sec title="Riscos">
-          {risks.map((risco: any, i: number) => (
+          {risks.map((risco, i) => (
             <Row key={i} label={risco?.d || risco?.descricao} right={<Badge text={risco?.sev || risco?.severidade || "MEDIO"} />}>
               {(risco?.g || risco?.gatilho) && <Note col="#C87070">Gatilho: {asText(risco?.g || risco?.gatilho)}</Note>}
             </Row>
@@ -321,7 +321,7 @@ function DeepReport({ r }: any) {
 
       {steps.length > 0 && (
         <Sec title="Proximos Passos">
-          {steps.map((p: any, i: number) => (
+          {steps.map((p, i) => (
             <div key={i} style={{ display: "flex", gap: 8, padding: "4px 0", borderBottom: "1px solid #1E1A0E" }}>
               <span style={{ color: "#C9A84C", opacity: 0.5 }}>▸</span>
               <span style={{ fontSize: 12, color: "#A89060" }}>{asText(p)}</span>
@@ -334,8 +334,8 @@ function DeepReport({ r }: any) {
 }
 
 export default function NEXOApp() {
-  const [scanResult, setScanResult] = useState<any>(null);
-  const [deepResult, setDeepResult] = useState<any>(null);
+  const [scanResult, setScanResult] = useState(null);
+  const [deepResult, setDeepResult] = useState(null);
   const [ticker, setTicker] = useState("");
   const [riUrl, setRiUrl] = useState("");
   const [extraCtx, setExtraCtx] = useState("");
@@ -347,7 +347,7 @@ export default function NEXOApp() {
   const [followRes, setFollowRes] = useState("");
   const [followLoad, setFollowLoad] = useState(false);
 
-  const outRef = useRef<HTMLDivElement | null>(null);
+  const outRef = useRef(null);
 
   const canRun = ticker.trim().length >= 3 && !loading;
   const canDeep = scanResult && scanResult.veredito !== "VETADO" && !loading && phase !== "deep" && phase !== "deep_done";
@@ -368,7 +368,7 @@ export default function NEXOApp() {
     setFollowRes("");
   }
 
-  async function callAPI(ph: string) {
+  async function callAPI(ph) {
     const t = ticker.trim().toUpperCase();
     const tp = detectType(t);
 
@@ -401,7 +401,7 @@ export default function NEXOApp() {
       throw new Error("Sem resposta do servidor");
     }
 
-    let data: any;
+    let data;
 
     try {
       data = JSON.parse(txt);
@@ -435,7 +435,7 @@ export default function NEXOApp() {
         setScanResult(r);
         setPhase("scan_done");
       }
-    } catch (e: any) {
+    } catch (e) {
       setError(e?.message || "Erro desconhecido");
       setPhase("scan_done");
     } finally {
@@ -455,7 +455,7 @@ export default function NEXOApp() {
       const r = await callAPI("deep");
       setDeepResult(r);
       setPhase("deep_done");
-    } catch (e: any) {
+    } catch (e) {
       setError(e?.message || "Erro desconhecido");
       setPhase("scan_done");
     } finally {
@@ -494,7 +494,7 @@ export default function NEXOApp() {
 
       const txt = await res.text();
 
-      let data: any;
+      let data;
 
       try {
         data = JSON.parse(txt);
@@ -513,7 +513,7 @@ export default function NEXOApp() {
       } else {
         setFollowRes(JSON.stringify(data, null, 2));
       }
-    } catch (e: any) {
+    } catch (e) {
       setFollowRes("Erro: " + (e?.message || "erro desconhecido"));
     } finally {
       setFollowLoad(false);
@@ -598,39 +598,6 @@ export default function NEXOApp() {
           ))}
         </div>
 
-        <div className="types">
-          {[
-            { i: "🏢", l: "FII" },
-            { i: "📈", l: "Acao BR" },
-            { i: "🌍", l: "ETF" },
-            { i: "🔭", l: "Stock" },
-          ].map((t) => (
-            <div
-              key={t.l}
-              style={{
-                fontFamily: "JetBrains Mono, monospace",
-                fontSize: 11,
-                padding: "6px 12px",
-                border: "1px solid #2A2318",
-                color: "#4A3E28",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                borderRadius: 2,
-              }}
-            >
-              <span style={{ fontSize: 13 }}>{t.i}</span>
-              {t.l}
-            </div>
-          ))}
-        </div>
-
-        <div className="slbl">
-          <div className={"snum" + (ticker.trim() ? " on" : "")}>1</div>
-          Ticker — deteccao automatica
-          <div className="sline" />
-        </div>
-
         <div className="field">
           <div className="flbl">Ticker</div>
           <input
@@ -646,13 +613,7 @@ export default function NEXOApp() {
               if (e.key === "Enter") handleScan();
             }}
           />
-          <div className="fex">FIIs · Acoes BR · ETFs · Stocks — tipo detectado automaticamente</div>
-        </div>
-
-        <div className="slbl">
-          <div className={"snum" + (riUrl.trim() ? " on" : "")}>2</div>
-          URL do RI (opcional)
-          <div className="sline" />
+          <div className="fex">FIIs · Acoes BR · ETFs · Stocks</div>
         </div>
 
         <div className="field">
@@ -661,14 +622,8 @@ export default function NEXOApp() {
         </div>
 
         <div className="field">
-          <div className="flbl">Contexto adicional (opcional)</div>
-          <textarea
-            className="ftxt"
-            rows={2}
-            value={extraCtx}
-            placeholder="Foco em KPI especifico, tese, duvida pontual..."
-            onChange={(e) => setExtraCtx(e.target.value)}
-          />
+          <div className="flbl">Contexto adicional</div>
+          <textarea className="ftxt" rows={2} value={extraCtx} placeholder="Foco em KPI especifico, tese, duvida pontual..." onChange={(e) => setExtraCtx(e.target.value)} />
         </div>
 
         <div className="actions">
@@ -678,18 +633,12 @@ export default function NEXOApp() {
             </button>
           )}
 
-          <button
-            className="btn-scan"
-            onClick={handleScan}
-            disabled={!canRun}
-            style={!canRun ? { background: "#2A2318", color: "#4A3E28", cursor: "not-allowed" } : {}}
-          >
+          <button className="btn-scan" onClick={handleScan} disabled={!canRun} style={!canRun ? { background: "#2A2318", color: "#4A3E28", cursor: "not-allowed" } : {}}>
             {loading && phase === "scan" ? "Analisando..." : "Executar Scan →"}
           </button>
 
           <button className="btn-deep" onClick={handleDeep} disabled={!canDeep} style={!canDeep ? { opacity: 0.25, cursor: "not-allowed" } : {}}>
-            <div>{loading && phase === "deep" ? "Analisando..." : "Deep NEXO"}</div>
-            <div style={{ fontSize: 7, letterSpacing: 0, fontWeight: 300, marginTop: 1 }}>{canDeep ? "continua do Scan" : "disponivel apos Scan"}</div>
+            Deep NEXO
           </button>
         </div>
 
@@ -711,96 +660,25 @@ export default function NEXOApp() {
 
           {deepResult && <DeepReport r={deepResult} />}
 
-          {deepResult && (
-            <div style={{ marginTop: 20, borderTop: "1px solid #2A2318", paddingTop: 16 }}>
-              <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#C9A84C", letterSpacing: 2, textTransform: "uppercase", marginBottom: 10 }}>
-                Aprofundar Analise
-              </div>
-
-              <div className="field">
-                <div className="flbl">Link adicional (opcional)</div>
-                <input className="finp-sm" value={followUrl} placeholder="https://ri.empresa.com.br/relatorio..." onChange={(e) => setFollowUrl(e.target.value)} />
-              </div>
-
-              <div className="field">
-                <div className="flbl">Pergunta ou foco especifico</div>
-                <textarea
-                  className="ftxt"
-                  rows={3}
-                  value={followQ}
-                  placeholder="Ex: Qual impacto da queda da Selic no DY?"
-                  onChange={(e) => setFollowQ(e.target.value)}
-                />
-              </div>
-
-              <button
-                onClick={handleFollowUp}
-                disabled={followLoad || (!followQ.trim() && !followUrl.trim())}
-                style={{
-                  fontFamily: "JetBrains Mono, monospace",
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: 1.5,
-                  textTransform: "uppercase",
-                  padding: "9px 0",
-                  width: "100%",
-                  background: "transparent",
-                  border: "1px solid #C9A84C",
-                  color: "#C9A84C",
-                  cursor: "pointer",
-                  borderRadius: 2,
-                  opacity: followLoad || (!followQ.trim() && !followUrl.trim()) ? 0.3 : 1,
-                }}
-              >
-                {followLoad ? "Analisando..." : "◈ Aprofundar →"}
-              </button>
-
-              {followRes && (
-                <div style={{ marginTop: 12, padding: "12px 14px", background: "rgba(201,168,76,.05)", border: "1px solid #2A2318" }}>
-                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#C9A84C", letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>
-                    Analise Complementar
-                  </div>
-                  <div style={{ fontSize: 13, lineHeight: 1.75, color: "#D4C9A8", whiteSpace: "pre-wrap" }}>{followRes}</div>
-                </div>
-              )}
-            </div>
-          )}
-
           {scanResult && !deepResult && !loading && canDeep && (
             <div className="deep-unlock">
               <div>
                 <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#A8A8B8", letterSpacing: 1 }}>
                   Scan {asText(scanResult.veredito)} — Deep NEXO disponivel
                 </div>
-                <div style={{ fontSize: 8, color: "#4A3E28", marginTop: 2 }}>Continua das lacunas identificadas</div>
               </div>
               <button className="btn-deep" style={{ flex: "none", padding: "7px 14px" }} onClick={handleDeep}>
                 Iniciar Deep →
               </button>
             </div>
           )}
-
-          {scanResult && !deepResult && !loading && scanResult.veredito === "VETADO" && (
-            <div style={{ marginTop: 12, padding: "10px 14px", border: "1px solid #8B3A3A", background: "rgba(139,58,58,.06)" }}>
-              <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#C87070", letterSpacing: 1 }}>VETADO — nao avanca para Deep</div>
-              {scanResult.motivo_veto && <div style={{ fontSize: 11, color: "#6A5C3A", marginTop: 4 }}>{asText(scanResult.motivo_veto)}</div>}
-            </div>
-          )}
         </div>
 
         <div className="footer">
-          {[
-            { c: "#C9A84C", t: "Liq. min. R$300k BR" },
-            { c: "#A8A8B8", t: "ADV min. US$1M Ext" },
-            { c: "#C87070", t: "0B: nota 1=veto" },
-            { c: "#E8D5A3", t: "BESST: 15-25% abaixo" },
-            { c: "#6A5C3A", t: "Beta v3.0" },
-          ].map((c, i) => (
-            <div key={i} className="fc">
-              <div className="fd" style={{ background: c.c }} />
-              {c.t}
-            </div>
-          ))}
+          <div className="fc"><div className="fd" style={{ background: "#C9A84C" }} />Liq. min. R$300k BR</div>
+          <div className="fc"><div className="fd" style={{ background: "#A8A8B8" }} />ADV min. US$1M Ext</div>
+          <div className="fc"><div className="fd" style={{ background: "#C87070" }} />0B: nota 1=veto</div>
+          <div className="fc"><div className="fd" style={{ background: "#E8D5A3" }} />BESST: 15-25% abaixo</div>
         </div>
       </div>
     </>
