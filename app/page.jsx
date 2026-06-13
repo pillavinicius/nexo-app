@@ -121,21 +121,21 @@ function DeepReport({r}) {
     React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}},
       React.createElement("div",{style:{fontFamily:"JetBrains Mono,monospace",fontSize:14,fontWeight:700,color:"#E8D5A3"}},r.ticker+" · Deep NEXO"),
       r.veredito_final&&React.createElement(Badge,{text:r.veredito_final})),
-    r.lacunas_respondidas&&r.lacunas_respondidas.length>0&&React.createElement(Sec,{title:"Respostas as Lacunas"},
+    (r.lacunas||r.lacunas_respondidas)&&(r.lacunas||r.lacunas_respondidas).length>0&&React.createElement(Sec,{title:"Respostas as Lacunas"},
       r.lacunas_respondidas.map(function(l,i){return React.createElement("div",{key:i,style:{padding:"6px 0",borderBottom:"1px solid #1E1A0E"}},
         React.createElement("div",{style:{fontSize:11,color:"#C9A84C",marginBottom:2}},"◈ "+l.lacuna),
         React.createElement("div",{style:{fontSize:12,color:"#A89060"}},l.resposta));})),
-    r.modelo_preco&&r.modelo_preco.length>0&&React.createElement(Sec,{title:"Modelo de Preco - 3 Camadas"},
-      r.modelo_preco.map(function(c,i){return React.createElement(Row,{key:i,label:c.camada,right:React.createElement("span",{style:{fontFamily:"JetBrains Mono,monospace",fontSize:12,color:"#C9A84C"}},c.valor_justo)},
+    (r.preco||r.modelo_preco)&&(r.preco||r.modelo_preco).length>0&&React.createElement(Sec,{title:"Modelo de Preco - 3 Camadas"},
+      (r.preco||r.modelo_preco).map(function(c,i){return React.createElement(Row,{key:i,label:(c.c||c.camada||""),right:React.createElement("span",{style:{fontFamily:"JetBrains Mono,monospace",fontSize:12,color:"#C9A84C"}},(c.vj||c.valor_justo||""))},
         React.createElement(Note,null,c.metodologia),
         c.premissas&&React.createElement(Note,{col:"#6A5C3A"},c.premissas));}),
-      r.zona_convergida&&React.createElement("div",{style:{marginTop:8,padding:"8px 10px",border:"1px solid #C9A84C",background:"rgba(201,168,76,.06)"}},
+      (r.zona||r.zona_convergida)&&React.createElement("div",{style:{marginTop:8,padding:"8px 10px",border:"1px solid #C9A84C",background:"rgba(201,168,76,.06)"}},
         React.createElement("div",{style:{fontFamily:"JetBrains Mono,monospace",fontSize:9,color:"#C9A84C",marginBottom:4,letterSpacing:2,textTransform:"uppercase"}},"ZONA CONVERGIDA · BESST"),
-        React.createElement("div",{style:{fontSize:13,color:"#E8D5A3",fontWeight:600}},r.zona_convergida),
-        r.zona_besst&&React.createElement("div",{style:{fontSize:12,color:"#A89060",marginTop:2}},"Entrada BESST: "+r.zona_besst),
-        r.desconto_atual&&React.createElement("div",{style:{fontSize:11,color:"#6A5C3A"}},"Desconto atual: "+r.desconto_atual))),
-    r.sensibilidade&&r.sensibilidade.length>0&&React.createElement(Sec,{title:"Sensibilidade Macro"},
-      r.sensibilidade.map(function(s,i){return React.createElement(Row,{key:i,label:s.cenario,right:React.createElement("span",{style:{fontSize:12,color:"#A89060"}},s.impacto)},
+        React.createElement("div",{style:{fontSize:13,color:"#E8D5A3",fontWeight:600}},(r.zona||r.zona_convergida||"")),
+        (r.besst||r.zona_besst)&&React.createElement("div",{style:{fontSize:12,color:"#A89060",marginTop:2}},"Entrada BESST: "+(r.besst||r.zona_besst||"")),
+        (r.desconto||r.desconto_atual)&&React.createElement("div",{style:{fontSize:11,color:"#6A5C3A"}},"Desconto atual: "+(r.desconto||r.desconto_atual||"")))),
+    (r.macro||r.sensibilidade)&&(r.macro||r.sensibilidade).length>0&&React.createElement(Sec,{title:"Sensibilidade Macro"},
+      (r.macro||r.sensibilidade).map(function(s,i){return React.createElement(Row,{key:i,label:(s.s||s.cenario||""),right:React.createElement("span",{style:{fontSize:12,color:"#A89060"}},(s.i||s.impacto||""))},
         s.detalhe&&React.createElement(Note,null,s.detalhe));})),
     r.catalisadores&&r.catalisadores.length>0&&React.createElement(Sec,{title:"Catalisadores"},
       r.catalisadores.map(function(c,i){return React.createElement(Row,{key:i,label:c.descricao,right:React.createElement("span",{style:{fontSize:11,color:"#6A5C3A"}},c.prazo)},
@@ -143,8 +143,8 @@ function DeepReport({r}) {
     r.riscos&&r.riscos.length>0&&React.createElement(Sec,{title:"Riscos"},
       r.riscos.map(function(r2,i){return React.createElement(Row,{key:i,label:r2.descricao,right:React.createElement(Badge,{text:r2.severidade})},
         r2.gatilho&&React.createElement(Note,{col:"#C87070"},"Gatilho: "+r2.gatilho));})),
-    r.proximos_passos&&r.proximos_passos.length>0&&React.createElement(Sec,{title:"Proximos Passos"},
-      r.proximos_passos.map(function(p,i){return React.createElement("div",{key:i,style:{display:"flex",gap:8,padding:"4px 0",borderBottom:"1px solid #1E1A0E"}},
+    (r.passos||r.proximos_passos)&&(r.passos||r.proximos_passos).length>0&&React.createElement(Sec,{title:"Proximos Passos"},
+      (r.passos||r.proximos_passos).map(function(p,i){return React.createElement("div",{key:i,style:{display:"flex",gap:8,padding:"4px 0",borderBottom:"1px solid #1E1A0E"}},
         React.createElement("span",{style:{color:"#C9A84C",opacity:.5}},"▸"),
         React.createElement("span",{style:{fontSize:12,color:"#A89060"}},p));})
     )
@@ -183,82 +183,46 @@ export default function NEXOApp() {
   function callAPI(ph) {
     var t = ticker.trim().toUpperCase();
     var tp = detectType(t);
-    var key = ph + "-" + tp;
-    var sys = PROMPTS[key] || PROMPTS["scan-fii"];
 
     var summary = null;
     if (ph === "deep" && scanResult) {
-      var lacunas = (scanResult.lacunas_deep||[]).slice(0,3).join("|");
-      summary = scanResult.veredito + "|" + scanResult.segmento + "|" + lacunas;
+      summary = (scanResult.veredito||"") + "|" +
+        (scanResult.segmento||"") + "|" +
+        (scanResult.lacunas_deep||[]).slice(0,2).join("|");
     }
-
-    var msgs = [{
-      role: "user",
-      content: (summary ? "SCAN_CONTEXT: "+summary+" " : "") +
-        "Analyze: " + t +
-        (extraCtx ? " Focus: "+extraCtx : "")
-    }];
 
     return fetch("/api/analyze", {
       method: "POST",
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 4096,
-        system: sys,
-        messages: msgs,
+        phase: ph,
+        assetType: tp,
+        ticker: t,
+        scanSummary: summary,
+        extraCtx: extraCtx ? extraCtx.trim() : "",
       }),
     }).then(function(res) {
-      return res.json();
-    }).then(function(data) {
-      if (data.error) throw new Error(data.error.message || String(data.error));
-      var raw = (data.content && data.content[0]) ? data.content[0].text : "{}";
-      var s = raw.indexOf("{"); var e = raw.lastIndexOf("}");
-      if (s !== -1 && e !== -1) raw = raw.slice(s, e+1);
-      raw = raw.replace(/,([\s]*[}\]])/g, "$1");
-      try { return JSON.parse(raw); }
+      return res.text();
+    }).then(function(txt) {
+      if (!txt || txt.trim() === "") throw new Error("Sem resposta do servidor");
+      var data;
+      try { data = JSON.parse(txt); }
       catch(_) {
-        var op = (raw.match(/\[/g)||[]).length-(raw.match(/\]/g)||[]).length;
-        var ob = (raw.match(/\{/g)||[]).length-(raw.match(/\}/g)||[]).length;
-        raw = raw.replace(/,[^,]*$/, "");
-        for(var i=0;i<op;i++) raw+="]";
-        for(var j=0;j<ob;j++) raw+="}";
-        return JSON.parse(raw);
+        var s = txt.indexOf("{"); var e = txt.lastIndexOf("}");
+        if (s === -1) throw new Error("Resposta invalida");
+        data = JSON.parse(txt.slice(s, e+1));
       }
+      if (data.error) throw new Error(data.error.message || String(data.error));
+      return data;
     });
   }
-
-  function handleFollowUp() {
-    if (!followQ.trim() && !followUrl.trim()) return;
-    setFollowLoad(true); setFollowRes(null);
-    var t = ticker.trim().toUpperCase();
-    var ctx = "SCAN:" + (scanResult ? scanResult.veredito + " " + (scanResult.tese||"") : "") +
-      " DEEP:" + (deepResult ? deepResult.veredito_final + " BESST:" + (deepResult.zona_besst||"") : "");
-    var msgs = [{ role:"user", content: ctx + " Pergunta: " + followQ.trim() +
-      (followUrl.trim() ? " URL_adicional: " + followUrl.trim() : "") }];
-    fetch("/api/analyze", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        model:"claude-sonnet-4-6", max_tokens:1500,
-        system:"Voce e o analista NEXO. Responda a pergunta sobre o ativo " + t + " de forma objetiva e direta, usando dados e numeros. Responda em Portugues.",
-        messages: msgs,
-      }),
-    }).then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.error) throw new Error(data.error.message);
-      var txt = (data.content && data.content[0]) ? data.content[0].text : "";
-      setFollowRes(txt);
-    }).catch(function(e) { setFollowRes("Erro: " + e.message); })
-    .finally(function() { setFollowLoad(false); });
-  }
-
   function handleScan() {
     if (!canRun) return;
     setLoading(true); setError(""); reset();
     callAPI("scan").then(function(r) {
       if (r.ticker_invalido) setError("Ticker nao encontrado: " + ticker.trim().toUpperCase());
       else { setScanResult(r); setPhase("scan_done"); }
-    }).catch(function(e) { setError(e.message); })
+    }).catch(function(e) { setError(e.message); setPhase("scan_done"); })
     .finally(function() { setLoading(false); });
   }
 
@@ -267,7 +231,7 @@ export default function NEXOApp() {
     setLoading(true); setError(""); setDeepResult(null); setPhase("deep");
     callAPI("deep").then(function(r) {
       setDeepResult(r); setPhase("deep_done");
-    }).catch(function(e) { setError(e.message); })
+    }).catch(function(e) { setError(e.message); setPhase("scan_done"); })
     .finally(function() { setLoading(false); });
   }
 
