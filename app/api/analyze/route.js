@@ -2,33 +2,51 @@ export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
 const SCAN_S = '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
-
 const DEEP_S = '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","lacunas":[{"q":"","r":""}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"zona":"","besst":"","desconto":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
-
 const INV = '{"ticker_invalido":true}';
 
 const SCANS = {
-  "fii":       "NEXO FII analyst. JSON only: " + SCAN_S + " If unknown: " + INV + ". Rules: liq<R$300k=VETO,gov5dims(estrutura/gestor/conselho/auditoria/concentracao)-nota1=VETO,KPIs:P/VP+DY12m+spreadNTN-B+vacancia+prazo,6 score_dims,tese=2lines,2 lacunas. Portuguese.",
-  "acao-br":   "NEXO BR stock analyst. JSON only: " + SCAN_S + " If unknown: " + INV + ". detect-segment,liq<R$300k=VETO,gov5dims-nota1=VETO,segment-KPIs,6 score_dims,tese=2lines,2 lacunas. Portuguese.",
-  "etf-ext":   "NEXO ETF analyst. JSON only: " + SCAN_S + " score_max=25,governanca=[]. If unknown: " + INV + ". KPIs:TER+TD+AUM+domicilio+ACC/DIST+top10,5 score_dims,tese=2lines,2 lacunas. Portuguese.",
-  "stock-ext": "NEXO stock analyst. JSON only: " + SCAN_S + " score_max=50. If unknown: " + INV + ". ADV<1M=VETO,gov4dims,thematic-purity,KPIs-by-theme,6 score_dims,tese=2lines,2 lacunas. Portuguese."
+  "fii":       "You are a NEXO FII analyst. Respond with ONLY a JSON object, no other text, no markdown. Schema: " + SCAN_S + " If ticker unknown: " + INV + " Rules: liq<R$300k=VETO. gov5dims: estrutura/gestor/conselho/auditoria/concentracao, nota1=VETO. KPIs: P/VP, DY12m, spread NTN-B, vacancia, prazo. Fill 6 score_dimensoes. tese=2 sentences. 2 lacunas_deep. All text in Portuguese.",
+  "acao-br":   "You are a NEXO Brazilian stock analyst. Respond with ONLY a JSON object, no other text, no markdown. Schema: " + SCAN_S + " If ticker unknown: " + INV + " Rules: detect segment automatically. liq<R$300k=VETO. gov5dims nota1=VETO. segment-specific KPIs. Fill 6 score_dimensoes. tese=2 sentences. 2 lacunas_deep. All text in Portuguese.",
+  "etf-ext":   "You are a NEXO ETF analyst. Respond with ONLY a JSON object, no other text, no markdown. Schema: " + SCAN_S + " score_max=25, governanca=[]. If ticker unknown: " + INV + " KPIs: TER, TD, AUM, domicilio, ACC/DIST, top10. Fill 5 score_dimensoes. tese=2 sentences. 2 lacunas_deep. All text in Portuguese.",
+  "stock-ext": "You are a NEXO international stock analyst. Respond with ONLY a JSON object, no other text, no markdown. Schema: " + SCAN_S + " score_max=50. If ticker unknown: " + INV + " Rules: ADV<1M=VETO. gov4dims. thematic purity >50%. theme-specific KPIs. Fill 6 score_dimensoes. tese=2 sentences. 2 lacunas_deep. All text in Portuguese."
 };
 
 const DEEPS = {
-  "fii":       "NEXO FII deep analyst. JSON only: " + DEEP_S + " C1=P/VP-Soros,C2=yield-NTN-B,C3=moat. BESST=15-25%below. Answer 2 lacunas concisely. 2 macro. 2 catalisadores. 2 riscos. 2 passos. Portuguese.",
-  "acao-br":   "NEXO BR stock deep analyst. JSON only: " + DEEP_S + " Segment model from scan. BESST=15-25%below. Answer 2 lacunas concisely. 2 macro. 2 catalisadores. 2 riscos. 2 passos. Portuguese.",
-  "etf-ext":   "NEXO ETF deep analyst. JSON only: " + DEEP_S + " C1=cost,C2=concentration,C3=Markowitz. 2 macro. 2 passos. Portuguese.",
-  "stock-ext": "NEXO stock deep analyst. JSON only: " + DEEP_S + " Theme model. Answer 2 lacunas. 2 macro. 2 passos. Portuguese."
+  "fii":       "You are a NEXO FII deep analyst. Respond with ONLY a JSON object, no other text, no markdown. Schema: " + DEEP_S + " C1=P/VP (Soros reflexivity), C2=yield vs NTN-B spread, C3=location moat. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro scenarios. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
+  "acao-br":   "You are a NEXO Brazilian stock deep analyst. Respond with ONLY a JSON object, no other text, no markdown. Schema: " + DEEP_S + " Use segment-appropriate pricing model (C1/C2/C3). BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
+  "etf-ext":   "You are a NEXO ETF deep analyst. Respond with ONLY a JSON object, no other text, no markdown. Schema: " + DEEP_S + " C1=cost efficiency, C2=concentration risk, C3=Markowitz fit. 2 macro. 2 passos. All text in Portuguese.",
+  "stock-ext": "You are a NEXO international stock deep analyst. Respond with ONLY a JSON object, no other text, no markdown. Schema: " + DEEP_S + " Theme-appropriate pricing model. Answer 2 lacunas. 2 macro. 2 passos. All text in Portuguese."
 };
+
+function tryParseJSON(text) {
+  // Remove markdown code blocks if present
+  let raw = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  
+  // Find the outermost JSON object
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  raw = raw.slice(start, end + 1);
+  
+  // Fix trailing commas
+  raw = raw.replace(/,(\s*[}\]])/g, '$1');
+  
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
 
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { phase, assetType, ticker, scanSummary, extraCtx, riUrl } = body;
+    const { phase, assetType, ticker, scanSummary, extraCtx } = body;
 
-    // If no phase/assetType, it's a direct proxy call (legacy)
+    // Legacy proxy mode (no phase/assetType)
     if (!phase || !assetType) {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -37,19 +55,18 @@ export async function POST(req) {
         },
         body: JSON.stringify(body),
       });
-      const data = await response.json();
-      return Response.json(data);
+      return Response.json(await resp.json());
     }
 
     const systemPrompt = phase === "deep"
-      ? (DEEPS[assetType] || DEEPS["fii"])
+      ? (DEEPS[assetType] || DEEPS["acao-br"])
       : (SCANS[assetType] || SCANS["acao-br"]);
 
-    const userContent = (scanSummary ? "SCAN:" + scanSummary + " " : "") +
-      "Analyze: " + ticker +
-      (extraCtx ? " Focus: " + extraCtx : "");
+    const userMsg = "Analyze ticker: " + ticker +
+      (scanSummary ? "\nScan context: " + scanSummary : "") +
+      (extraCtx ? "\nFocus: " + extraCtx : "");
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -60,26 +77,33 @@ export async function POST(req) {
         model: "claude-sonnet-4-6",
         max_tokens: 2000,
         system: systemPrompt,
-        messages: [{ role: "user", content: userContent }],
+        messages: [{ role: "user", content: userMsg }],
       }),
     });
 
-    const data = await response.json();
-    if (data.error) return Response.json({ error: { message: data.error.message } });
+    const apiData = await apiResp.json();
 
-    let raw = (data.content && data.content[0]) ? data.content[0].text : "{}";
-    const s = raw.indexOf("{");
-    const e = raw.lastIndexOf("}");
-    if (s !== -1 && e !== -1) raw = raw.slice(s, e + 1);
-    raw = raw.replace(/,(\s*[}\]])/g, "$1");
-
-    try {
-      return Response.json(JSON.parse(raw));
-    } catch(_) {
-      return Response.json({ error: { message: "JSON invalido. Tente novamente." } });
+    if (apiData.error) {
+      return Response.json({ error: { message: "API: " + apiData.error.message } });
     }
 
+    const rawText = (apiData.content && apiData.content[0]) ? apiData.content[0].text : "";
+    
+    if (!rawText) {
+      return Response.json({ error: { message: "Modelo retornou resposta vazia" } });
+    }
+
+    const parsed = tryParseJSON(rawText);
+    
+    if (!parsed) {
+      // Return first 200 chars of raw so we can debug
+      const preview = rawText.slice(0, 200).replace(/\n/g, ' ');
+      return Response.json({ error: { message: "Parse falhou. Modelo retornou: " + preview } });
+    }
+
+    return Response.json(parsed);
+
   } catch (err) {
-    return Response.json({ error: { message: err.message } }, { status: 500 });
+    return Response.json({ error: { message: "Erro servidor: " + err.message } }, { status: 500 });
   }
 }
