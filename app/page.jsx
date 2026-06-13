@@ -27,6 +27,17 @@ function asText(v) {
   }
 }
 
+function macroValue(item) {
+  if (!item || item.value === null || item.value === undefined) return "";
+  return String(item.value);
+}
+
+function macroLabel(item) {
+  if (!item) return "não informado";
+  if (item.ok) return `${item.value} (${item.source}${item.date ? " · " + item.date : ""})`;
+  return `não informado (${item.mode || "manual"})`;
+}
+
 function Badge({ text }) {
   const value = asText(text || "N/D").toUpperCase();
 
@@ -47,6 +58,8 @@ function Badge({ text }) {
     MANTEVE: ["#A8A8B8", "rgba(168,168,184,.12)"],
     MELHOROU: ["#6DB46D", "rgba(100,180,100,.12)"],
     PIOROU: ["#C87070", "rgba(200,112,112,.12)"],
+    AUTOMATIC: ["#6DB46D", "rgba(100,180,100,.12)"],
+    MANUAL_FALLBACK: ["#D2A03C", "rgba(210,160,60,.12)"],
   };
 
   const c = colors[value] || ["#6A5C3A", "rgba(168,168,184,.1)"];
@@ -236,9 +249,17 @@ export default function NEXOApp() {
   const [histMinDate, setHistMinDate] = useState("");
   const [histMax, setHistMax] = useState("");
   const [histMaxDate, setHistMaxDate] = useState("");
+
   const [plIbov, setPlIbov] = useState("");
   const [plSp500, setPlSp500] = useState("");
   const [classicValuations, setClassicValuations] = useState("NAO");
+
+  const [macroData, setMacroData] = useState(null);
+  const [macroError, setMacroError] = useState("");
+  const [ibovManual, setIbovManual] = useState("");
+  const [sp500Manual, setSp500Manual] = useState("");
+  const [ifixManual, setIfixManual] = useState("");
+  const [jurosFuturoManual, setJurosFuturoManual] = useState("");
 
   const [phase, setPhase] = useState("initial");
   const [loading, setLoading] = useState(false);
@@ -257,14 +278,21 @@ export default function NEXOApp() {
   const isVeto = scanResult?.veredito === "VETADO";
   const locked = loading || hasScan || hasDeep || hasFinal || ended;
 
+  const canMacro = !loading && !hasScan && !hasDeep && !hasFinal && !ended;
   const canScan = ticker.trim().length >= 3 && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
   const canDeep = hasScan && !hasDeep && !isVeto && !loading && !hasFinal && !ended;
   const canFinalize = (hasScan || hasDeep) && !loading && !hasFinal && !ended;
   const canFollow = hasDeep && !loading && !hasFinal && !ended && (followQ.trim() || followUrl.trim());
 
+  const macro = macroData?.automatic || {};
+
   function buildManualContext() {
+    const ibovAuto = macro?.ibovespa_pontos;
+    const sp500Auto = macro?.sp500_pontos;
+    const ifixAuto = macro?.ifix_pontos;
+
     return (
-      "Dados manuais fornecidos pelo usuário para refinar a análise:\n" +
+      "Dados manuais e macro fornecidos pelo usuário para refinar a análise:\n" +
       "- Moeda selecionada: " + currency + "\n" +
       "- Valor atual/cota atual: " + (currentPrice || "não informado") + "\n" +
       "- Mínimo histórico: " + (histMin || "não informado") + "\n" +
@@ -274,6 +302,17 @@ export default function NEXOApp() {
       "- P/L atual Ibovespa: " + (plIbov || "não informado") + "\n" +
       "- P/L atual S&P 500: " + (plSp500 || "não informado") + "\n" +
       "- Calcular valuations clássicos como referência auxiliar na análise final? " + classicValuations + "\n" +
+      "- Selic Meta: " + macroLabel(macro?.selic_meta) + "\n" +
+      "- Selic diária: " + macroLabel(macro?.selic_diaria) + "\n" +
+      "- CDI diário: " + macroLabel(macro?.cdi_diario) + "\n" +
+      "- IPCA mensal: " + macroLabel(macro?.ipca_mensal) + "\n" +
+      "- USD PTAX: " + macroLabel(macro?.usd_ptax) + "\n" +
+      "- Fed Funds: " + macroLabel(macro?.fed_funds) + "\n" +
+      "- Ibovespa pontos: " + (ibovManual || (ibovAuto?.ok ? macroValue(ibovAuto) : "não informado")) + "\n" +
+      "- S&P 500 pontos: " + (sp500Manual || (sp500Auto?.ok ? macroValue(sp500Auto) : "não informado")) + "\n" +
+      "- IFIX pontos: " + (ifixManual || (ifixAuto?.ok ? macroValue(ifixAuto) : "não informado")) + "\n" +
+      "- Juros futuro Brasil: " + (jurosFuturoManual || "não informado") + "\n" +
+      "Regra de prioridade: se houver valor manual informado pelo usuário, usar o manual. Se manual vazio, usar o automático. Se automático indisponível, marcar como não informado.\n" +
       "Observação: os valuations Buffett moderno, Peter Lynch, Graham e Bazin, quando solicitados, devem ser usados apenas como referência complementar, nunca como decisão principal.\n"
     );
   }
@@ -296,6 +335,38 @@ export default function NEXOApp() {
     setFollowQ("");
     setFollowUrl("");
     setEnded(false);
+  }
+
+  async function handleMacro() {
+    if (!canMacro) return;
+
+    setLoading(true);
+    setLoadingKind("macro");
+    setMacroError("");
+    setError("");
+
+    try {
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const res = await fetch("/api/macro?v=" + Date.now(), {
+        method: "GET",
+        signal: controller.signal,
+        cache: "no-store",
+      });
+
+      const data = await res.json();
+
+      if (!data?.ok) throw new Error(data?.error || "Falha ao buscar dados macro");
+
+      setMacroData(data);
+    } catch (e) {
+      if (e?.name !== "AbortError") setMacroError(e?.message || "Erro ao atualizar macro");
+    } finally {
+      setLoading(false);
+      setLoadingKind("");
+      abortRef.current = null;
+    }
   }
 
   async function callAPI(ph, overrideCtx = "") {
@@ -513,6 +584,10 @@ export default function NEXOApp() {
     .ftxt::placeholder{color:#2A2318}
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
     .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+    .macro-card{border:1px solid #2A2318;padding:8px 10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#A89060}
+    .macro-title{font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
+    .macro-value{font-size:13px;color:#E8D5A3;font-weight:700}
+    .macro-note{font-size:8px;color:#4A3E28;margin-top:3px}
     .actions{display:flex;gap:7px;margin-bottom:10px}
     .btn-scan{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:linear-gradient(135deg,#C9A84C,#E8D5A3);color:#131008;border:none;cursor:pointer;border-radius:2px;flex:1}
     .btn-deep{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:transparent;border:1px solid #A8A8B8;color:#A8A8B8;cursor:pointer;border-radius:2px;flex:1}
@@ -576,6 +651,33 @@ export default function NEXOApp() {
           <input className="finp" disabled={locked} value={ticker} maxLength={12} placeholder="Ex: KNSC11, VALE3, VWCE, NVDA" onChange={(e) => setTicker(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") handleScan(); }} />
         </div>
 
+        <Sec title="Dados Macro NEXO">
+          <div className="actions">
+            <button className="btn-end" onClick={handleMacro} disabled={!canMacro}>
+              {loadingKind === "macro" ? "Atualizando..." : "Atualizar Macro"}
+            </button>
+          </div>
+
+          {macroError && <div className="err-box">Erro Macro: {macroError}</div>}
+
+          <div className="grid3">
+            {[
+              ["Selic Meta", macro?.selic_meta],
+              ["CDI diário", macro?.cdi_diario],
+              ["IPCA mensal", macro?.ipca_mensal],
+              ["USD PTAX", macro?.usd_ptax],
+              ["Fed Funds", macro?.fed_funds],
+              ["Selic diária", macro?.selic_diaria],
+            ].map((m) => (
+              <div className="macro-card" key={m[0]}>
+                <div className="macro-title">{m[0]}</div>
+                <div className="macro-value">{m[1]?.ok ? asText(m[1]?.value) : "—"}</div>
+                <div className="macro-note">{m[1]?.ok ? `${m[1]?.source} · ${m[1]?.date || ""}` : "Atualize Macro"}</div>
+              </div>
+            ))}
+          </div>
+        </Sec>
+
         <div className="grid2">
           <div className="field">
             <div className="flbl">Valor atual / cota atual</div>
@@ -615,11 +717,11 @@ export default function NEXOApp() {
         <div className="grid3">
           <div className="field">
             <div className="flbl">P/L Ibovespa</div>
-            <input className="finp-sm" disabled={locked} value={plIbov} placeholder="Ex: 8,5" onChange={(e) => setPlIbov(e.target.value)} />
+            <input className="finp-sm" disabled={locked} value={plIbov} placeholder="Manual" onChange={(e) => setPlIbov(e.target.value)} />
           </div>
           <div className="field">
             <div className="flbl">P/L S&P 500</div>
-            <input className="finp-sm" disabled={locked} value={plSp500} placeholder="Ex: 22,0" onChange={(e) => setPlSp500(e.target.value)} />
+            <input className="finp-sm" disabled={locked} value={plSp500} placeholder="Manual" onChange={(e) => setPlSp500(e.target.value)} />
           </div>
           <div className="field">
             <div className="flbl">Valuations clássicos?</div>
@@ -627,6 +729,31 @@ export default function NEXOApp() {
               <option value="NAO">NÃO</option>
               <option value="SIM">SIM</option>
             </select>
+          </div>
+        </div>
+
+        <div className="grid2">
+          <div className="field">
+            <div className="flbl">Ibovespa pontos</div>
+            <input className="finp-sm" disabled={locked} value={ibovManual} placeholder={macro?.ibovespa_pontos?.ok ? macroValue(macro.ibovespa_pontos) : "Manual"} onChange={(e) => setIbovManual(e.target.value)} />
+            <div className="macro-note">{macro?.ibovespa_pontos?.mode || "manual_fallback"}</div>
+          </div>
+          <div className="field">
+            <div className="flbl">S&P 500 pontos</div>
+            <input className="finp-sm" disabled={locked} value={sp500Manual} placeholder={macro?.sp500_pontos?.ok ? macroValue(macro.sp500_pontos) : "Manual"} onChange={(e) => setSp500Manual(e.target.value)} />
+            <div className="macro-note">{macro?.sp500_pontos?.mode || "manual_fallback"}</div>
+          </div>
+        </div>
+
+        <div className="grid2">
+          <div className="field">
+            <div className="flbl">IFIX pontos</div>
+            <input className="finp-sm" disabled={locked} value={ifixManual} placeholder={macro?.ifix_pontos?.ok ? macroValue(macro.ifix_pontos) : "Manual"} onChange={(e) => setIfixManual(e.target.value)} />
+            <div className="macro-note">{macro?.ifix_pontos?.mode || "manual_fallback"}</div>
+          </div>
+          <div className="field">
+            <div className="flbl">Juros futuro Brasil</div>
+            <input className="finp-sm" disabled={locked} value={jurosFuturoManual} placeholder="Manual" onChange={(e) => setJurosFuturoManual(e.target.value)} />
           </div>
         </div>
 
@@ -653,7 +780,7 @@ export default function NEXOApp() {
             <div className="empty"><div className="empty-g">⬡</div><div className="empty-t">Aguardando análise</div></div>
           )}
 
-          {loading && <div className="loading-r">{loadingKind === "final" ? "Gerando Reclassificação Final NEXO..." : loadingKind === "follow" ? "Aprofundando Deep NEXO..." : loadingKind === "deep" ? "Processando Deep NEXO..." : "Processando Scan NEXO..."}</div>}
+          {loading && <div className="loading-r">{loadingKind === "macro" ? "Atualizando dados macro..." : loadingKind === "final" ? "Gerando Reclassificação Final NEXO..." : loadingKind === "follow" ? "Aprofundando Deep NEXO..." : loadingKind === "deep" ? "Processando Deep NEXO..." : "Processando Scan NEXO..."}</div>}
           {error && <div className="err-box">Erro: {error}</div>}
 
           {hasScan && <Sec title="Resultado Scan"><ScanReport r={scanResult} /></Sec>}
