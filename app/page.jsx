@@ -1,542 +1,283 @@
-"use client";
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 
-import React, { useEffect, useRef, useState } from "react";
+const SCAN_S =
+  '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
 
-function detectType(t) {
-  const tk = (t || "").toUpperCase().trim();
-  if (!tk) return "fii";
-  if (/^[A-Z]{4}11$/.test(tk)) return "fii";
-  if (/^[A-Z]{4}[3-9]B?$/.test(tk) || /^[A-Z]{3,4}[0-9]{1,2}$/.test(tk)) return "acao-br";
-  if (["VWCE", "CSPX", "EQQQ", "WSML", "IWDA", "SWDA", "VUSA", "XWLD", "MEUD"].includes(tk)) return "etf-ext";
-  if (/^[A-Z]{1,5}$/.test(tk) && tk.length <= 5) return "stock-ext";
-  return "acao-br";
+const DEEP_S =
+  '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","lacunas":[{"q":"","r":""}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"zona":"","besst":"","desconto":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
+
+const FINAL_S =
+  '{"ticker":"","classificacao_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR|VETADO","veredito_anterior":"","veredito_reclassificado":"","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","mudanca_veredito":"MANTEVE|MELHOROU|PIOROU","riscos_incorporados":[{"descricao":"","impacto_score":"","severidade":"ALTO|MEDIO|BAIXO"}],"ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":""}],"tese_final":"","preco_final":{"zona_convergencia":"","besst":"","margem_seguranca":"","observacao":""},"conclusao":"","proximos_passos":[""]}';
+
+const INV = '{"ticker_invalido":true}';
+
+const SCANS = {
+  "fii":
+    "You are a NEXO FII analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    SCAN_S +
+    " If ticker unknown: " +
+    INV +
+    " Rules: liq<R$300k=VETO. gov5dims: estrutura/gestor/conselho/auditoria/concentracao, nota1=VETO. KPIs: P/VP, DY12m, spread NTN-B, vacancia, prazo. Fill 6 score_dimensoes. tese=2 short sentences. 2 lacunas_deep. All text in Portuguese.",
+
+  "acao-br":
+    "You are a NEXO Brazilian stock analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    SCAN_S +
+    " If ticker unknown: " +
+    INV +
+    " Rules: detect segment automatically. liq<R$300k=VETO. gov5dims nota1=VETO. segment-specific KPIs. Fill 6 score_dimensoes. tese=2 short sentences. 2 lacunas_deep. All text in Portuguese.",
+
+  "etf-ext":
+    "You are a NEXO ETF analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    SCAN_S +
+    " score_max=25, governanca=[]. If ticker unknown: " +
+    INV +
+    " KPIs: TER, TD, AUM, domicilio, ACC/DIST, top10. Fill 5 score_dimensoes. tese=2 short sentences. 2 lacunas_deep. All text in Portuguese.",
+
+  "stock-ext":
+    "You are a NEXO international stock analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    SCAN_S +
+    " score_max=50. If ticker unknown: " +
+    INV +
+    " Rules: ADV<1M=VETO. gov4dims. thematic purity >50%. theme-specific KPIs. Fill 6 score_dimensoes. tese=2 short sentences. 2 lacunas_deep. All text in Portuguese.",
+};
+
+const DEEPS = {
+  "fii":
+    "You are a NEXO FII deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    DEEP_S +
+    " C1=P/VP, C2=yield vs NTN-B spread, C3=location moat. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro scenarios. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
+
+  "acao-br":
+    "You are a NEXO Brazilian stock deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    DEEP_S +
+    " Use segment-appropriate pricing model C1/C2/C3. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
+
+  "etf-ext":
+    "You are a NEXO ETF deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    DEEP_S +
+    " C1=cost efficiency, C2=concentration risk, C3=Markowitz fit. 2 macro. 2 passos. All text in Portuguese.",
+
+  "stock-ext":
+    "You are a NEXO international stock deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    DEEP_S +
+    " Theme-appropriate pricing model. Answer 2 lacunas. 2 macro. 2 passos. All text in Portuguese.",
+};
+
+const FINALS = {
+  "fii":
+    "You are a NEXO FII final reclassification analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    FINAL_S +
+    " Your task is to consolidate Scan, Deep and all Deep follow-ups. Re-score the asset considering new risks, new catalysts, valuation changes, liquidity, governance, leverage, portfolio quality, market regime and narrative coherence. Do not ignore negative discoveries. Explain score changes objectively. All text in Portuguese.",
+
+  "acao-br":
+    "You are a NEXO Brazilian stock final reclassification analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    FINAL_S +
+    " Your task is to consolidate Scan, Deep and all Deep follow-ups. Re-score the company considering new risks, new catalysts, capital structure, governance, moat, earnings quality, macro sensitivity, valuation and narrative coherence. Do not ignore negative discoveries. Explain score changes objectively. All text in Portuguese.",
+
+  "etf-ext":
+    "You are a NEXO ETF final reclassification analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    FINAL_S +
+    " Your task is to consolidate Scan, Deep and all Deep follow-ups. Re-score the ETF considering cost, tracking difference, AUM, domicile, concentration, tax/friction, liquidity, portfolio role and Markowitz fit. Explain score changes objectively. All text in Portuguese.",
+
+  "stock-ext":
+    "You are a NEXO international stock final reclassification analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    FINAL_S +
+    " Your task is to consolidate Scan, Deep and all Deep follow-ups. Re-score the company considering theme purity, moat, growth quality, valuation, risk, margins, capital allocation, balance sheet and narrative coherence. Explain score changes objectively. All text in Portuguese.",
+};
+
+function safeError(message) {
+  return Response.json({
+    error: {
+      message: String(message || "Erro desconhecido"),
+    },
+  });
 }
 
-function asArray(v) {
-  return Array.isArray(v) ? v : [];
-}
+function parseModelJSON(text) {
+  if (!text) {
+    return {
+      ok: false,
+      error: "Resposta vazia",
+      raw: "",
+    };
+  }
 
-function asText(v) {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "string") return v;
-  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  let raw = String(text)
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
+
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+
+  if (start === -1 || end === -1 || end <= start) {
+    return {
+      ok: false,
+      error: "Objeto JSON não encontrado",
+      raw,
+    };
+  }
+
+  raw = raw.slice(start, end + 1);
+  raw = raw.replace(/,(\s*[}\]])/g, "$1");
+
   try {
-    return JSON.stringify(v);
-  } catch {
-    return String(v);
+    return {
+      ok: true,
+      data: JSON.parse(raw),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err.message,
+      raw,
+    };
   }
 }
 
-function Badge({ text }) {
-  const value = asText(text || "N/D").toUpperCase();
-  const colors = {
-    APROVADO: ["#C9A84C", "rgba(201,168,76,.15)"],
-    WATCHLIST: ["#A8A8B8", "rgba(168,168,184,.15)"],
-    VETADO: ["#C87070", "rgba(200,112,112,.15)"],
-    PASS: ["#6DB46D", "rgba(100,180,100,.12)"],
-    FAIL: ["#C87070", "rgba(200,112,112,.12)"],
-    ALERTA: ["#D2A03C", "rgba(210,160,60,.12)"],
-    ALTO: ["#C87070", "rgba(200,112,112,.12)"],
-    MEDIO: ["#D2A03C", "rgba(210,160,60,.12)"],
-    BAIXO: ["#6DB46D", "rgba(100,180,100,.12)"],
-    COMPRAR: ["#C9A84C", "rgba(201,168,76,.15)"],
-    MONITORAR: ["#A8A8B8", "rgba(168,168,184,.15)"],
-    AGUARDAR: ["#A8A8B8", "rgba(168,168,184,.1)"],
-    EVITAR: ["#C87070", "rgba(200,112,112,.15)"],
-  };
-  const c = colors[value] || ["#6A5C3A", "rgba(168,168,184,.1)"];
-
-  return (
-    <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fontWeight: 700, letterSpacing: 1, padding: "2px 8px", border: "1px solid " + c[0], color: c[0], background: c[1], display: "inline-block", whiteSpace: "nowrap" }}>
-      {value}
-    </span>
-  );
-}
-
-function ScoreBar({ score, max = 5 }) {
-  const s = Number(score || 0);
-  const m = Number(max || 5);
-  const pct = Math.max(0, Math.min((s / m) * 100, 100));
-  const c = s >= m * 0.7 ? "#C9A84C" : s >= m * 0.4 ? "#A8A8B8" : "#8B3A3A";
-
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 90 }}>
-      <div style={{ flex: 1, height: 4, background: "#2A2318", borderRadius: 2 }}>
-        <div style={{ width: pct + "%", height: "100%", background: c, borderRadius: 2 }} />
-      </div>
-      <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: c, minWidth: 36 }}>{s}/{m}</span>
-    </div>
-  );
-}
-
-function Sec({ title, children }) {
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#C9A84C", letterSpacing: 3, textTransform: "uppercase", marginBottom: 10, paddingBottom: 6, borderBottom: "1px solid #2A2318" }}>
-        {title}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Row({ label, right, children }) {
-  return (
-    <div style={{ padding: "7px 0", borderBottom: "1px solid #1E1A0E" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-        <span style={{ fontSize: 12, color: "#D4C9A8", flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{asText(label)}</span>
-        <span style={{ flexShrink: 0, maxWidth: "55%", textAlign: "right", overflowWrap: "anywhere", fontSize: 12, color: "#C9A84C" }}>{right}</span>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function DetailBlock({ title, value, note }) {
-  return (
-    <div style={{ padding: "10px 0", borderBottom: "1px solid #1E1A0E", overflowWrap: "anywhere" }}>
-      <div style={{ fontSize: 13, color: "#E8D5A3", marginBottom: 4 }}>{asText(title)}</div>
-      {value && <div style={{ fontSize: 12, color: "#A89060", lineHeight: 1.6 }}>{asText(value)}</div>}
-      {note && <div style={{ fontSize: 11, color: "#6A5C3A", lineHeight: 1.5, marginTop: 3 }}>{asText(note)}</div>}
-    </div>
-  );
-}
-
-function Note({ children, col }) {
-  return <div style={{ fontSize: 11, color: col || "#8A7A58", marginTop: 3, lineHeight: 1.5 }}>{children}</div>;
-}
-
-function ScanReport({ r }) {
-  const filtros = asArray(r?.filtros);
-  const governanca = asArray(r?.governanca);
-  const kpis = asArray(r?.kpis);
-  const scoreDimensoes = asArray(r?.score_dimensoes);
-  const catalisadores = asArray(r?.catalisadores);
-  const riscos = asArray(r?.riscos);
-  const lacunas = asArray(r?.lacunas_deep);
-
-  return (
-    <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8", overflowX: "hidden" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 16, fontWeight: 700, color: "#E8D5A3", overflowWrap: "anywhere" }}>
-            {asText(r?.ticker)} <span style={{ fontSize: 12, color: "#8A7A58", fontWeight: 400 }}>· {asText(r?.nome)}</span>
-          </div>
-          {r?.segmento && <div style={{ fontSize: 11, color: "#6A5C3A" }}>{asText(r.segmento)}</div>}
-        </div>
-        <Badge text={r?.veredito} />
-      </div>
-
-      <Sec title="Score Geral">
-        <ScoreBar score={r?.score_total} max={r?.score_max || 30} />
-        {r?.score_resumo && <Note>{asText(r.score_resumo)}</Note>}
-      </Sec>
-
-      {filtros.length > 0 && <Sec title="Filtros Eliminatorios">{filtros.map((f, i) => <Row key={i} label={f?.nome} right={<Badge text={f?.status} />}><Note>{asText(f?.valor || f?.nota)}</Note></Row>)}</Sec>}
-      {governanca.length > 0 && <Sec title="Governanca 0B">{governanca.map((g, i) => <Row key={i} label={g?.dimensao} right={<ScoreBar score={g?.nota} />}><Note>{asText(g?.obs)}</Note></Row>)}</Sec>}
-      {kpis.length > 0 && <Sec title="KPIs">{kpis.map((k, i) => <Row key={i} label={k?.nome} right={<Badge text={k?.status} />}><Note col="#A89060">{asText(k?.valor)} {k?.benchmark ? " · ref: " + asText(k.benchmark) : ""}</Note></Row>)}</Sec>}
-      {scoreDimensoes.length > 0 && <Sec title="Score por Dimensao">{scoreDimensoes.map((d, i) => <Row key={i} label={d?.nome} right={<ScoreBar score={d?.nota} />}><Note>{asText(d?.obs)}</Note></Row>)}</Sec>}
-      {r?.tese && <Sec title="Tese"><Note col="#A89060">{asText(r.tese)}</Note></Sec>}
-      {catalisadores.length > 0 && <Sec title="Catalisadores">{catalisadores.map((c, i) => <DetailBlock key={i} title={c?.descricao} value={c?.impacto} note={c?.prazo} />)}</Sec>}
-      {riscos.length > 0 && <Sec title="Riscos">{riscos.map((risco, i) => <Row key={i} label={risco?.descricao} right={<Badge text={risco?.severidade} />}><Note>{asText(risco?.probabilidade)}</Note></Row>)}</Sec>}
-      {lacunas.length > 0 && <Sec title="Lacunas para o Deep">{lacunas.map((l, i) => <DetailBlock key={i} title={"Lacuna " + (i + 1)} value={l} />)}</Sec>}
-    </div>
-  );
-}
-
-function DeepReport({ r }) {
-  const lacs = asArray(r?.lacunas || r?.lacunas_respondidas);
-  const precs = asArray(r?.preco || r?.modelo_preco);
-  const macs = asArray(r?.macro || r?.sensibilidade);
-  const cats = asArray(r?.catalisadores);
-  const risks = asArray(r?.riscos);
-  const steps = asArray(r?.passos || r?.proximos_passos);
-
-  return (
-    <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8", overflowX: "hidden" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, gap: 8 }}>
-        <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 14, fontWeight: 700, color: "#E8D5A3", minWidth: 0 }}>
-          {asText(r?.ticker)} · Deep NEXO
-        </div>
-        {r?.veredito_final && <Badge text={r.veredito_final} />}
-      </div>
-
-      {lacs.length > 0 && <Sec title="Respostas as Lacunas">{lacs.map((l, i) => <DetailBlock key={i} title={l?.q || l?.lacuna || "Lacuna"} value={l?.r || l?.resposta || l} />)}</Sec>}
-      {precs.length > 0 && <Sec title="Modelo de Preco - 3 Camadas">{precs.map((c, i) => <DetailBlock key={i} title={(c?.c || c?.camada || "Camada") + (c?.vj || c?.valor_justo ? " · " + asText(c?.vj || c?.valor_justo) : "")} value={c?.met || c?.metodologia} note={c?.prem || c?.premissas} />)}</Sec>}
-      {(r?.zona || r?.zona_convergida) && <Sec title="Zona Convergida · BESST"><DetailBlock title={r?.zona || r?.zona_convergida} value={r?.besst || r?.zona_besst ? "Entrada BESST: " + asText(r?.besst || r?.zona_besst) : ""} note={r?.desconto || r?.desconto_atual ? "Desconto atual: " + asText(r?.desconto || r?.desconto_atual) : ""} /></Sec>}
-      {macs.length > 0 && <Sec title="Sensibilidade Macro">{macs.map((s, i) => <DetailBlock key={i} title={s?.s || s?.cenario} value={s?.i || s?.impacto} note={s?.detalhe} />)}</Sec>}
-      {cats.length > 0 && <Sec title="Catalisadores">{cats.map((c, i) => <DetailBlock key={i} title={c?.d || c?.descricao} value={c?.impacto} note={c?.p || c?.prazo} />)}</Sec>}
-      {risks.length > 0 && <Sec title="Riscos">{risks.map((risco, i) => <DetailBlock key={i} title={risco?.d || risco?.descricao} value={"Severidade: " + asText(risco?.sev || risco?.severidade || "MEDIO")} note={risco?.g || risco?.gatilho ? "Gatilho: " + asText(risco?.g || risco?.gatilho) : ""} />)}</Sec>}
-      {steps.length > 0 && <Sec title="Proximos Passos">{steps.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
-    </div>
-  );
-}
-
-export default function NEXOApp() {
-  const [scanResult, setScanResult] = useState(null);
-  const [deepResult, setDeepResult] = useState(null);
-  const [deepAdds, setDeepAdds] = useState([]);
-  const [ticker, setTicker] = useState("");
-  const [riUrl, setRiUrl] = useState("");
-  const [extraCtx, setExtraCtx] = useState("");
-  const [phase, setPhase] = useState("initial");
-  const [loading, setLoading] = useState(false);
-  const [loadingKind, setLoadingKind] = useState("");
-  const [error, setError] = useState("");
-  const [followQ, setFollowQ] = useState("");
-  const [followUrl, setFollowUrl] = useState("");
-  const [ended, setEnded] = useState(false);
-
-  const outRef = useRef(null);
-  const abortRef = useRef(null);
-
-  const hasScan = !!scanResult;
-  const hasDeep = !!deepResult;
-  const isVeto = scanResult?.veredito === "VETADO";
-
-  const canScan = ticker.trim().length >= 3 && !loading && !hasScan && !hasDeep && !ended;
-  const canDeep = hasScan && !hasDeep && !isVeto && !loading && !ended;
-  const canFinish = (hasScan || hasDeep) && !loading && !ended;
-
-  useEffect(() => {
-    if (outRef.current && (scanResult || deepResult || deepAdds.length > 0 || error || ended)) {
-      outRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [scanResult, deepResult, deepAdds, error, ended]);
-
-  function reset() {
-    if (loading && abortRef.current) {
-      abortRef.current.abort();
-      setLoading(false);
-      setLoadingKind("");
-      setError("Análise cancelada pelo usuário.");
-      return;
-    }
-
-    setScanResult(null);
-    setDeepResult(null);
-    setDeepAdds([]);
-    setPhase("initial");
-    setError("");
-    setFollowQ("");
-    setFollowUrl("");
-    setEnded(false);
+function getSystemPrompt(phase, assetType) {
+  if (phase === "final") {
+    return FINALS[assetType] || FINALS["acao-br"];
   }
 
-  function finishAnalysis() {
-    setEnded(true);
-    setFollowQ("");
-    setFollowUrl("");
-    setPhase("ended");
+  if (phase === "deep") {
+    return DEEPS[assetType] || DEEPS["acao-br"];
   }
 
-  async function callAPI(ph, overrideCtx = "") {
-    const controller = new AbortController();
-    abortRef.current = controller;
+  return SCANS[assetType] || SCANS["acao-br"];
+}
 
-    const t = ticker.trim().toUpperCase();
-    const tp = detectType(t);
+function buildUserMessage({ phase, ticker, scanSummary, extraCtx }) {
+  if (phase === "final") {
+    return (
+      "Reclassifique o ativo após o ciclo completo NEXO.\n" +
+      "Ticker: " +
+      ticker +
+      "\n\nHistórico completo da análise:\n" +
+      (extraCtx || "") +
+      "\n\nTarefa:\n" +
+      "1. Consolide o Scan, o Deep e todos os aprofundamentos.\n" +
+      "2. Identifique riscos novos e riscos agravados.\n" +
+      "3. Recalcule o score revisado.\n" +
+      "4. Informe se o veredito melhorou, piorou ou foi mantido.\n" +
+      "5. Gere a classificação final NEXO.\n" +
+      "6. Retorne apenas JSON válido no schema solicitado.\n\n" +
+      "IMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
+    );
+  }
 
-    let summary = "";
+  return (
+    "Analyze ticker: " +
+    ticker +
+    (scanSummary ? "\nScan context: " + scanSummary : "") +
+    (extraCtx ? "\nFocus: " + extraCtx : "") +
+    "\n\nIMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
+  );
+}
 
-    if (ph === "deep" && scanResult) {
-      summary =
-        asText(scanResult.veredito) +
-        "|" +
-        asText(scanResult.segmento) +
-        "|" +
-        asArray(scanResult.lacunas_deep).slice(0, 2).map(asText).join("|");
+export async function POST(req) {
+  try {
+    const body = await req.json();
+    const { phase, assetType, ticker, scanSummary, extraCtx } = body;
+
+    if (!phase || !assetType) {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify(body),
+      });
+
+      const text = await resp.text();
+
+      try {
+        return Response.json(JSON.parse(text));
+      } catch {
+        return safeError(
+          "Resposta não-JSON da API Anthropic: " +
+            text.slice(0, 500).replace(/\n/g, " ")
+        );
+      }
     }
 
-    const res = await fetch("/api/analyze", {
+    const systemPrompt = getSystemPrompt(phase, assetType);
+
+    const userMsg = buildUserMessage({
+      phase,
+      ticker,
+      scanSummary,
+      extraCtx,
+    });
+
+    const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
       body: JSON.stringify({
-        phase: ph,
-        assetType: tp,
-        ticker: t,
-        scanSummary: summary,
-        extraCtx: overrideCtx || (extraCtx ? extraCtx.trim() : ""),
+        model: "claude-sonnet-4-6",
+        max_tokens: phase === "final" ? 5000 : 4000,
+        system: systemPrompt,
+        messages: [
+          {
+            role: "user",
+            content: userMsg,
+          },
+        ],
       }),
     });
 
-    const txt = await res.text();
-    if (!txt || txt.trim() === "") throw new Error("Sem resposta do servidor");
+    const apiText = await apiResp.text();
 
-    let data;
+    let apiData;
+
     try {
-      data = JSON.parse(txt);
+      apiData = JSON.parse(apiText);
     } catch {
-      const s = txt.indexOf("{");
-      const e = txt.lastIndexOf("}");
-      if (s === -1 || e === -1) throw new Error("Resposta inválida da API");
-      data = JSON.parse(txt.slice(s, e + 1));
+      return safeError(
+        "Anthropic retornou resposta não-JSON: " +
+          apiText.slice(0, 500).replace(/\n/g, " ")
+      );
     }
 
-    if (data?.error) throw new Error(asText(data.error.message || data.error));
-    return data;
-  }
-
-  async function handleScan() {
-    if (!canScan) return;
-
-    setLoading(true);
-    setLoadingKind("scan");
-    setError("");
-    setScanResult(null);
-    setDeepResult(null);
-    setDeepAdds([]);
-    setEnded(false);
-    setPhase("scan_running");
-
-    try {
-      const r = await callAPI("scan");
-      if (r?.ticker_invalido) {
-        setError("Ticker não encontrado: " + ticker.trim().toUpperCase());
-        setPhase("scan_done");
-      } else {
-        setScanResult(r);
-        setPhase("scan_done");
-      }
-    } catch (e) {
-      if (e?.name !== "AbortError") setError(e?.message || "Erro desconhecido");
-      setPhase("scan_done");
-    } finally {
-      setLoading(false);
-      setLoadingKind("");
-      abortRef.current = null;
+    if (!apiResp.ok) {
+      return safeError(
+        "Anthropic HTTP " +
+          apiResp.status +
+          ": " +
+          (apiData?.error?.message || "erro desconhecido")
+      );
     }
-  }
 
-  async function handleDeep() {
-    if (!canDeep) return;
-
-    setLoading(true);
-    setLoadingKind("deep");
-    setError("");
-    setPhase("deep_running");
-
-    try {
-      const r = await callAPI("deep");
-      setDeepResult(r);
-      setPhase("deep_done");
-    } catch (e) {
-      if (e?.name !== "AbortError") setError(e?.message || "Erro desconhecido");
-      setPhase("scan_done");
-    } finally {
-      setLoading(false);
-      setLoadingKind("");
-      abortRef.current = null;
+    if (apiData.error) {
+      return safeError("API: " + apiData.error.message);
     }
-  }
 
-  async function handleFollowUp() {
-    if (loading || (!followQ.trim() && !followUrl.trim())) return;
+    const rawText = apiData?.content?.[0]?.text || "";
 
-    setLoading(true);
-    setLoadingKind("follow");
-    setError("");
-
-    try {
-      const contexto =
-        "Aprofundamento adicional do Deep NEXO.\n" +
-        (followUrl.trim() ? "Link ou fonte adicional: " + followUrl.trim() + "\n" : "") +
-        (followQ.trim() ? "Pergunta/foco do usuário: " + followQ.trim() + "\n" : "") +
-        "\nGere um NOVO resultado de Deep aprofundado em JSON válido, mantendo o mesmo schema. Não apague nem substitua o Deep anterior.\n" +
-        "Deep anterior:\n" +
-        JSON.stringify(deepResult || {}) +
-        "\nAprofundamentos anteriores:\n" +
-        JSON.stringify(deepAdds || []);
-
-      const r = await callAPI("deep", contexto);
-      setDeepAdds((prev) => [...prev, r]);
-      setFollowQ("");
-      setFollowUrl("");
-      setPhase("deep_done");
-    } catch (e) {
-      if (e?.name !== "AbortError") setError(e?.message || "Erro desconhecido");
-    } finally {
-      setLoading(false);
-      setLoadingKind("");
-      abortRef.current = null;
+    if (!rawText) {
+      return safeError("Modelo retornou resposta vazia");
     }
+
+    const result = parseModelJSON(rawText);
+
+    if (!result.ok) {
+      return safeError(
+        "Parse falhou: " +
+          result.error +
+          ". Modelo retornou: " +
+          result.raw.slice(0, 500).replace(/\n/g, " ")
+      );
+    }
+
+    return Response.json(result.data);
+  } catch (err) {
+    return safeError("Erro servidor: " + err.message);
   }
-
-  const CSS = `
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600&display=swap');
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{background:#131008;color:#D4C9A8;font-family:'Inter',sans-serif;min-height:100vh}
-    .app{max-width:960px;margin:0 auto;padding:0 16px 48px;overflow-x:hidden}
-    .hdr{border-bottom:1px solid #2A2318;padding:10px 0 8px;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-    .logo-box{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:#E8D5A3;letter-spacing:3px}
-    .logo-s{font-family:'JetBrains Mono',monospace;font-size:9px;color:#4A3E28;letter-spacing:2.5px;text-transform:uppercase}
-    .sdot{width:5px;height:5px;border-radius:50%;background:#C9A84C;box-shadow:0 0 5px #C9A84C88;animation:blink 2.5s ease-in-out infinite}
-    .sdot-wrap{display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#4A3E28}
-    @keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
-    .quads{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:18px}
-    .quad{border:1px solid #2A2318;border-top:2px solid;padding:7px 10px;font-family:'JetBrains Mono',monospace}
-    .quad.N{border-top-color:#C9A84C}.quad.E{border-top-color:#D4D4E0}.quad.X{border-top-color:#A8A8B8}.quad.O{border-top-color:#E8D5A3}
-    .q-l{font-size:13px;font-weight:700;margin-bottom:1px}
-    .quad.N .q-l{color:#C9A84C}.quad.E .q-l{color:#D4D4E0}.quad.X .q-l{color:#A8A8B8}.quad.O .q-l{color:#E8D5A3}
-    .q-n{font-size:8px;color:#6A5C3A;letter-spacing:1px;text-transform:uppercase}
-    .types{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-    .type-card{font-family:'JetBrains Mono',monospace;font-size:11px;padding:6px 12px;border:1px solid #2A2318;color:#4A3E28;display:flex;align-items:center;gap:6px;border-radius:2px}
-    .field{border:1px solid #2A2318;padding:10px 14px 8px;margin-bottom:8px}
-    .flbl{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
-    .finp{width:100%;background:transparent;border:none;outline:none;font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#E8D5A3;letter-spacing:1.5px;text-transform:uppercase}
-    .finp::placeholder{color:#2A2318;font-weight:300;font-size:13px;letter-spacing:0;text-transform:none}
-    .finp-sm{width:100%;background:transparent;border:none;outline:none;font-family:'JetBrains Mono',monospace;font-size:12px;color:#A89060}
-    .finp-sm::placeholder{color:#2A2318}
-    .ftxt{width:100%;background:transparent;border:none;outline:none;resize:none;font-family:'JetBrains Mono',monospace;font-size:11px;color:#A89060;line-height:1.5;max-height:100px;overflow-y:auto}
-    .ftxt::placeholder{color:#2A2318}
-    .actions{display:flex;gap:7px;margin-bottom:10px}
-    .btn-scan{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:linear-gradient(135deg,#C9A84C,#E8D5A3);color:#131008;border:none;cursor:pointer;border-radius:2px;flex:1}
-    .btn-deep{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:transparent;border:1px solid #A8A8B8;color:#A8A8B8;cursor:pointer;border-radius:2px;flex:1}
-    .btn-cl,.btn-end{font-family:'JetBrains Mono',monospace;font-size:9px;color:#6A5C3A;background:transparent;border:1px solid #2A2318;padding:9px 13px;cursor:pointer;letter-spacing:1px;text-transform:uppercase;border-radius:2px}
-    .btn-end{border-color:#C9A84C;color:#C9A84C}
-    .output{border:1px solid #2A2318;padding:20px 16px;margin-bottom:8px;min-height:120px;position:relative;overflow-x:hidden}
-    .out-lbl{position:absolute;top:-1px;left:12px;font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;background:#131008;padding:0 6px;letter-spacing:1.5px;text-transform:uppercase}
-    .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:140px;gap:8px;opacity:.2}
-    .empty-g{font-family:'JetBrains Mono',monospace;font-size:26px;color:#C9A84C}
-    .empty-t{font-family:'JetBrains Mono',monospace;font-size:9px;color:#6A5C3A;letter-spacing:2px;text-transform:uppercase}
-    .loading-r{display:flex;align-items:center;gap:10px;padding:20px 0;font-family:'JetBrains Mono',monospace;font-size:10px;color:#6A5C3A;letter-spacing:1px;justify-content:center}
-    .err-box{font-family:'JetBrains Mono',monospace;font-size:10px;color:#C87070;background:rgba(200,112,112,.06);border:1px solid rgba(200,112,112,.2);border-left:2px solid #C87070;padding:9px 12px;margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}
-    .decision-box,.follow-box{margin-top:20px;border-top:1px solid #2A2318;padding-top:16px}
-    .decision-title,.follow-title{font-family:'JetBrains Mono',monospace;font-size:9px;color:#C9A84C;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
-    .decision-actions,.follow-actions{display:flex;gap:8px;margin-top:10px}
-    .ended-box{margin-top:16px;padding:12px 14px;border:1px solid #2A2318;background:rgba(201,168,76,.04);font-family:'JetBrains Mono',monospace;font-size:10px;color:#C9A84C;letter-spacing:1px;text-transform:uppercase}
-    .footer{display:flex;gap:12px;flex-wrap:wrap;padding:10px 0 0;border-top:1px solid #1E1A0E;margin-top:4px}
-    .fc{font-family:'JetBrains Mono',monospace;font-size:7.5px;color:#3A3020;letter-spacing:.8px;display:flex;align-items:center;gap:4px}
-    .fd{width:4px;height:4px;border-radius:50%;flex-shrink:0}
-    button:disabled,input:disabled,textarea:disabled{opacity:.3!important;cursor:not-allowed!important}
-    @media(max-width:600px){.quads{grid-template-columns:repeat(2,1fr)}.actions,.decision-actions,.follow-actions{flex-direction:column}.btn-deep,.btn-scan,.btn-cl,.btn-end{width:100%}}
-  `;
-
-  return (
-    <>
-      <style>{CSS}</style>
-
-      <div className="app">
-        <header className="hdr">
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div className="logo-box">NEXO</div>
-            <span className="logo-s">Portfolio Framework Beta</span>
-          </div>
-          <div className="sdot-wrap"><div className="sdot" /> ONLINE</div>
-        </header>
-
-        <div className="quads">
-          {[["N", "Nucleo"], ["E", "Estrutural"], ["X", "Exchange"], ["O", "Oportunidade"]].map((q) => (
-            <div key={q[0]} className={"quad " + q[0]}>
-              <div className="q-l">{q[0]}</div>
-              <div className="q-n">{q[1]}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="types">
-          {[{ i: "🏢", l: "FII" }, { i: "📈", l: "Acao BR" }, { i: "🌍", l: "ETF" }, { i: "🔭", l: "Stock" }].map((t) => (
-            <div key={t.l} className="type-card"><span style={{ fontSize: 13 }}>{t.i}</span>{t.l}</div>
-          ))}
-        </div>
-
-        <div className="field">
-          <div className="flbl">Ticker</div>
-          <input className="finp" disabled={loading || hasScan || hasDeep || ended} value={ticker} maxLength={12} placeholder="Ex: KNSC11, VALE3, VWCE, NVDA" onChange={(e) => setTicker(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") handleScan(); }} />
-        </div>
-
-        <div className="field">
-          <div className="flbl">Link RI / Dados Oficiais</div>
-          <input className="finp-sm" disabled={loading || hasScan || hasDeep || ended} value={riUrl} placeholder="https://ri.empresa.com.br..." onChange={(e) => setRiUrl(e.target.value)} />
-        </div>
-
-        <div className="field">
-          <div className="flbl">Contexto adicional</div>
-          <textarea className="ftxt" disabled={loading || hasScan || hasDeep || ended} rows={2} value={extraCtx} placeholder="Foco em KPI especifico, tese, duvida pontual..." onChange={(e) => setExtraCtx(e.target.value)} />
-        </div>
-
-        <div className="actions">
-          {(hasScan || hasDeep || loading || ended) && <button className="btn-cl" onClick={reset}>{loading ? "Cancelar" : "Limpar"}</button>}
-          <button className="btn-scan" onClick={handleScan} disabled={!canScan}>{loadingKind === "scan" ? "Analisando..." : "Scan NEXO →"}</button>
-          <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>{loadingKind === "deep" ? "Analisando..." : "Deep NEXO"}</button>
-        </div>
-
-        <div className="output" ref={outRef}>
-          <span className="out-lbl">{hasDeep || deepAdds.length > 0 ? "Deep NEXO" : "Scan NEXO"}</span>
-
-          {!hasScan && !hasDeep && deepAdds.length === 0 && !loading && !error && !ended && (
-            <div className="empty"><div className="empty-g">⬡</div><div className="empty-t">Aguardando análise</div></div>
-          )}
-
-          {loading && <div className="loading-r">{loadingKind === "follow" ? "Aprofundando Deep NEXO..." : loadingKind === "deep" ? "Processando Deep NEXO..." : "Processando Scan NEXO..."}</div>}
-          {error && <div className="err-box">Erro: {error}</div>}
-
-          {hasScan && <ScanReport r={scanResult} />}
-
-          {hasScan && !hasDeep && !isVeto && !ended && (
-            <div className="decision-box">
-              <div className="decision-title">Próxima etapa</div>
-              <div className="decision-actions">
-                <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>Rodar NEXO Deep →</button>
-                <button className="btn-end" onClick={finishAnalysis} disabled={!canFinish}>Finalizar análise</button>
-              </div>
-            </div>
-          )}
-
-          {hasScan && isVeto && !ended && (
-            <div className="decision-box">
-              <div className="decision-title">Ativo vetado no Scan</div>
-              <button className="btn-end" onClick={finishAnalysis} disabled={!canFinish}>Finalizar análise</button>
-            </div>
-          )}
-
-          {hasDeep && (
-            <div style={{ marginTop: 24 }}>
-              <Sec title="Resultado Deep Principal">
-                <DeepReport r={deepResult} />
-              </Sec>
-            </div>
-          )}
-
-          {deepAdds.length > 0 && deepAdds.map((d, i) => (
-            <div key={i} style={{ marginTop: 26 }}>
-              <Sec title={"Resultado Deep Aprofundado " + (i + 1)}>
-                <DeepReport r={d} />
-              </Sec>
-            </div>
-          ))}
-
-          {hasDeep && !ended && (
-            <div className="follow-box">
-              <div className="follow-title">Aprofundamento Pós-Deep</div>
-
-              <div className="field">
-                <div className="flbl">Link adicional opcional</div>
-                <input className="finp-sm" disabled={loading} value={followUrl} placeholder="Cole aqui link de fato relevante, documento RI, release, página oficial..." onChange={(e) => setFollowUrl(e.target.value)} />
-              </div>
-
-              <div className="field">
-                <div className="flbl">Pergunta ou foco opcional</div>
-                <textarea className="ftxt" disabled={loading} rows={3} value={followQ} placeholder="Ex: aprofundar impacto da Selic, risco fiscal, guidance, dívida, payout..." onChange={(e) => setFollowQ(e.target.value)} />
-              </div>
-
-              <div className="follow-actions">
-                <button className="btn-deep" onClick={handleFollowUp} disabled={loading || (!followQ.trim() && !followUrl.trim())}>{loadingKind === "follow" ? "Aprofundando..." : "Aprofundar Deep →"}</button>
-                <button className="btn-end" disabled={loading} onClick={finishAnalysis}>Finalizar análise</button>
-              </div>
-            </div>
-          )}
-
-          {ended && <div className="ended-box">Análise finalizada</div>}
-        </div>
-
-        <div className="footer">
-          {[{ c: "#C9A84C", t: "Liq. min. R$300k BR" }, { c: "#A8A8B8", t: "ADV min. US$1M Ext" }, { c: "#C87070", t: "0B: nota 1=veto" }, { c: "#E8D5A3", t: "BESST: 15-25% abaixo" }, { c: "#6A5C3A", t: "Beta v3.0" }].map((c, i) => (
-            <div key={i} className="fc"><div className="fd" style={{ background: c.c }} />{c.t}</div>
-          ))}
-        </div>
-      </div>
-    </>
-  );
 }
