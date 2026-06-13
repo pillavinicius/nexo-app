@@ -117,37 +117,54 @@ function ScanReport({r}) {
 }
 
 function DeepReport({r}) {
+  var lacs  = r.lacunas || r.lacunas_respondidas || [];
+  var precs = r.preco || r.modelo_preco || [];
+  var macs  = r.macro || r.sensibilidade || [];
+  var cats  = r.catalisadores || [];
+  var risks = r.riscos || [];
+  var steps = r.passos || r.proximos_passos || [];
   return React.createElement("div",{style:{fontFamily:"Inter,sans-serif",fontSize:13,lineHeight:1.7,color:"#D4C9A8"}},
     React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}},
       React.createElement("div",{style:{fontFamily:"JetBrains Mono,monospace",fontSize:14,fontWeight:700,color:"#E8D5A3"}},r.ticker+" · Deep NEXO"),
       r.veredito_final&&React.createElement(Badge,{text:r.veredito_final})),
-    (r.lacunas||r.lacunas_respondidas)&&(r.lacunas||r.lacunas_respondidas).length>0&&React.createElement(Sec,{title:"Respostas as Lacunas"},
-      r.lacunas_respondidas.map(function(l,i){return React.createElement("div",{key:i,style:{padding:"6px 0",borderBottom:"1px solid #1E1A0E"}},
-        React.createElement("div",{style:{fontSize:11,color:"#C9A84C",marginBottom:2}},"◈ "+l.lacuna),
-        React.createElement("div",{style:{fontSize:12,color:"#A89060"}},l.resposta));})),
-    (r.preco||r.modelo_preco)&&(r.preco||r.modelo_preco).length>0&&React.createElement(Sec,{title:"Modelo de Preco - 3 Camadas"},
-      (r.preco||r.modelo_preco).map(function(c,i){return React.createElement(Row,{key:i,label:(c.c||c.camada||""),right:React.createElement("span",{style:{fontFamily:"JetBrains Mono,monospace",fontSize:12,color:"#C9A84C"}},(c.vj||c.valor_justo||""))},
-        React.createElement(Note,null,c.metodologia),
-        c.premissas&&React.createElement(Note,{col:"#6A5C3A"},c.premissas));}),
+    lacs.length>0&&React.createElement(Sec,{title:"Respostas as Lacunas"},
+      lacs.map(function(l,i){
+        return React.createElement("div",{key:i,style:{padding:"6px 0",borderBottom:"1px solid #1E1A0E"}},
+          React.createElement("div",{style:{fontSize:11,color:"#C9A84C",marginBottom:2}},"◈ "+(l.q||l.lacuna||"")),
+          React.createElement("div",{style:{fontSize:12,color:"#A89060"}},(l.r||l.resposta||"")));
+      })),
+    precs.length>0&&React.createElement(Sec,{title:"Modelo de Preco - 3 Camadas"},
+      precs.map(function(c,i){
+        return React.createElement(Row,{key:i,label:(c.c||c.camada||""),right:React.createElement("span",{style:{fontFamily:"JetBrains Mono,monospace",fontSize:12,color:"#C9A84C"}},(c.vj||c.valor_justo||""))},
+          (c.met||c.metodologia)?React.createElement(Note,null,(c.met||c.metodologia||"")):null,
+          (c.prem||c.premissas)?React.createElement(Note,{col:"#6A5C3A"},(c.prem||c.premissas||"")):null);
+      }),
       (r.zona||r.zona_convergida)&&React.createElement("div",{style:{marginTop:8,padding:"8px 10px",border:"1px solid #C9A84C",background:"rgba(201,168,76,.06)"}},
         React.createElement("div",{style:{fontFamily:"JetBrains Mono,monospace",fontSize:9,color:"#C9A84C",marginBottom:4,letterSpacing:2,textTransform:"uppercase"}},"ZONA CONVERGIDA · BESST"),
         React.createElement("div",{style:{fontSize:13,color:"#E8D5A3",fontWeight:600}},(r.zona||r.zona_convergida||"")),
-        (r.besst||r.zona_besst)&&React.createElement("div",{style:{fontSize:12,color:"#A89060",marginTop:2}},"Entrada BESST: "+(r.besst||r.zona_besst||"")),
-        (r.desconto||r.desconto_atual)&&React.createElement("div",{style:{fontSize:11,color:"#6A5C3A"}},"Desconto atual: "+(r.desconto||r.desconto_atual||"")))),
-    (r.macro||r.sensibilidade)&&(r.macro||r.sensibilidade).length>0&&React.createElement(Sec,{title:"Sensibilidade Macro"},
-      (r.macro||r.sensibilidade).map(function(s,i){return React.createElement(Row,{key:i,label:(s.s||s.cenario||""),right:React.createElement("span",{style:{fontSize:12,color:"#A89060"}},(s.i||s.impacto||""))},
-        s.detalhe&&React.createElement(Note,null,s.detalhe));})),
-    r.catalisadores&&r.catalisadores.length>0&&React.createElement(Sec,{title:"Catalisadores"},
-      r.catalisadores.map(function(c,i){return React.createElement(Row,{key:i,label:c.descricao,right:React.createElement("span",{style:{fontSize:11,color:"#6A5C3A"}},c.prazo)},
-        React.createElement(Note,null,c.impacto));})),
-    r.riscos&&r.riscos.length>0&&React.createElement(Sec,{title:"Riscos"},
-      r.riscos.map(function(r2,i){return React.createElement(Row,{key:i,label:r2.descricao,right:React.createElement(Badge,{text:r2.severidade})},
-        r2.gatilho&&React.createElement(Note,{col:"#C87070"},"Gatilho: "+r2.gatilho));})),
-    (r.passos||r.proximos_passos)&&(r.passos||r.proximos_passos).length>0&&React.createElement(Sec,{title:"Proximos Passos"},
-      (r.passos||r.proximos_passos).map(function(p,i){return React.createElement("div",{key:i,style:{display:"flex",gap:8,padding:"4px 0",borderBottom:"1px solid #1E1A0E"}},
-        React.createElement("span",{style:{color:"#C9A84C",opacity:.5}},"▸"),
-        React.createElement("span",{style:{fontSize:12,color:"#A89060"}},p));})
-    )
+        (r.besst||r.zona_besst)?React.createElement("div",{style:{fontSize:12,color:"#A89060",marginTop:2}},"Entrada BESST: "+(r.besst||r.zona_besst||"")):null,
+        (r.desconto||r.desconto_atual)?React.createElement("div",{style:{fontSize:11,color:"#6A5C3A"}},"Desconto atual: "+(r.desconto||r.desconto_atual||"")):null)),
+    macs.length>0&&React.createElement(Sec,{title:"Sensibilidade Macro"},
+      macs.map(function(s,i){
+        return React.createElement(Row,{key:i,label:(s.s||s.cenario||""),right:React.createElement("span",{style:{fontSize:12,color:"#A89060"}},(s.i||s.impacto||""))},
+          s.detalhe?React.createElement(Note,null,s.detalhe):null);
+      })),
+    cats.length>0&&React.createElement(Sec,{title:"Catalisadores"},
+      cats.map(function(c,i){
+        return React.createElement(Row,{key:i,label:(c.d||c.descricao||""),right:React.createElement("span",{style:{fontSize:11,color:"#6A5C3A"}},(c.p||c.prazo||""))},
+          c.impacto?React.createElement(Note,null,c.impacto):null);
+      })),
+    risks.length>0&&React.createElement(Sec,{title:"Riscos"},
+      risks.map(function(r2,i){
+        return React.createElement(Row,{key:i,label:(r2.d||r2.descricao||""),right:React.createElement(Badge,{text:(r2.sev||r2.severidade||"MEDIO")})},
+          (r2.g||r2.gatilho)?React.createElement(Note,{col:"#C87070"},"Gatilho: "+(r2.g||r2.gatilho||"")):null);
+      })),
+    steps.length>0&&React.createElement(Sec,{title:"Proximos Passos"},
+      steps.map(function(p,i){
+        return React.createElement("div",{key:i,style:{display:"flex",gap:8,padding:"4px 0",borderBottom:"1px solid #1E1A0E"}},
+          React.createElement("span",{style:{color:"#C9A84C",opacity:.5}},"▸"),
+          React.createElement("span",{style:{fontSize:12,color:"#A89060"}},p));
+      }))
   );
 }
 
