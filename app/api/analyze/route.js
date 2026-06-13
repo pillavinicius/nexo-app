@@ -7,6 +7,9 @@ const SCAN_S =
 const DEEP_S =
   '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","lacunas":[{"q":"","r":""}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"zona":"","besst":"","desconto":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
 
+const FINAL_S =
+  '{"ticker":"","classificacao_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR|VETADO","veredito_anterior":"","veredito_reclassificado":"","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","mudanca_veredito":"MANTEVE|MELHOROU|PIOROU","riscos_incorporados":[{"descricao":"","impacto_score":"","severidade":"ALTO|MEDIO|BAIXO"}],"ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":""}],"tese_final":"","preco_final":{"zona_convergencia":"","besst":"","margem_seguranca":"","observacao":""},"conclusao":"","proximos_passos":[""]}';
+
 const INV = '{"ticker_invalido":true}';
 
 const SCANS = {
@@ -61,6 +64,28 @@ const DEEPS = {
     " Theme-appropriate pricing model. Answer 2 lacunas. 2 macro. 2 passos. All text in Portuguese.",
 };
 
+const FINALS = {
+  "fii":
+    "You are a NEXO FII final reclassification analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    FINAL_S +
+    " Your task is to consolidate Scan, Deep and all Deep follow-ups. Re-score the asset considering new risks, new catalysts, valuation changes, liquidity, governance, leverage, portfolio quality, market regime and narrative coherence. Do not ignore negative discoveries. Explain score changes objectively. All text in Portuguese.",
+
+  "acao-br":
+    "You are a NEXO Brazilian stock final reclassification analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    FINAL_S +
+    " Your task is to consolidate Scan, Deep and all Deep follow-ups. Re-score the company considering new risks, new catalysts, capital structure, governance, moat, earnings quality, macro sensitivity, valuation and narrative coherence. Do not ignore negative discoveries. Explain score changes objectively. All text in Portuguese.",
+
+  "etf-ext":
+    "You are a NEXO ETF final reclassification analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    FINAL_S +
+    " Your task is to consolidate Scan, Deep and all Deep follow-ups. Re-score the ETF considering cost, tracking difference, AUM, domicile, concentration, tax/friction, liquidity, portfolio role and Markowitz fit. Explain score changes objectively. All text in Portuguese.",
+
+  "stock-ext":
+    "You are a NEXO international stock final reclassification analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
+    FINAL_S +
+    " Your task is to consolidate Scan, Deep and all Deep follow-ups. Re-score the company considering theme purity, moat, growth quality, valuation, risk, margins, capital allocation, balance sheet and narrative coherence. Explain score changes objectively. All text in Portuguese.",
+};
+
 function safeError(message) {
   return Response.json({
     error: {
@@ -111,6 +136,46 @@ function parseModelJSON(text) {
   }
 }
 
+function getSystemPrompt(phase, assetType) {
+  if (phase === "final") {
+    return FINALS[assetType] || FINALS["acao-br"];
+  }
+
+  if (phase === "deep") {
+    return DEEPS[assetType] || DEEPS["acao-br"];
+  }
+
+  return SCANS[assetType] || SCANS["acao-br"];
+}
+
+function buildUserMessage({ phase, ticker, scanSummary, extraCtx }) {
+  if (phase === "final") {
+    return (
+      "Reclassifique o ativo após o ciclo completo NEXO.\n" +
+      "Ticker: " +
+      ticker +
+      "\n\nHistórico completo da análise:\n" +
+      (extraCtx || "") +
+      "\n\nTarefa:\n" +
+      "1. Consolide o Scan, o Deep e todos os aprofundamentos.\n" +
+      "2. Identifique riscos novos e riscos agravados.\n" +
+      "3. Recalcule o score revisado.\n" +
+      "4. Informe se o veredito melhorou, piorou ou foi mantido.\n" +
+      "5. Gere a classificação final NEXO.\n" +
+      "6. Retorne apenas JSON válido no schema solicitado.\n\n" +
+      "IMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
+    );
+  }
+
+  return (
+    "Analyze ticker: " +
+    ticker +
+    (scanSummary ? "\nScan context: " + scanSummary : "") +
+    (extraCtx ? "\nFocus: " + extraCtx : "") +
+    "\n\nIMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
+  );
+}
+
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -139,17 +204,14 @@ export async function POST(req) {
       }
     }
 
-    const systemPrompt =
-      phase === "deep"
-        ? DEEPS[assetType] || DEEPS["acao-br"]
-        : SCANS[assetType] || SCANS["acao-br"];
+    const systemPrompt = getSystemPrompt(phase, assetType);
 
-    const userMsg =
-      "Analyze ticker: " +
-      ticker +
-      (scanSummary ? "\nScan context: " + scanSummary : "") +
-      (extraCtx ? "\nFocus: " + extraCtx : "") +
-      "\n\nIMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object.";
+    const userMsg = buildUserMessage({
+      phase,
+      ticker,
+      scanSummary,
+      extraCtx,
+    });
 
     const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -160,7 +222,7 @@ export async function POST(req) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 4000,
+        max_tokens: phase === "final" ? 5000 : 4000,
         system: systemPrompt,
         messages: [
           {
