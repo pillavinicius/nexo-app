@@ -4,17 +4,11 @@ import React, { useEffect, useRef, useState } from "react";
 
 function detectType(t) {
   const tk = (t || "").toUpperCase().trim();
-
   if (!tk) return "fii";
   if (/^[A-Z]{4}11$/.test(tk)) return "fii";
   if (/^[A-Z]{4}[3-9]B?$/.test(tk) || /^[A-Z]{3,4}[0-9]{1,2}$/.test(tk)) return "acao-br";
-
-  if (["VWCE", "CSPX", "EQQQ", "WSML", "IWDA", "SWDA", "VUSA", "XWLD", "MEUD"].includes(tk)) {
-    return "etf-ext";
-  }
-
+  if (["VWCE", "CSPX", "EQQQ", "WSML", "IWDA", "SWDA", "VUSA", "XWLD", "MEUD"].includes(tk)) return "etf-ext";
   if (/^[A-Z]{1,5}$/.test(tk) && tk.length <= 5) return "stock-ext";
-
   return "acao-br";
 }
 
@@ -25,8 +19,7 @@ function asArray(v) {
 function asText(v) {
   if (v === null || v === undefined) return "";
   if (typeof v === "string") return v;
-  if (typeof v === "number") return String(v);
-  if (typeof v === "boolean") return String(v);
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
   try {
     return JSON.stringify(v);
   } catch {
@@ -36,7 +29,6 @@ function asText(v) {
 
 function Badge({ text }) {
   const value = asText(text || "N/D").toUpperCase();
-
   const colors = {
     APROVADO: ["#C9A84C", "rgba(201,168,76,.15)"],
     WATCHLIST: ["#A8A8B8", "rgba(168,168,184,.15)"],
@@ -52,24 +44,10 @@ function Badge({ text }) {
     AGUARDAR: ["#A8A8B8", "rgba(168,168,184,.1)"],
     EVITAR: ["#C87070", "rgba(200,112,112,.15)"],
   };
-
   const c = colors[value] || ["#6A5C3A", "rgba(168,168,184,.1)"];
 
   return (
-    <span
-      style={{
-        fontFamily: "JetBrains Mono, monospace",
-        fontSize: 10,
-        fontWeight: 700,
-        letterSpacing: 1,
-        padding: "2px 8px",
-        border: "1px solid " + c[0],
-        color: c[0],
-        background: c[1],
-        display: "inline-block",
-        whiteSpace: "nowrap",
-      }}
-    >
+    <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fontWeight: 700, letterSpacing: 1, padding: "2px 8px", border: "1px solid " + c[0], color: c[0], background: c[1], display: "inline-block", whiteSpace: "nowrap" }}>
       {value}
     </span>
   );
@@ -86,9 +64,7 @@ function ScoreBar({ score, max = 5 }) {
       <div style={{ flex: 1, height: 4, background: "#2A2318", borderRadius: 2 }}>
         <div style={{ width: pct + "%", height: "100%", background: c, borderRadius: 2 }} />
       </div>
-      <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: c, minWidth: 36 }}>
-        {s}/{m}
-      </span>
+      <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: c, minWidth: 36 }}>{s}/{m}</span>
     </div>
   );
 }
@@ -96,18 +72,7 @@ function ScoreBar({ score, max = 5 }) {
 function Sec({ title, children }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <div
-        style={{
-          fontFamily: "JetBrains Mono, monospace",
-          fontSize: 9,
-          color: "#C9A84C",
-          letterSpacing: 3,
-          textTransform: "uppercase",
-          marginBottom: 10,
-          paddingBottom: 6,
-          borderBottom: "1px solid #2A2318",
-        }}
-      >
+      <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#C9A84C", letterSpacing: 3, textTransform: "uppercase", marginBottom: 10, paddingBottom: 6, borderBottom: "1px solid #2A2318" }}>
         {title}
       </div>
       {children}
@@ -119,22 +84,8 @@ function Row({ label, right, children }) {
   return (
     <div style={{ padding: "7px 0", borderBottom: "1px solid #1E1A0E" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-        <span style={{ fontSize: 12, color: "#D4C9A8", flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
-          {asText(label)}
-        </span>
-
-        <span
-          style={{
-            flexShrink: 0,
-            maxWidth: "55%",
-            textAlign: "right",
-            overflowWrap: "anywhere",
-            fontSize: 12,
-            color: "#C9A84C",
-          }}
-        >
-          {right}
-        </span>
+        <span style={{ fontSize: 12, color: "#D4C9A8", flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{asText(label)}</span>
+        <span style={{ flexShrink: 0, maxWidth: "55%", textAlign: "right", overflowWrap: "anywhere", fontSize: 12, color: "#C9A84C" }}>{right}</span>
       </div>
       {children}
     </div>
@@ -143,14 +94,7 @@ function Row({ label, right, children }) {
 
 function DetailBlock({ title, value, note }) {
   return (
-    <div
-      style={{
-        padding: "10px 0",
-        borderBottom: "1px solid #1E1A0E",
-        overflowWrap: "anywhere",
-        wordBreak: "normal",
-      }}
-    >
+    <div style={{ padding: "10px 0", borderBottom: "1px solid #1E1A0E", overflowWrap: "anywhere" }}>
       <div style={{ fontSize: 13, color: "#E8D5A3", marginBottom: 4 }}>{asText(title)}</div>
       {value && <div style={{ fontSize: 12, color: "#A89060", lineHeight: 1.6 }}>{asText(value)}</div>}
       {note && <div style={{ fontSize: 11, color: "#6A5C3A", lineHeight: 1.5, marginTop: 3 }}>{asText(note)}</div>}
@@ -188,82 +132,14 @@ function ScanReport({ r }) {
         {r?.score_resumo && <Note>{asText(r.score_resumo)}</Note>}
       </Sec>
 
-      {filtros.length > 0 && (
-        <Sec title="Filtros Eliminatorios">
-          {filtros.map((f, i) => (
-            <Row key={i} label={f?.nome} right={<Badge text={f?.status} />}>
-              {f?.valor && <span style={{ color: "#8A7A58", fontSize: 11 }}>{asText(f.valor)}</span>}
-              {f?.nota && <Note>{asText(f.nota)}</Note>}
-            </Row>
-          ))}
-        </Sec>
-      )}
-
-      {governanca.length > 0 && (
-        <Sec title="Governanca 0B">
-          {governanca.map((g, i) => (
-            <Row key={i} label={g?.dimensao} right={<ScoreBar score={g?.nota} />}>
-              {g?.obs && <Note>{asText(g.obs)}</Note>}
-            </Row>
-          ))}
-        </Sec>
-      )}
-
-      {kpis.length > 0 && (
-        <Sec title="KPIs">
-          {kpis.map((k, i) => (
-            <Row key={i} label={k?.nome} right={<Badge text={k?.status} />}>
-              <span style={{ color: "#A89060", fontSize: 12 }}>{asText(k?.valor)}</span>
-              {k?.benchmark && <span style={{ color: "#6A5C3A", fontSize: 11 }}> ref: {asText(k.benchmark)}</span>}
-            </Row>
-          ))}
-        </Sec>
-      )}
-
-      {scoreDimensoes.length > 0 && (
-        <Sec title="Score por Dimensao">
-          {scoreDimensoes.map((d, i) => (
-            <Row key={i} label={d?.nome} right={<ScoreBar score={d?.nota} />}>
-              {d?.obs && <Note>{asText(d.obs)}</Note>}
-            </Row>
-          ))}
-        </Sec>
-      )}
-
-      {r?.tese && (
-        <Sec title="Tese">
-          <Note col="#A89060">{asText(r.tese)}</Note>
-        </Sec>
-      )}
-
-      {catalisadores.length > 0 && (
-        <Sec title="Catalisadores">
-          {catalisadores.map((c, i) => (
-            <DetailBlock key={i} title={c?.descricao} value={c?.impacto} note={c?.prazo} />
-          ))}
-        </Sec>
-      )}
-
-      {riscos.length > 0 && (
-        <Sec title="Riscos">
-          {riscos.map((risco, i) => (
-            <Row key={i} label={risco?.descricao} right={<Badge text={risco?.severidade} />}>
-              {risco?.probabilidade && <Note>{asText(risco.probabilidade)}</Note>}
-            </Row>
-          ))}
-        </Sec>
-      )}
-
-      {lacunas.length > 0 && (
-        <Sec title="Lacunas para o Deep">
-          {lacunas.map((l, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, padding: "5px 0", borderBottom: "1px solid #1E1A0E" }}>
-              <span style={{ color: "#C9A84C", opacity: 0.6 }}>◈</span>
-              <span style={{ fontSize: 12, color: "#A89060", overflowWrap: "anywhere" }}>{asText(l)}</span>
-            </div>
-          ))}
-        </Sec>
-      )}
+      {filtros.length > 0 && <Sec title="Filtros Eliminatorios">{filtros.map((f, i) => <Row key={i} label={f?.nome} right={<Badge text={f?.status} />}><Note>{asText(f?.valor || f?.nota)}</Note></Row>)}</Sec>}
+      {governanca.length > 0 && <Sec title="Governanca 0B">{governanca.map((g, i) => <Row key={i} label={g?.dimensao} right={<ScoreBar score={g?.nota} />}><Note>{asText(g?.obs)}</Note></Row>)}</Sec>}
+      {kpis.length > 0 && <Sec title="KPIs">{kpis.map((k, i) => <Row key={i} label={k?.nome} right={<Badge text={k?.status} />}><Note col="#A89060">{asText(k?.valor)} {k?.benchmark ? " · ref: " + asText(k.benchmark) : ""}</Note></Row>)}</Sec>}
+      {scoreDimensoes.length > 0 && <Sec title="Score por Dimensao">{scoreDimensoes.map((d, i) => <Row key={i} label={d?.nome} right={<ScoreBar score={d?.nota} />}><Note>{asText(d?.obs)}</Note></Row>)}</Sec>}
+      {r?.tese && <Sec title="Tese"><Note col="#A89060">{asText(r.tese)}</Note></Sec>}
+      {catalisadores.length > 0 && <Sec title="Catalisadores">{catalisadores.map((c, i) => <DetailBlock key={i} title={c?.descricao} value={c?.impacto} note={c?.prazo} />)}</Sec>}
+      {riscos.length > 0 && <Sec title="Riscos">{riscos.map((risco, i) => <Row key={i} label={risco?.descricao} right={<Badge text={risco?.severidade} />}><Note>{asText(risco?.probabilidade)}</Note></Row>)}</Sec>}
+      {lacunas.length > 0 && <Sec title="Lacunas para o Deep">{lacunas.map((l, i) => <DetailBlock key={i} title={"Lacuna " + (i + 1)} value={l} />)}</Sec>}
     </div>
   );
 }
@@ -285,79 +161,17 @@ function DeepReport({ r }) {
         {r?.veredito_final && <Badge text={r.veredito_final} />}
       </div>
 
-      {lacs.length > 0 && (
-        <Sec title="Respostas as Lacunas">
-          {lacs.map((l, i) => (
-            <DetailBlock key={i} title={l?.q || l?.lacuna || "Lacuna"} value={l?.r || l?.resposta || l} />
-          ))}
-        </Sec>
-      )}
-
-      {precs.length > 0 && (
-        <Sec title="Modelo de Preco - 3 Camadas">
-          {precs.map((c, i) => (
-            <DetailBlock
-              key={i}
-              title={(c?.c || c?.camada || "Camada") + (c?.vj || c?.valor_justo ? " · " + asText(c?.vj || c?.valor_justo) : "")}
-              value={c?.met || c?.metodologia}
-              note={c?.prem || c?.premissas}
-            />
-          ))}
-        </Sec>
-      )}
-
-      {(r?.zona || r?.zona_convergida) && (
-        <Sec title="Zona Convergida · BESST">
-          <DetailBlock
-            title={r?.zona || r?.zona_convergida}
-            value={r?.besst || r?.zona_besst ? "Entrada BESST: " + asText(r?.besst || r?.zona_besst) : ""}
-            note={r?.desconto || r?.desconto_atual ? "Desconto atual: " + asText(r?.desconto || r?.desconto_atual) : ""}
-          />
-        </Sec>
-      )}
-
-      {macs.length > 0 && (
-        <Sec title="Sensibilidade Macro">
-          {macs.map((s, i) => (
-            <DetailBlock key={i} title={s?.s || s?.cenario} value={s?.i || s?.impacto} note={s?.detalhe} />
-          ))}
-        </Sec>
-      )}
-
-      {cats.length > 0 && (
-        <Sec title="Catalisadores">
-          {cats.map((c, i) => (
-            <DetailBlock key={i} title={c?.d || c?.descricao} value={c?.impacto} note={c?.p || c?.prazo} />
-          ))}
-        </Sec>
-      )}
-
-      {risks.length > 0 && (
-        <Sec title="Riscos">
-          {risks.map((risco, i) => (
-            <DetailBlock
-              key={i}
-              title={risco?.d || risco?.descricao}
-              value={"Severidade: " + asText(risco?.sev || risco?.severidade || "MEDIO")}
-              note={risco?.g || risco?.gatilho ? "Gatilho: " + asText(risco?.g || risco?.gatilho) : ""}
-            />
-          ))}
-        </Sec>
-      )}
-
-      {steps.length > 0 && (
-        <Sec title="Proximos Passos">
-          {steps.map((p, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, padding: "5px 0", borderBottom: "1px solid #1E1A0E" }}>
-              <span style={{ color: "#C9A84C", opacity: 0.5 }}>▸</span>
-              <span style={{ fontSize: 12, color: "#A89060", overflowWrap: "anywhere" }}>{asText(p)}</span>
-            </div>
-          ))}
-        </Sec>
-      )}
+      {lacs.length > 0 && <Sec title="Respostas as Lacunas">{lacs.map((l, i) => <DetailBlock key={i} title={l?.q || l?.lacuna || "Lacuna"} value={l?.r || l?.resposta || l} />)}</Sec>}
+      {precs.length > 0 && <Sec title="Modelo de Preco - 3 Camadas">{precs.map((c, i) => <DetailBlock key={i} title={(c?.c || c?.camada || "Camada") + (c?.vj || c?.valor_justo ? " · " + asText(c?.vj || c?.valor_justo) : "")} value={c?.met || c?.metodologia} note={c?.prem || c?.premissas} />)}</Sec>}
+      {(r?.zona || r?.zona_convergida) && <Sec title="Zona Convergida · BESST"><DetailBlock title={r?.zona || r?.zona_convergida} value={r?.besst || r?.zona_besst ? "Entrada BESST: " + asText(r?.besst || r?.zona_besst) : ""} note={r?.desconto || r?.desconto_atual ? "Desconto atual: " + asText(r?.desconto || r?.desconto_atual) : ""} /></Sec>}
+      {macs.length > 0 && <Sec title="Sensibilidade Macro">{macs.map((s, i) => <DetailBlock key={i} title={s?.s || s?.cenario} value={s?.i || s?.impacto} note={s?.detalhe} />)}</Sec>}
+      {cats.length > 0 && <Sec title="Catalisadores">{cats.map((c, i) => <DetailBlock key={i} title={c?.d || c?.descricao} value={c?.impacto} note={c?.p || c?.prazo} />)}</Sec>}
+      {risks.length > 0 && <Sec title="Riscos">{risks.map((risco, i) => <DetailBlock key={i} title={risco?.d || risco?.descricao} value={"Severidade: " + asText(risco?.sev || risco?.severidade || "MEDIO")} note={risco?.g || risco?.gatilho ? "Gatilho: " + asText(risco?.g || risco?.gatilho) : ""} />)}</Sec>}
+      {steps.length > 0 && <Sec title="Proximos Passos">{steps.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
     </div>
   );
 }
+
 export default function NEXOApp() {
   const [scanResult, setScanResult] = useState(null);
   const [deepResult, setDeepResult] = useState(null);
@@ -369,19 +183,14 @@ export default function NEXOApp() {
   const [error, setError] = useState("");
   const [followQ, setFollowQ] = useState("");
   const [followUrl, setFollowUrl] = useState("");
-  const [followRes, setFollowRes] = useState("");
   const [followLoad, setFollowLoad] = useState(false);
   const [ended, setEnded] = useState(false);
 
   const outRef = useRef(null);
+  const abortRef = useRef(null);
 
   const canRun = ticker.trim().length >= 3 && !loading;
-  const canDeep =
-    scanResult &&
-    scanResult.veredito !== "VETADO" &&
-    !loading &&
-    phase !== "deep" &&
-    phase !== "deep_done";
+  const canDeep = scanResult && scanResult.veredito !== "VETADO" && !loading && phase !== "deep" && phase !== "deep_done";
 
   useEffect(() => {
     if (outRef.current && (scanResult || deepResult || error)) {
@@ -390,22 +199,31 @@ export default function NEXOApp() {
   }, [scanResult, deepResult, error]);
 
   function reset() {
+    if (loading && abortRef.current) {
+      abortRef.current.abort();
+      setLoading(false);
+      setError("Análise cancelada pelo usuário.");
+      return;
+    }
+
     setScanResult(null);
     setDeepResult(null);
     setPhase("scan");
     setError("");
     setFollowQ("");
     setFollowUrl("");
-    setFollowRes("");
+    setFollowLoad(false);
     setEnded(false);
   }
 
   async function callAPI(ph, overrideCtx = "") {
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     const t = ticker.trim().toUpperCase();
     const tp = detectType(t);
 
     let summary = "";
-
     if (ph === "deep" && scanResult) {
       summary =
         asText(scanResult.veredito) +
@@ -418,6 +236,7 @@ export default function NEXOApp() {
     const res = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         phase: ph,
         assetType: tp,
@@ -428,13 +247,9 @@ export default function NEXOApp() {
     });
 
     const txt = await res.text();
-
-    if (!txt || txt.trim() === "") {
-      throw new Error("Sem resposta do servidor");
-    }
+    if (!txt || txt.trim() === "") throw new Error("Sem resposta do servidor");
 
     let data;
-
     try {
       data = JSON.parse(txt);
     } catch {
@@ -444,40 +259,37 @@ export default function NEXOApp() {
       data = JSON.parse(txt.slice(s, e + 1));
     }
 
-    if (data?.error) {
-      throw new Error(asText(data.error.message || data.error));
-    }
-
+    if (data?.error) throw new Error(asText(data.error.message || data.error));
     return data;
   }
 
   async function handleScan() {
     if (!canRun) return;
-
     setLoading(true);
     setError("");
-    reset();
+    setScanResult(null);
+    setDeepResult(null);
+    setEnded(false);
+    setPhase("scan");
 
     try {
       const r = await callAPI("scan");
-
-      if (r?.ticker_invalido) {
-        setError("Ticker nao encontrado: " + ticker.trim().toUpperCase());
-      } else {
+      if (r?.ticker_invalido) setError("Ticker nao encontrado: " + ticker.trim().toUpperCase());
+      else {
         setScanResult(r);
         setPhase("scan_done");
       }
     } catch (e) {
-      setError(e?.message || "Erro desconhecido");
+      if (e?.name !== "AbortError") setError(e?.message || "Erro desconhecido");
       setPhase("scan_done");
     } finally {
       setLoading(false);
+      abortRef.current = null;
     }
   }
 
   async function handleDeep() {
     if (!canDeep) return;
-
     setLoading(true);
     setError("");
     setDeepResult(null);
@@ -489,18 +301,20 @@ export default function NEXOApp() {
       setPhase("deep_done");
       setEnded(false);
     } catch (e) {
-      setError(e?.message || "Erro desconhecido");
+      if (e?.name !== "AbortError") setError(e?.message || "Erro desconhecido");
       setPhase("scan_done");
     } finally {
       setLoading(false);
+      abortRef.current = null;
     }
   }
 
   async function handleFollowUp() {
-    if (followLoad || (!followQ.trim() && !followUrl.trim())) return;
+    if (followLoad || loading || (!followQ.trim() && !followUrl.trim())) return;
 
     setFollowLoad(true);
-    setFollowRes("");
+    setLoading(true);
+    setError("");
     setEnded(false);
 
     try {
@@ -508,19 +322,21 @@ export default function NEXOApp() {
         "Aprofundamento adicional do Deep NEXO.\n" +
         (followUrl.trim() ? "Link ou fonte adicional: " + followUrl.trim() + "\n" : "") +
         (followQ.trim() ? "Pergunta/foco do usuario: " + followQ.trim() + "\n" : "") +
-        "\nUse o Deep anterior como contexto, mas responda de forma objetiva e complementar.\n" +
+        "\nAtualize o Deep NEXO completo em JSON valido, mantendo o mesmo schema e incorporando o novo contexto.\n" +
         "Deep anterior:\n" +
         JSON.stringify(deepResult || {});
 
       const r = await callAPI("deep", contexto);
-
-      setFollowRes(JSON.stringify(r, null, 2));
       setDeepResult(r);
       setPhase("deep_done");
+      setFollowQ("");
+      setFollowUrl("");
     } catch (e) {
-      setFollowRes("Erro: " + (e?.message || "erro desconhecido"));
+      if (e?.name !== "AbortError") setError(e?.message || "Erro desconhecido");
     } finally {
       setFollowLoad(false);
+      setLoading(false);
+      abortRef.current = null;
     }
   }
 
@@ -528,7 +344,6 @@ export default function NEXOApp() {
     setEnded(true);
     setFollowQ("");
     setFollowUrl("");
-    setFollowRes("");
   }
 
   const CSS = `
@@ -558,12 +373,10 @@ export default function NEXOApp() {
     .finp-sm::placeholder{color:#2A2318}
     .ftxt{width:100%;background:transparent;border:none;outline:none;resize:none;font-family:'JetBrains Mono',monospace;font-size:11px;color:#A89060;line-height:1.5;max-height:100px;overflow-y:auto}
     .ftxt::placeholder{color:#2A2318}
-    .fex{font-family:'JetBrains Mono',monospace;font-size:7.5px;color:#3A3020;margin-top:4px}
     .actions{display:flex;gap:7px;margin-bottom:10px}
     .btn-scan{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:linear-gradient(135deg,#C9A84C,#E8D5A3);color:#131008;border:none;cursor:pointer;border-radius:2px;flex:1}
     .btn-deep{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:transparent;border:1px solid #A8A8B8;color:#A8A8B8;cursor:pointer;border-radius:2px;flex:1}
-    .btn-cl{font-family:'JetBrains Mono',monospace;font-size:9px;color:#6A5C3A;background:transparent;border:1px solid #2A2318;padding:9px 13px;cursor:pointer;letter-spacing:1px;text-transform:uppercase;border-radius:2px}
-    .btn-end{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 14px;background:transparent;border:1px solid #6A5C3A;color:#6A5C3A;cursor:pointer;border-radius:2px;flex:1}
+    .btn-cl,.btn-end{font-family:'JetBrains Mono',monospace;font-size:9px;color:#6A5C3A;background:transparent;border:1px solid #2A2318;padding:9px 13px;cursor:pointer;letter-spacing:1px;text-transform:uppercase;border-radius:2px}
     .output{border:1px solid #2A2318;padding:20px 16px;margin-bottom:8px;min-height:120px;position:relative;overflow-x:hidden}
     .out-lbl{position:absolute;top:-1px;left:12px;font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;background:#131008;padding:0 6px;letter-spacing:1.5px;text-transform:uppercase}
     .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:140px;gap:8px;opacity:.2}
@@ -575,42 +388,28 @@ export default function NEXOApp() {
     .follow-box{margin-top:20px;border-top:1px solid #2A2318;padding-top:16px}
     .follow-title{font-family:'JetBrains Mono',monospace;font-size:9px;color:#C9A84C;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
     .follow-actions{display:flex;gap:8px;margin-top:10px}
-    .follow-result{margin-top:12px;padding:12px 14px;background:rgba(201,168,76,.05);border:1px solid #2A2318;font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;color:#A89060}
     .ended-box{margin-top:16px;padding:12px 14px;border:1px solid #2A2318;background:rgba(201,168,76,.04);font-family:'JetBrains Mono',monospace;font-size:10px;color:#C9A84C;letter-spacing:1px;text-transform:uppercase}
     .footer{display:flex;gap:12px;flex-wrap:wrap;padding:10px 0 0;border-top:1px solid #1E1A0E;margin-top:4px}
     .fc{font-family:'JetBrains Mono',monospace;font-size:7.5px;color:#3A3020;letter-spacing:.8px;display:flex;align-items:center;gap:4px}
     .fd{width:4px;height:4px;border-radius:50%;flex-shrink:0}
-    @media(max-width:600px){
-      .quads{grid-template-columns:repeat(2,1fr)}
-      .actions{flex-direction:column}
-      .follow-actions{flex-direction:column}
-      .deep-unlock{flex-direction:column;align-items:stretch}
-      .btn-deep,.btn-scan,.btn-cl,.btn-end{width:100%}
-    }
+    button:disabled{opacity:.3!important;cursor:not-allowed!important}
+    @media(max-width:600px){.quads{grid-template-columns:repeat(2,1fr)}.actions,.follow-actions{flex-direction:column}.deep-unlock{flex-direction:column;align-items:stretch}.btn-deep,.btn-scan,.btn-cl,.btn-end{width:100%}}
   `;
 
   return (
     <>
       <style>{CSS}</style>
-
       <div className="app">
         <header className="hdr">
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div className="logo-box">NEXO</div>
             <span className="logo-s">Portfolio Framework Beta</span>
           </div>
-          <div className="sdot-wrap">
-            <div className="sdot" /> ONLINE
-          </div>
+          <div className="sdot-wrap"><div className="sdot" /> ONLINE</div>
         </header>
 
         <div className="quads">
-          {[
-            ["N", "Nucleo"],
-            ["E", "Estrutural"],
-            ["X", "Exchange"],
-            ["O", "Oportunidade"],
-          ].map((q) => (
+          {[["N", "Nucleo"], ["E", "Estrutural"], ["X", "Exchange"], ["O", "Oportunidade"]].map((q) => (
             <div key={q[0]} className={"quad " + q[0]}>
               <div className="q-l">{q[0]}</div>
               <div className="q-n">{q[1]}</div>
@@ -619,104 +418,39 @@ export default function NEXOApp() {
         </div>
 
         <div className="types">
-          {[
-            { i: "🏢", l: "FII" },
-            { i: "📈", l: "Acao BR" },
-            { i: "🌍", l: "ETF" },
-            { i: "🔭", l: "Stock" },
-          ].map((t) => (
-            <div key={t.l} className="type-card">
-              <span style={{ fontSize: 13 }}>{t.i}</span>
-              {t.l}
-            </div>
+          {[{ i: "🏢", l: "FII" }, { i: "📈", l: "Acao BR" }, { i: "🌍", l: "ETF" }, { i: "🔭", l: "Stock" }].map((t) => (
+            <div key={t.l} className="type-card"><span style={{ fontSize: 13 }}>{t.i}</span>{t.l}</div>
           ))}
         </div>
 
         <div className="field">
           <div className="flbl">Ticker</div>
-          <input
-            className="finp"
-            value={ticker}
-            maxLength={12}
-            placeholder="Ex: KNSC11, VALE3, VWCE, NVDA"
-            onChange={(e) => {
-              setTicker(e.target.value.toUpperCase());
-              if (scanResult || deepResult) reset();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleScan();
-            }}
-          />
-          <div className="fex">FIIs · Acoes BR · ETFs · Stocks — tipo detectado automaticamente</div>
+          <input className="finp" disabled={loading} value={ticker} maxLength={12} placeholder="Ex: KNSC11, VALE3, VWCE, NVDA" onChange={(e) => { setTicker(e.target.value.toUpperCase()); if (scanResult || deepResult) reset(); }} onKeyDown={(e) => { if (e.key === "Enter") handleScan(); }} />
         </div>
 
         <div className="field">
           <div className="flbl">Link RI / Dados Oficiais</div>
-          <input
-            className="finp-sm"
-            value={riUrl}
-            placeholder="https://ri.empresa.com.br..."
-            onChange={(e) => setRiUrl(e.target.value)}
-          />
+          <input className="finp-sm" disabled={loading} value={riUrl} placeholder="https://ri.empresa.com.br..." onChange={(e) => setRiUrl(e.target.value)} />
         </div>
 
         <div className="field">
           <div className="flbl">Contexto adicional</div>
-          <textarea
-            className="ftxt"
-            rows={2}
-            value={extraCtx}
-            placeholder="Foco em KPI especifico, tese, duvida pontual..."
-            onChange={(e) => setExtraCtx(e.target.value)}
-          />
+          <textarea className="ftxt" disabled={loading} rows={2} value={extraCtx} placeholder="Foco em KPI especifico, tese, duvida pontual..." onChange={(e) => setExtraCtx(e.target.value)} />
         </div>
 
         <div className="actions">
-          {(scanResult || deepResult) && (
-            <button className="btn-cl" onClick={reset}>
-              Limpar
-            </button>
-          )}
-
-          <button
-            className="btn-scan"
-            onClick={handleScan}
-            disabled={!canRun}
-            style={!canRun ? { background: "#2A2318", color: "#4A3E28", cursor: "not-allowed" } : {}}
-          >
-            {loading && phase === "scan" ? "Analisando..." : "Executar Scan →"}
-          </button>
-
-          <button
-            className="btn-deep"
-            onClick={handleDeep}
-            disabled={!canDeep}
-            style={!canDeep ? { opacity: 0.25, cursor: "not-allowed" } : {}}
-          >
-            Deep NEXO
-          </button>
+          {(scanResult || deepResult || loading) && <button className="btn-cl" onClick={reset}>{loading ? "Cancelar" : "Limpar"}</button>}
+          <button className="btn-scan" onClick={handleScan} disabled={!canRun}>{loading && phase === "scan" ? "Analisando..." : "Executar Scan →"}</button>
+          <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>Deep NEXO</button>
         </div>
 
         <div className="output" ref={outRef}>
           <span className="out-lbl">{phase === "deep" || phase === "deep_done" ? "Deep NEXO" : "Scan NEXO"}</span>
 
-          {!scanResult && !deepResult && !loading && !error && (
-            <div className="empty">
-              <div className="empty-g">⬡</div>
-              <div className="empty-t">Aguardando analise</div>
-            </div>
-          )}
-
-          {loading && (
-            <div className="loading-r">
-              {phase === "deep" ? "Processando Deep NEXO..." : "Processando Scan NEXO..."}
-            </div>
-          )}
-
+          {!scanResult && !deepResult && !loading && !error && <div className="empty"><div className="empty-g">⬡</div><div className="empty-t">Aguardando analise</div></div>}
+          {loading && <div className="loading-r">{followLoad ? "Aprofundando Deep NEXO..." : phase === "deep" ? "Processando Deep NEXO..." : "Processando Scan NEXO..."}</div>}
           {error && <div className="err-box">Erro: {error}</div>}
-
           {scanResult && !deepResult && <ScanReport r={scanResult} />}
-
           {deepResult && <DeepReport r={deepResult} />}
 
           {scanResult && !deepResult && !loading && canDeep && (
@@ -727,79 +461,34 @@ export default function NEXOApp() {
                 </div>
                 <div style={{ fontSize: 8, color: "#4A3E28", marginTop: 2 }}>Continua das lacunas identificadas</div>
               </div>
-              <button className="btn-deep" style={{ flex: "none", padding: "7px 14px" }} onClick={handleDeep}>
-                Iniciar Deep →
-              </button>
+              <button className="btn-deep" style={{ flex: "none", padding: "7px 14px" }} onClick={handleDeep}>Iniciar Deep →</button>
             </div>
           )}
 
           {deepResult && !ended && (
             <div className="follow-box">
               <div className="follow-title">Aprofundamento Pos-Deep</div>
-
               <div className="field">
                 <div className="flbl">Link adicional opcional</div>
-                <input
-                  className="finp-sm"
-                  value={followUrl}
-                  placeholder="Cole aqui link de fato relevante, documento RI, release, página oficial..."
-                  onChange={(e) => setFollowUrl(e.target.value)}
-                />
+                <input className="finp-sm" disabled={loading} value={followUrl} placeholder="Cole aqui link de fato relevante, documento RI, release, página oficial..." onChange={(e) => setFollowUrl(e.target.value)} />
               </div>
-
               <div className="field">
                 <div className="flbl">Pergunta ou foco opcional</div>
-                <textarea
-                  className="ftxt"
-                  rows={3}
-                  value={followQ}
-                  placeholder="Ex: aprofundar impacto da Selic, risco fiscal, guidance, dívida, payout..."
-                  onChange={(e) => setFollowQ(e.target.value)}
-                />
+                <textarea className="ftxt" disabled={loading} rows={3} value={followQ} placeholder="Ex: aprofundar impacto da Selic, risco fiscal, guidance, dívida, payout..." onChange={(e) => setFollowQ(e.target.value)} />
               </div>
-
               <div className="follow-actions">
-                <button
-                  className="btn-deep"
-                  onClick={handleFollowUp}
-                  disabled={followLoad || (!followQ.trim() && !followUrl.trim())}
-                  style={
-                    followLoad || (!followQ.trim() && !followUrl.trim())
-                      ? { opacity: 0.3, cursor: "not-allowed" }
-                      : {}
-                  }
-                >
-                  {followLoad ? "Aprofundando..." : "Aprofundar Deep →"}
-                </button>
-
-                <button className="btn-end" onClick={handleEndDeep}>
-                  Encerrar
-                </button>
+                <button className="btn-deep" onClick={handleFollowUp} disabled={loading || followLoad || (!followQ.trim() && !followUrl.trim())}>{followLoad ? "Aprofundando..." : "Aprofundar Deep →"}</button>
+                <button className="btn-end" disabled={loading} onClick={handleEndDeep}>Encerrar</button>
               </div>
-
-              {followRes && <div className="follow-result">{followRes}</div>}
             </div>
           )}
 
-          {deepResult && ended && (
-            <div className="ended-box">
-              Deep encerrado · análise concluída
-            </div>
-          )}
+          {deepResult && ended && <div className="ended-box">Deep encerrado · análise concluída</div>}
         </div>
 
         <div className="footer">
-          {[
-            { c: "#C9A84C", t: "Liq. min. R$300k BR" },
-            { c: "#A8A8B8", t: "ADV min. US$1M Ext" },
-            { c: "#C87070", t: "0B: nota 1=veto" },
-            { c: "#E8D5A3", t: "BESST: 15-25% abaixo" },
-            { c: "#6A5C3A", t: "Beta v3.0" },
-          ].map((c, i) => (
-            <div key={i} className="fc">
-              <div className="fd" style={{ background: c.c }} />
-              {c.t}
-            </div>
+          {[{ c: "#C9A84C", t: "Liq. min. R$300k BR" }, { c: "#A8A8B8", t: "ADV min. US$1M Ext" }, { c: "#C87070", t: "0B: nota 1=veto" }, { c: "#E8D5A3", t: "BESST: 15-25% abaixo" }, { c: "#6A5C3A", t: "Beta v3.0" }].map((c, i) => (
+            <div key={i} className="fc"><div className="fd" style={{ background: c.c }} />{c.t}</div>
           ))}
         </div>
       </div>
