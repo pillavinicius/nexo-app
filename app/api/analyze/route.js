@@ -46,44 +46,44 @@ const DEEPS = {
   "fii":
     "You are a NEXO FII deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     DEEP_S +
-    " C1=P/VP, C2=yield vs NTN-B spread, C3=location moat. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro scenarios. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
+    " Keep the response concise. C1=P/VP, C2=yield vs NTN-B spread, C3=location moat. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro scenarios. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
 
   "acao-br":
     "You are a NEXO Brazilian stock deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     DEEP_S +
-    " Use segment-appropriate pricing model C1/C2/C3. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
+    " Keep the response concise. Use segment-appropriate pricing model C1/C2/C3. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
 
   "etf-ext":
     "You are a NEXO ETF deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     DEEP_S +
-    " C1=cost efficiency, C2=concentration risk, C3=Markowitz fit. 2 macro. 2 passos. All text in Portuguese.",
+    " Keep the response concise. C1=cost efficiency, C2=concentration risk, C3=Markowitz fit. 2 macro. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
 
   "stock-ext":
     "You are a NEXO international stock deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     DEEP_S +
-    " Theme-appropriate pricing model. Answer 2 lacunas. 2 macro. 2 passos. All text in Portuguese.",
+    " Keep the response concise. Theme-appropriate pricing model. Answer 2 lacunas. 2 macro. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
 };
 
 const FINALS = {
   "fii":
     "You are a NEXO FII final reclassification analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     FINAL_S +
-    " Your task is to consolidate Scan, Deep and all Deep follow-ups. Re-score the asset considering new risks, new catalysts, valuation changes, liquidity, governance, leverage, portfolio quality, market regime and narrative coherence. Do not ignore negative discoveries. Explain score changes objectively. All text in Portuguese.",
+    " Consolidate Scan, Deep and all follow-ups. Re-score considering new risks, catalysts, valuation, liquidity, governance, leverage, portfolio quality, market regime and narrative coherence. All text in Portuguese.",
 
   "acao-br":
     "You are a NEXO Brazilian stock final reclassification analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     FINAL_S +
-    " Your task is to consolidate Scan, Deep and all Deep follow-ups. Re-score the company considering new risks, new catalysts, capital structure, governance, moat, earnings quality, macro sensitivity, valuation and narrative coherence. Do not ignore negative discoveries. Explain score changes objectively. All text in Portuguese.",
+    " Consolidate Scan, Deep and all follow-ups. Re-score considering new risks, catalysts, capital structure, governance, moat, earnings quality, macro sensitivity, valuation and narrative coherence. All text in Portuguese.",
 
   "etf-ext":
     "You are a NEXO ETF final reclassification analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     FINAL_S +
-    " Your task is to consolidate Scan, Deep and all Deep follow-ups. Re-score the ETF considering cost, tracking difference, AUM, domicile, concentration, tax/friction, liquidity, portfolio role and Markowitz fit. Explain score changes objectively. All text in Portuguese.",
+    " Consolidate Scan, Deep and all follow-ups. Re-score considering cost, tracking difference, AUM, domicile, concentration, tax/friction, liquidity, portfolio role and Markowitz fit. All text in Portuguese.",
 
   "stock-ext":
     "You are a NEXO international stock final reclassification analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     FINAL_S +
-    " Your task is to consolidate Scan, Deep and all Deep follow-ups. Re-score the company considering theme purity, moat, growth quality, valuation, risk, margins, capital allocation, balance sheet and narrative coherence. Explain score changes objectively. All text in Portuguese.",
+    " Consolidate Scan, Deep and all follow-ups. Re-score considering theme purity, moat, growth quality, valuation, risk, margins, capital allocation, balance sheet and narrative coherence. All text in Portuguese.",
 };
 
 function safeError(message) {
@@ -136,16 +136,148 @@ function parseModelJSON(text) {
   }
 }
 
+function fallbackDeepJSON({ ticker, rawText, parseError }) {
+  const preview = String(rawText || "")
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim()
+    .slice(0, 1200);
+
+  return {
+    ticker: ticker || "",
+    veredito_final: "MONITORAR",
+    lacunas: [
+      {
+        q: "Aprofundamento retornou resposta fora do JSON esperado?",
+        r:
+          "Sim. O modelo gerou conteúdo parcialmente inválido ou truncado. A análise deve ser refeita com pergunta mais objetiva ou contexto menor.",
+      },
+    ],
+    preco: [
+      {
+        c: "C1",
+        vj: "N/D",
+        met: "Fallback técnico por resposta inválida",
+        prem: "Não usar como conclusão de valuation.",
+      },
+      {
+        c: "C2",
+        vj: "N/D",
+        met: "Fallback técnico por resposta inválida",
+        prem: "Reexecutar o aprofundamento.",
+      },
+      {
+        c: "C3",
+        vj: "N/D",
+        met: "Fallback técnico por resposta inválida",
+        prem: "Aguardar nova análise válida.",
+      },
+    ],
+    zona: "N/D",
+    besst: "N/D",
+    desconto: "N/D",
+    macro: [
+      {
+        s: "Erro técnico de estrutura",
+        i:
+          "A resposta da IA não veio como JSON válido. O histórico visual foi preservado e a análise não foi perdida.",
+      },
+    ],
+    catalisadores: [
+      {
+        d: "Reexecutar aprofundamento com foco específico",
+        p: "Imediato",
+      },
+    ],
+    riscos: [
+      {
+        d: "Risco de interpretação incompleta por resposta truncada",
+        sev: "MEDIO",
+        g: parseError || "Parse inválido",
+      },
+    ],
+    passos: [
+      "Refaça o aprofundamento com uma pergunta mais curta.",
+      "Use o bloco anterior apenas como referência, sem considerar este fallback como veredito econômico.",
+      preview ? "Prévia técnica da resposta bruta: " + preview : "Sem prévia disponível.",
+    ],
+  };
+}
+
+function fallbackFinalJSON({ ticker, rawText, parseError }) {
+  return {
+    ticker: ticker || "",
+    classificacao_final: "MONITORAR",
+    veredito_anterior: "N/D",
+    veredito_reclassificado: "MONITORAR",
+    score_original: 0,
+    score_revisado: 0,
+    score_max: 30,
+    mudanca_score: "Reclassificação final não pôde ser calculada por resposta inválida da IA.",
+    mudanca_veredito: "MANTEVE",
+    riscos_incorporados: [
+      {
+        descricao: "Erro técnico na geração da reclassificação final",
+        impacto_score: "Indeterminado",
+        severidade: "MEDIO",
+      },
+    ],
+    ajustes_score: [
+      {
+        dimensao: "Confiabilidade da resposta",
+        antes: 0,
+        depois: 0,
+        motivo: parseError || "JSON inválido ou truncado.",
+      },
+    ],
+    tese_final:
+      "A reclassificação final deve ser refeita. O sistema preservou o histórico anterior e evitou quebra do fluxo.",
+    preco_final: {
+      zona_convergencia: "N/D",
+      besst: "N/D",
+      margem_seguranca: "N/D",
+      observacao: "Fallback técnico. Não usar como conclusão de investimento.",
+    },
+    conclusao:
+      "Falha técnica na estrutura da resposta. Reexecutar a reclassificação final com contexto menor ou mais objetivo.",
+    proximos_passos: [
+      "Reexecutar a reclassificação final.",
+      "Se persistir, reduzir a quantidade de aprofundamentos enviados.",
+      String(rawText || "").slice(0, 800),
+    ],
+  };
+}
+
 function getSystemPrompt(phase, assetType) {
-  if (phase === "final") {
-    return FINALS[assetType] || FINALS["acao-br"];
-  }
-
-  if (phase === "deep") {
-    return DEEPS[assetType] || DEEPS["acao-br"];
-  }
-
+  if (phase === "final") return FINALS[assetType] || FINALS["acao-br"];
+  if (phase === "deep") return DEEPS[assetType] || DEEPS["acao-br"];
   return SCANS[assetType] || SCANS["acao-br"];
+}
+
+function trimContextForDeep(extraCtx) {
+  const text = String(extraCtx || "");
+
+  if (text.length <= 4500) return text;
+
+  return (
+    "Contexto resumido automaticamente para evitar resposta truncada.\n\n" +
+    text.slice(0, 1800) +
+    "\n\n...[contexto intermediário omitido para estabilidade]...\n\n" +
+    text.slice(-2200)
+  );
+}
+
+function trimContextForFinal(extraCtx) {
+  const text = String(extraCtx || "");
+
+  if (text.length <= 9000) return text;
+
+  return (
+    "Contexto final resumido automaticamente para evitar resposta truncada.\n\n" +
+    text.slice(0, 3500) +
+    "\n\n...[histórico intermediário omitido para estabilidade técnica]...\n\n" +
+    text.slice(-4500)
+  );
 }
 
 function buildUserMessage({ phase, ticker, scanSummary, extraCtx }) {
@@ -155,15 +287,26 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx }) {
       "Ticker: " +
       ticker +
       "\n\nHistórico completo da análise:\n" +
-      (extraCtx || "") +
+      trimContextForFinal(extraCtx || "") +
       "\n\nTarefa:\n" +
-      "1. Consolide o Scan, o Deep e todos os aprofundamentos.\n" +
-      "2. Identifique riscos novos e riscos agravados.\n" +
+      "1. Consolide o Scan, o Deep e os aprofundamentos disponíveis.\n" +
+      "2. Identifique riscos novos e agravados.\n" +
       "3. Recalcule o score revisado.\n" +
       "4. Informe se o veredito melhorou, piorou ou foi mantido.\n" +
       "5. Gere a classificação final NEXO.\n" +
       "6. Retorne apenas JSON válido no schema solicitado.\n\n" +
       "IMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
+    );
+  }
+
+  if (phase === "deep") {
+    return (
+      "Analyze ticker: " +
+      ticker +
+      (scanSummary ? "\nScan context: " + scanSummary : "") +
+      "\nContexto do usuário e dados manuais/macro:\n" +
+      trimContextForDeep(extraCtx || "") +
+      "\n\nIMPORTANT: Return ONLY valid JSON. Keep the JSON concise. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
     );
   }
 
@@ -222,7 +365,7 @@ export async function POST(req) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: phase === "final" ? 5000 : 4000,
+        max_tokens: phase === "final" ? 5000 : phase === "deep" ? 3500 : 3000,
         system: systemPrompt,
         messages: [
           {
@@ -240,6 +383,26 @@ export async function POST(req) {
     try {
       apiData = JSON.parse(apiText);
     } catch {
+      if (phase === "deep") {
+        return Response.json(
+          fallbackDeepJSON({
+            ticker,
+            rawText: apiText,
+            parseError: "Anthropic retornou resposta HTTP não-JSON.",
+          })
+        );
+      }
+
+      if (phase === "final") {
+        return Response.json(
+          fallbackFinalJSON({
+            ticker,
+            rawText: apiText,
+            parseError: "Anthropic retornou resposta HTTP não-JSON.",
+          })
+        );
+      }
+
       return safeError(
         "Anthropic retornou resposta não-JSON: " +
           apiText.slice(0, 500).replace(/\n/g, " ")
@@ -262,12 +425,52 @@ export async function POST(req) {
     const rawText = apiData?.content?.[0]?.text || "";
 
     if (!rawText) {
+      if (phase === "deep") {
+        return Response.json(
+          fallbackDeepJSON({
+            ticker,
+            rawText: "",
+            parseError: "Modelo retornou resposta vazia.",
+          })
+        );
+      }
+
+      if (phase === "final") {
+        return Response.json(
+          fallbackFinalJSON({
+            ticker,
+            rawText: "",
+            parseError: "Modelo retornou resposta vazia.",
+          })
+        );
+      }
+
       return safeError("Modelo retornou resposta vazia");
     }
 
     const result = parseModelJSON(rawText);
 
     if (!result.ok) {
+      if (phase === "deep") {
+        return Response.json(
+          fallbackDeepJSON({
+            ticker,
+            rawText,
+            parseError: result.error,
+          })
+        );
+      }
+
+      if (phase === "final") {
+        return Response.json(
+          fallbackFinalJSON({
+            ticker,
+            rawText,
+            parseError: result.error,
+          })
+        );
+      }
+
       return safeError(
         "Parse falhou: " +
           result.error +
