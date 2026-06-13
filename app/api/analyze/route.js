@@ -1,9 +1,11 @@
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-const SCAN_S = '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
+const SCAN_S =
+  '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
 
-const DEEP_S = '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","lacunas":[{"q":"","r":""}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"zona":"","besst":"","desconto":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
+const DEEP_S =
+  '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","lacunas":[{"q":"","r":""}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"zona":"","besst":"","desconto":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
 
 const INV = '{"ticker_invalido":true}';
 
@@ -59,6 +61,14 @@ const DEEPS = {
     " Theme-appropriate pricing model. Answer 2 lacunas. 2 macro. 2 passos. All text in Portuguese.",
 };
 
+function safeError(message) {
+  return Response.json({
+    error: {
+      message: String(message || "Erro desconhecido"),
+    },
+  });
+}
+
 function parseModelJSON(text) {
   if (!text) {
     return {
@@ -85,7 +95,6 @@ function parseModelJSON(text) {
   }
 
   raw = raw.slice(start, end + 1);
-
   raw = raw.replace(/,(\s*[}\]])/g, "$1");
 
   try {
@@ -121,16 +130,11 @@ export async function POST(req) {
       const text = await resp.text();
 
       try {
-        return Response.json(JSON.parse(text), { status: resp.status });
+        return Response.json(JSON.parse(text));
       } catch {
-        return Response.json(
-          {
-            error: {
-              message: "Resposta não-JSON da API Anthropic",
-              raw: text.slice(0, 3000),
-            },
-          },
-          { status: resp.status || 500 }
+        return safeError(
+          "Resposta não-JSON da API Anthropic: " +
+            text.slice(0, 500).replace(/\n/g, " ")
         );
       }
     }
@@ -145,7 +149,7 @@ export async function POST(req) {
       ticker +
       (scanSummary ? "\nScan context: " + scanSummary : "") +
       (extraCtx ? "\nFocus: " + extraCtx : "") +
-      "\n\nIMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use ```json. Do NOT explain. Do NOT write text outside the JSON object.";
+      "\n\nIMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object.";
 
     const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -158,7 +162,12 @@ export async function POST(req) {
         model: "claude-sonnet-4-6",
         max_tokens: 4000,
         system: systemPrompt,
-        messages: [{ role: "user", content: userMsg }],
+        messages: [
+          {
+            role: "user",
+            content: userMsg,
+          },
+        ],
       }),
     });
 
@@ -169,81 +178,44 @@ export async function POST(req) {
     try {
       apiData = JSON.parse(apiText);
     } catch {
-      return Response.json(
-        {
-          error: {
-            message: "Anthropic retornou resposta não-JSON",
-            raw: apiText.slice(0, 3000),
-          },
-        },
-        { status: apiResp.status || 500 }
+      return safeError(
+        "Anthropic retornou resposta não-JSON: " +
+          apiText.slice(0, 500).replace(/\n/g, " ")
       );
     }
 
     if (!apiResp.ok) {
-      return Response.json(
-        {
-          error: {
-            message:
-              "Anthropic HTTP " +
-              apiResp.status +
-              ": " +
-              (apiData?.error?.message || "erro desconhecido"),
-            raw: apiData,
-          },
-        },
-        { status: apiResp.status }
+      return safeError(
+        "Anthropic HTTP " +
+          apiResp.status +
+          ": " +
+          (apiData?.error?.message || "erro desconhecido")
       );
     }
 
     if (apiData.error) {
-      return Response.json(
-        {
-          error: {
-            message: "API: " + apiData.error.message,
-          },
-        },
-        { status: 500 }
-      );
+      return safeError("API: " + apiData.error.message);
     }
 
     const rawText = apiData?.content?.[0]?.text || "";
 
     if (!rawText) {
-      return Response.json(
-        {
-          error: {
-            message: "Modelo retornou resposta vazia",
-            raw: apiData,
-          },
-        },
-        { status: 502 }
-      );
+      return safeError("Modelo retornou resposta vazia");
     }
 
     const result = parseModelJSON(rawText);
 
     if (!result.ok) {
-      return Response.json(
-        {
-          error: {
-            message: "Parse falhou: " + result.error,
-            raw: result.raw.slice(0, 3000),
-          },
-        },
-        { status: 422 }
+      return safeError(
+        "Parse falhou: " +
+          result.error +
+          ". Modelo retornou: " +
+          result.raw.slice(0, 500).replace(/\n/g, " ")
       );
     }
 
     return Response.json(result.data);
   } catch (err) {
-    return Response.json(
-      {
-        error: {
-          message: "Erro servidor: " + err.message,
-        },
-      },
-      { status: 500 }
-    );
+    return safeError("Erro servidor: " + err.message);
   }
 }
