@@ -175,45 +175,59 @@ function DeepReport({ r }) {
 export default function NEXOApp() {
   const [scanResult, setScanResult] = useState(null);
   const [deepResult, setDeepResult] = useState(null);
+  const [deepAdds, setDeepAdds] = useState([]);
   const [ticker, setTicker] = useState("");
   const [riUrl, setRiUrl] = useState("");
   const [extraCtx, setExtraCtx] = useState("");
-  const [phase, setPhase] = useState("scan");
+  const [phase, setPhase] = useState("initial");
   const [loading, setLoading] = useState(false);
+  const [loadingKind, setLoadingKind] = useState("");
   const [error, setError] = useState("");
   const [followQ, setFollowQ] = useState("");
   const [followUrl, setFollowUrl] = useState("");
-  const [followLoad, setFollowLoad] = useState(false);
   const [ended, setEnded] = useState(false);
 
   const outRef = useRef(null);
   const abortRef = useRef(null);
 
-  const canRun = ticker.trim().length >= 3 && !loading;
-  const canDeep = scanResult && scanResult.veredito !== "VETADO" && !loading && phase !== "deep" && phase !== "deep_done";
+  const hasScan = !!scanResult;
+  const hasDeep = !!deepResult;
+  const isVeto = scanResult?.veredito === "VETADO";
+
+  const canScan = ticker.trim().length >= 3 && !loading && !hasScan && !hasDeep && !ended;
+  const canDeep = hasScan && !hasDeep && !isVeto && !loading && !ended;
+  const canFinish = (hasScan || hasDeep) && !loading && !ended;
 
   useEffect(() => {
-    if (outRef.current && (scanResult || deepResult || error)) {
+    if (outRef.current && (scanResult || deepResult || deepAdds.length > 0 || error || ended)) {
       outRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [scanResult, deepResult, error]);
+  }, [scanResult, deepResult, deepAdds, error, ended]);
 
   function reset() {
     if (loading && abortRef.current) {
       abortRef.current.abort();
       setLoading(false);
+      setLoadingKind("");
       setError("Análise cancelada pelo usuário.");
       return;
     }
 
     setScanResult(null);
     setDeepResult(null);
-    setPhase("scan");
+    setDeepAdds([]);
+    setPhase("initial");
     setError("");
     setFollowQ("");
     setFollowUrl("");
-    setFollowLoad(false);
     setEnded(false);
+  }
+
+  function finishAnalysis() {
+    setEnded(true);
+    setFollowQ("");
+    setFollowUrl("");
+    setPhase("ended");
   }
 
   async function callAPI(ph, overrideCtx = "") {
@@ -224,6 +238,7 @@ export default function NEXOApp() {
     const tp = detectType(t);
 
     let summary = "";
+
     if (ph === "deep" && scanResult) {
       summary =
         asText(scanResult.veredito) +
@@ -255,7 +270,7 @@ export default function NEXOApp() {
     } catch {
       const s = txt.indexOf("{");
       const e = txt.lastIndexOf("}");
-      if (s === -1 || e === -1) throw new Error("Resposta invalida da API");
+      if (s === -1 || e === -1) throw new Error("Resposta inválida da API");
       data = JSON.parse(txt.slice(s, e + 1));
     }
 
@@ -264,18 +279,23 @@ export default function NEXOApp() {
   }
 
   async function handleScan() {
-    if (!canRun) return;
+    if (!canScan) return;
+
     setLoading(true);
+    setLoadingKind("scan");
     setError("");
     setScanResult(null);
     setDeepResult(null);
+    setDeepAdds([]);
     setEnded(false);
-    setPhase("scan");
+    setPhase("scan_running");
 
     try {
       const r = await callAPI("scan");
-      if (r?.ticker_invalido) setError("Ticker nao encontrado: " + ticker.trim().toUpperCase());
-      else {
+      if (r?.ticker_invalido) {
+        setError("Ticker não encontrado: " + ticker.trim().toUpperCase());
+        setPhase("scan_done");
+      } else {
         setScanResult(r);
         setPhase("scan_done");
       }
@@ -284,66 +304,63 @@ export default function NEXOApp() {
       setPhase("scan_done");
     } finally {
       setLoading(false);
+      setLoadingKind("");
       abortRef.current = null;
     }
   }
 
   async function handleDeep() {
     if (!canDeep) return;
+
     setLoading(true);
+    setLoadingKind("deep");
     setError("");
-    setDeepResult(null);
-    setPhase("deep");
+    setPhase("deep_running");
 
     try {
       const r = await callAPI("deep");
       setDeepResult(r);
       setPhase("deep_done");
-      setEnded(false);
     } catch (e) {
       if (e?.name !== "AbortError") setError(e?.message || "Erro desconhecido");
       setPhase("scan_done");
     } finally {
       setLoading(false);
+      setLoadingKind("");
       abortRef.current = null;
     }
   }
 
   async function handleFollowUp() {
-    if (followLoad || loading || (!followQ.trim() && !followUrl.trim())) return;
+    if (loading || (!followQ.trim() && !followUrl.trim())) return;
 
-    setFollowLoad(true);
     setLoading(true);
+    setLoadingKind("follow");
     setError("");
-    setEnded(false);
 
     try {
       const contexto =
         "Aprofundamento adicional do Deep NEXO.\n" +
         (followUrl.trim() ? "Link ou fonte adicional: " + followUrl.trim() + "\n" : "") +
-        (followQ.trim() ? "Pergunta/foco do usuario: " + followQ.trim() + "\n" : "") +
-        "\nAtualize o Deep NEXO completo em JSON valido, mantendo o mesmo schema e incorporando o novo contexto.\n" +
+        (followQ.trim() ? "Pergunta/foco do usuário: " + followQ.trim() + "\n" : "") +
+        "\nGere um NOVO resultado de Deep aprofundado em JSON válido, mantendo o mesmo schema. Não apague nem substitua o Deep anterior.\n" +
         "Deep anterior:\n" +
-        JSON.stringify(deepResult || {});
+        JSON.stringify(deepResult || {}) +
+        "\nAprofundamentos anteriores:\n" +
+        JSON.stringify(deepAdds || []);
 
       const r = await callAPI("deep", contexto);
-      setDeepResult(r);
-      setPhase("deep_done");
+      setDeepAdds((prev) => [...prev, r]);
       setFollowQ("");
       setFollowUrl("");
+      setPhase("deep_done");
     } catch (e) {
       if (e?.name !== "AbortError") setError(e?.message || "Erro desconhecido");
     } finally {
-      setFollowLoad(false);
       setLoading(false);
+      setLoadingKind("");
       abortRef.current = null;
     }
-  }
-
-  function handleEndDeep() {
-    setEnded(true);
-    setFollowQ("");
-    setFollowUrl("");
   }
 
   const CSS = `
@@ -377,6 +394,7 @@ export default function NEXOApp() {
     .btn-scan{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:linear-gradient(135deg,#C9A84C,#E8D5A3);color:#131008;border:none;cursor:pointer;border-radius:2px;flex:1}
     .btn-deep{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:transparent;border:1px solid #A8A8B8;color:#A8A8B8;cursor:pointer;border-radius:2px;flex:1}
     .btn-cl,.btn-end{font-family:'JetBrains Mono',monospace;font-size:9px;color:#6A5C3A;background:transparent;border:1px solid #2A2318;padding:9px 13px;cursor:pointer;letter-spacing:1px;text-transform:uppercase;border-radius:2px}
+    .btn-end{border-color:#C9A84C;color:#C9A84C}
     .output{border:1px solid #2A2318;padding:20px 16px;margin-bottom:8px;min-height:120px;position:relative;overflow-x:hidden}
     .out-lbl{position:absolute;top:-1px;left:12px;font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;background:#131008;padding:0 6px;letter-spacing:1.5px;text-transform:uppercase}
     .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:140px;gap:8px;opacity:.2}
@@ -384,21 +402,21 @@ export default function NEXOApp() {
     .empty-t{font-family:'JetBrains Mono',monospace;font-size:9px;color:#6A5C3A;letter-spacing:2px;text-transform:uppercase}
     .loading-r{display:flex;align-items:center;gap:10px;padding:20px 0;font-family:'JetBrains Mono',monospace;font-size:10px;color:#6A5C3A;letter-spacing:1px;justify-content:center}
     .err-box{font-family:'JetBrains Mono',monospace;font-size:10px;color:#C87070;background:rgba(200,112,112,.06);border:1px solid rgba(200,112,112,.2);border-left:2px solid #C87070;padding:9px 12px;margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}
-    .deep-unlock{margin-top:16px;padding:12px 14px;border:1px solid #A8A8B8;background:rgba(168,168,184,.05);display:flex;align-items:center;justify-content:space-between;gap:12px}
-    .follow-box{margin-top:20px;border-top:1px solid #2A2318;padding-top:16px}
-    .follow-title{font-family:'JetBrains Mono',monospace;font-size:9px;color:#C9A84C;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
-    .follow-actions{display:flex;gap:8px;margin-top:10px}
+    .decision-box,.follow-box{margin-top:20px;border-top:1px solid #2A2318;padding-top:16px}
+    .decision-title,.follow-title{font-family:'JetBrains Mono',monospace;font-size:9px;color:#C9A84C;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
+    .decision-actions,.follow-actions{display:flex;gap:8px;margin-top:10px}
     .ended-box{margin-top:16px;padding:12px 14px;border:1px solid #2A2318;background:rgba(201,168,76,.04);font-family:'JetBrains Mono',monospace;font-size:10px;color:#C9A84C;letter-spacing:1px;text-transform:uppercase}
     .footer{display:flex;gap:12px;flex-wrap:wrap;padding:10px 0 0;border-top:1px solid #1E1A0E;margin-top:4px}
     .fc{font-family:'JetBrains Mono',monospace;font-size:7.5px;color:#3A3020;letter-spacing:.8px;display:flex;align-items:center;gap:4px}
     .fd{width:4px;height:4px;border-radius:50%;flex-shrink:0}
-    button:disabled{opacity:.3!important;cursor:not-allowed!important}
-    @media(max-width:600px){.quads{grid-template-columns:repeat(2,1fr)}.actions,.follow-actions{flex-direction:column}.deep-unlock{flex-direction:column;align-items:stretch}.btn-deep,.btn-scan,.btn-cl,.btn-end{width:100%}}
+    button:disabled,input:disabled,textarea:disabled{opacity:.3!important;cursor:not-allowed!important}
+    @media(max-width:600px){.quads{grid-template-columns:repeat(2,1fr)}.actions,.decision-actions,.follow-actions{flex-direction:column}.btn-deep,.btn-scan,.btn-cl,.btn-end{width:100%}}
   `;
 
   return (
     <>
       <style>{CSS}</style>
+
       <div className="app">
         <header className="hdr">
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -425,65 +443,92 @@ export default function NEXOApp() {
 
         <div className="field">
           <div className="flbl">Ticker</div>
-          <input className="finp" disabled={loading} value={ticker} maxLength={12} placeholder="Ex: KNSC11, VALE3, VWCE, NVDA" onChange={(e) => { setTicker(e.target.value.toUpperCase()); if (scanResult || deepResult) reset(); }} onKeyDown={(e) => { if (e.key === "Enter") handleScan(); }} />
+          <input className="finp" disabled={loading || hasScan || hasDeep || ended} value={ticker} maxLength={12} placeholder="Ex: KNSC11, VALE3, VWCE, NVDA" onChange={(e) => setTicker(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") handleScan(); }} />
         </div>
 
         <div className="field">
           <div className="flbl">Link RI / Dados Oficiais</div>
-          <input className="finp-sm" disabled={loading} value={riUrl} placeholder="https://ri.empresa.com.br..." onChange={(e) => setRiUrl(e.target.value)} />
+          <input className="finp-sm" disabled={loading || hasScan || hasDeep || ended} value={riUrl} placeholder="https://ri.empresa.com.br..." onChange={(e) => setRiUrl(e.target.value)} />
         </div>
 
         <div className="field">
           <div className="flbl">Contexto adicional</div>
-          <textarea className="ftxt" disabled={loading} rows={2} value={extraCtx} placeholder="Foco em KPI especifico, tese, duvida pontual..." onChange={(e) => setExtraCtx(e.target.value)} />
+          <textarea className="ftxt" disabled={loading || hasScan || hasDeep || ended} rows={2} value={extraCtx} placeholder="Foco em KPI especifico, tese, duvida pontual..." onChange={(e) => setExtraCtx(e.target.value)} />
         </div>
 
         <div className="actions">
-          {(scanResult || deepResult || loading) && <button className="btn-cl" onClick={reset}>{loading ? "Cancelar" : "Limpar"}</button>}
-          <button className="btn-scan" onClick={handleScan} disabled={!canRun}>{loading && phase === "scan" ? "Analisando..." : "Executar Scan →"}</button>
-          <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>Deep NEXO</button>
+          {(hasScan || hasDeep || loading || ended) && <button className="btn-cl" onClick={reset}>{loading ? "Cancelar" : "Limpar"}</button>}
+          <button className="btn-scan" onClick={handleScan} disabled={!canScan}>{loadingKind === "scan" ? "Analisando..." : "Scan NEXO →"}</button>
+          <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>{loadingKind === "deep" ? "Analisando..." : "Deep NEXO"}</button>
         </div>
 
         <div className="output" ref={outRef}>
-          <span className="out-lbl">{phase === "deep" || phase === "deep_done" ? "Deep NEXO" : "Scan NEXO"}</span>
+          <span className="out-lbl">{hasDeep || deepAdds.length > 0 ? "Deep NEXO" : "Scan NEXO"}</span>
 
-          {!scanResult && !deepResult && !loading && !error && <div className="empty"><div className="empty-g">⬡</div><div className="empty-t">Aguardando analise</div></div>}
-          {loading && <div className="loading-r">{followLoad ? "Aprofundando Deep NEXO..." : phase === "deep" ? "Processando Deep NEXO..." : "Processando Scan NEXO..."}</div>}
+          {!hasScan && !hasDeep && deepAdds.length === 0 && !loading && !error && !ended && (
+            <div className="empty"><div className="empty-g">⬡</div><div className="empty-t">Aguardando análise</div></div>
+          )}
+
+          {loading && <div className="loading-r">{loadingKind === "follow" ? "Aprofundando Deep NEXO..." : loadingKind === "deep" ? "Processando Deep NEXO..." : "Processando Scan NEXO..."}</div>}
           {error && <div className="err-box">Erro: {error}</div>}
-          {scanResult && !deepResult && <ScanReport r={scanResult} />}
-          {deepResult && <DeepReport r={deepResult} />}
 
-          {scanResult && !deepResult && !loading && canDeep && (
-            <div className="deep-unlock">
-              <div>
-                <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "#A8A8B8", letterSpacing: 1 }}>
-                  Scan {asText(scanResult.veredito)} — Deep NEXO disponivel
-                </div>
-                <div style={{ fontSize: 8, color: "#4A3E28", marginTop: 2 }}>Continua das lacunas identificadas</div>
+          {hasScan && <ScanReport r={scanResult} />}
+
+          {hasScan && !hasDeep && !isVeto && !ended && (
+            <div className="decision-box">
+              <div className="decision-title">Próxima etapa</div>
+              <div className="decision-actions">
+                <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>Rodar NEXO Deep →</button>
+                <button className="btn-end" onClick={finishAnalysis} disabled={!canFinish}>Finalizar análise</button>
               </div>
-              <button className="btn-deep" style={{ flex: "none", padding: "7px 14px" }} onClick={handleDeep}>Iniciar Deep →</button>
             </div>
           )}
 
-          {deepResult && !ended && (
+          {hasScan && isVeto && !ended && (
+            <div className="decision-box">
+              <div className="decision-title">Ativo vetado no Scan</div>
+              <button className="btn-end" onClick={finishAnalysis} disabled={!canFinish}>Finalizar análise</button>
+            </div>
+          )}
+
+          {hasDeep && (
+            <div style={{ marginTop: 24 }}>
+              <Sec title="Resultado Deep Principal">
+                <DeepReport r={deepResult} />
+              </Sec>
+            </div>
+          )}
+
+          {deepAdds.length > 0 && deepAdds.map((d, i) => (
+            <div key={i} style={{ marginTop: 26 }}>
+              <Sec title={"Resultado Deep Aprofundado " + (i + 1)}>
+                <DeepReport r={d} />
+              </Sec>
+            </div>
+          ))}
+
+          {hasDeep && !ended && (
             <div className="follow-box">
-              <div className="follow-title">Aprofundamento Pos-Deep</div>
+              <div className="follow-title">Aprofundamento Pós-Deep</div>
+
               <div className="field">
                 <div className="flbl">Link adicional opcional</div>
                 <input className="finp-sm" disabled={loading} value={followUrl} placeholder="Cole aqui link de fato relevante, documento RI, release, página oficial..." onChange={(e) => setFollowUrl(e.target.value)} />
               </div>
+
               <div className="field">
                 <div className="flbl">Pergunta ou foco opcional</div>
                 <textarea className="ftxt" disabled={loading} rows={3} value={followQ} placeholder="Ex: aprofundar impacto da Selic, risco fiscal, guidance, dívida, payout..." onChange={(e) => setFollowQ(e.target.value)} />
               </div>
+
               <div className="follow-actions">
-                <button className="btn-deep" onClick={handleFollowUp} disabled={loading || followLoad || (!followQ.trim() && !followUrl.trim())}>{followLoad ? "Aprofundando..." : "Aprofundar Deep →"}</button>
-                <button className="btn-end" disabled={loading} onClick={handleEndDeep}>Encerrar</button>
+                <button className="btn-deep" onClick={handleFollowUp} disabled={loading || (!followQ.trim() && !followUrl.trim())}>{loadingKind === "follow" ? "Aprofundando..." : "Aprofundar Deep →"}</button>
+                <button className="btn-end" disabled={loading} onClick={finishAnalysis}>Finalizar análise</button>
               </div>
             </div>
           )}
 
-          {deepResult && ended && <div className="ended-box">Deep encerrado · análise concluída</div>}
+          {ended && <div className="ended-box">Análise finalizada</div>}
         </div>
 
         <div className="footer">
