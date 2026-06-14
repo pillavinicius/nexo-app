@@ -1,11 +1,17 @@
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 45;
 
 function normalizeTicker(raw) {
   return String(raw || "")
     .trim()
     .toUpperCase()
     .replace(/\s+/g, "");
+}
+
+function hgTicker(ticker) {
+  const tk = normalizeTicker(ticker);
+  if (/^[A-Z]{4}[0-9]{1,2}$/.test(tk)) return `B3:${tk}`;
+  return tk;
 }
 
 function safeNumber(v) {
@@ -26,119 +32,99 @@ async function fetchJSON(url) {
   }
 
   if (!res.ok) {
-    throw new Error("HTTP " + res.status + ": " + (data?.message || data?.error || "erro desconhecido"));
+    throw new Error(
+      "HTTP " +
+        res.status +
+        ": " +
+        (data?.message || data?.error || data?.metadata?.message || "erro desconhecido")
+    );
   }
 
   return data;
 }
 
-function extractHGResult(data, ticker) {
-  const results = data?.results || {};
-  const normalized = normalizeTicker(ticker);
+function makeHGUrl(path, ticker, extra = {}) {
+  const key = process.env.HG_BRASIL_KEY || "";
+  const url = new URL(path, "https://api.hgbrasil.com");
 
-  if (results[normalized]) return results[normalized];
+  url.searchParams.set("tickers", hgTicker(ticker));
+  if (key) url.searchParams.set("key", key);
 
-  const keys = Object.keys(results);
-  for (const key of keys) {
-    if (normalizeTicker(key) === normalized) return results[key];
+  for (const [k, v] of Object.entries(extra)) {
+    if (v !== null && v !== undefined && v !== "") url.searchParams.set(k, String(v));
   }
 
+  return url.href;
+}
+
+function firstResult(data) {
+  if (Array.isArray(data?.results) && data.results.length > 0) return data.results[0];
+  if (data?.results && typeof data.results === "object") {
+    const vals = Object.values(data.results);
+    if (vals.length > 0) return vals[0];
+  }
   return null;
 }
 
-function normalizeHGAsset(raw, ticker) {
-  if (!raw) {
+async function getHGQuotes(ticker) {
+  const url = makeHGUrl("/v2/finance/quotes", ticker);
+  const data = await fetchJSON(url);
+  const item = firstResult(data);
+
+  if (!item) {
     return {
       ok: false,
-      source: "HG Brasil Finance",
-      ticker,
-      error: "Ticker não encontrado",
-      manualFallback: true,
+      source: "HG Brasil Finance - Quotes",
+      error: "Ticker não encontrado em /v2/finance/quotes",
+      metadata: data?.metadata || null,
     };
   }
 
-  const price =
-    safeNumber(raw.price) ??
-    safeNumber(raw.close) ??
-    safeNumber(raw.regularMarketPrice);
-
-  const changePercent =
-    safeNumber(raw.change_percent) ??
-    safeNumber(raw.changePercent) ??
-    safeNumber(raw.variation);
-
-  const dayHigh =
-    safeNumber(raw.high) ??
-    safeNumber(raw.day_high) ??
-    safeNumber(raw.regularMarketDayHigh);
-
-  const dayLow =
-    safeNumber(raw.low) ??
-    safeNumber(raw.day_low) ??
-    safeNumber(raw.regularMarketDayLow);
-
-  const volume =
-    safeNumber(raw.volume) ??
-    safeNumber(raw.regularMarketVolume);
-
-  const marketCap =
-    safeNumber(raw.market_cap) ??
-    safeNumber(raw.marketCap);
-
   return {
     ok: true,
-    source: "HG Brasil Finance",
-    ticker,
-    symbol: raw.symbol || ticker,
-    name: raw.name || raw.company_name || raw.longName || raw.shortName || ticker,
-    assetType: raw.kind || raw.type || raw.stock_type || "unknown",
-    currency: raw.currency || "BRL",
-    price,
-    changePercent,
-    dayHigh,
-    dayLow,
-    volume,
-    marketCap,
-    sector: raw.sector || null,
-    industry: raw.industry || null,
-    updatedAt: raw.updated_at || raw.updatedAt || new Date().toISOString(),
-    indicators: {
-      priceEarnings: safeNumber(raw.price_earnings) ?? safeNumber(raw.pl) ?? safeNumber(raw.pe),
-      priceToBook: safeNumber(raw.price_to_book) ?? safeNumber(raw.pvp) ?? safeNumber(raw.pb),
-      dividendYield: safeNumber(raw.dividend_yield) ?? safeNumber(raw.dy),
-      earningsPerShare: safeNumber(raw.earnings_per_share) ?? safeNumber(raw.eps),
-      roe: safeNumber(raw.roe),
-      roa: safeNumber(raw.roa),
-    },
-    rawAvailableFields: Object.keys(raw || {}).slice(0, 80),
+    source: "HG Brasil Finance - Quotes",
+    metadata: data?.metadata || null,
+    raw: item,
   };
 }
 
-async function getHGAsset(ticker) {
-  const key = process.env.HG_BRASIL_KEY || "";
+async function getHGFundamentals(ticker) {
+  try {
+    const url = makeHGUrl("/v2/finance/fundamentals", ticker, { period: "annual" });
+    const data = await fetchJSON(url);
+    const item = firstResult(data);
 
-  const params = new URLSearchParams({
-    symbol: ticker,
-  });
+    if (!item) {
+      return {
+        ok: false,
+        source: "HG Brasil Finance - Fundamentals",
+        error: "Sem resultados",
+        metadata: data?.metadata || null,
+      };
+    }
 
-  if (key) params.set("key", key);
-
-  const url = `https://api.hgbrasil.com/finance/stock_price?${params.toString()}`;
-  const data = await fetchJSON(url);
-  const raw = extractHGResult(data, ticker);
-
-  return normalizeHGAsset(raw, ticker);
+    return {
+      ok: true,
+      source: "HG Brasil Finance - Fundamentals",
+      metadata: data?.metadata || null,
+      raw: item,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      source: "HG Brasil Finance - Fundamentals",
+      error: e.message,
+    };
+  }
 }
 
 async function getStooqFallback(ticker) {
   try {
+    const tk = normalizeTicker(ticker);
     const symbols = [];
 
-    if (/^[A-Z]{4}[0-9]{1,2}$/.test(ticker)) {
-      symbols.push(ticker.toLowerCase() + ".sa");
-    }
-
-    symbols.push(ticker.toLowerCase());
+    if (/^[A-Z]{4}[0-9]{1,2}$/.test(tk)) symbols.push(tk.toLowerCase() + ".sa");
+    symbols.push(tk.toLowerCase());
 
     const today = new Date();
     const past = new Date();
@@ -172,22 +158,18 @@ async function getStooqFallback(ticker) {
       return {
         ok: true,
         source: "Stooq fallback",
-        ticker,
+        ticker: tk,
         symbol,
-        name: ticker,
+        name: tk,
         assetType: "unknown",
-        currency: ticker.match(/^[A-Z]{4}[0-9]/) ? "BRL" : "USD",
+        currency: tk.match(/^[A-Z]{4}[0-9]/) ? "BRL" : "USD",
         price: close,
-        changePercent: null,
-        dayHigh: safeNumber(last[2]),
-        dayLow: safeNumber(last[3]),
-        volume: safeNumber(last[5]),
-        marketCap: null,
-        sector: null,
-        industry: null,
         updatedAt: last[0],
-        indicators: {},
-        rawAvailableFields: ["Date", "Open", "High", "Low", "Close", "Volume"],
+        market: {
+          high: safeNumber(last[2]),
+          low: safeNumber(last[3]),
+          volume: safeNumber(last[5]),
+        },
       };
     }
 
@@ -197,10 +179,93 @@ async function getStooqFallback(ticker) {
   }
 }
 
+function summarizeQuote(q, ticker) {
+  const item = q?.raw || {};
+  const quote = item.quote || {};
+  const market = item.market || {};
+  const dividends = item.dividends || {};
+  const classification = item.classification || {};
+  const logos = item.logos || {};
+
+  return {
+    ok: !!q?.ok,
+    source: q?.source || null,
+    ticker,
+    fullTicker: item.ticker || hgTicker(ticker),
+    symbol: item.symbol || ticker,
+    name: item.name || ticker,
+    fullName: item.full_name || null,
+    taxId: item.tax_id || null,
+    isin: item.isin || null,
+    assetType: item.kind || item.type || "unknown",
+    currency: item.currency || "BRL",
+    unit: item.unit || "currency",
+    sharesOutstanding: safeNumber(item.shares_outstanding),
+    sector: classification.sector || null,
+    subsector: classification.subsector || null,
+    segment: classification.segment || null,
+    price: safeNumber(quote.value),
+    changeValue: safeNumber(quote.change_value),
+    changePercent: safeNumber(quote.change_percent),
+    marketCap: safeNumber(quote.market_cap),
+    updatedAt: quote.updated_at || market.updated_at || new Date().toISOString(),
+    market: {
+      isOpen: market.is_open ?? null,
+      previousValue: safeNumber(market.previous_value),
+      open: safeNumber(market.open),
+      close: safeNumber(market.close),
+      high: safeNumber(market.high),
+      low: safeNumber(market.low),
+      volume: safeNumber(market.volume),
+      updatedAt: market.updated_at || null,
+    },
+    dividends: {
+      yield12mPercent: safeNumber(dividends.yield_12m_percent),
+      yield12mCash: safeNumber(dividends.yield_12m_cash),
+    },
+    related: Array.isArray(item.related) ? item.related : [],
+    logo: logos.square_large || logos.square_small || null,
+    rawAvailableFields: Object.keys(item || {}).slice(0, 80),
+  };
+}
+
+function summarizeFundamentals(f) {
+  if (!f?.ok) {
+    return {
+      ok: false,
+      source: f?.source || "HG Brasil Finance - Fundamentals",
+      error: f?.error || "Indisponível",
+    };
+  }
+
+  const raw = f.raw || {};
+  const statements = Array.isArray(raw.statements) ? raw.statements : [];
+  const st = statements[0] || {};
+
+  return {
+    ok: statements.length > 0,
+    source: f.source,
+    period: {
+      type: st.period_type || null,
+      fiscalYear: st.fiscal_year || null,
+      fiscalPeriod: st.fiscal_period || null,
+      startDate: st.start_date || null,
+      endDate: st.end_date || null,
+    },
+    valuation: st.valuation || {},
+    leverage: st.leverage || {},
+    margins: st.margins || {},
+    profitability: st.profitability || {},
+    dividends: st.dividends || {},
+    rawStatementKeys: Object.keys(st || {}),
+  };
+}
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
     const ticker = normalizeTicker(searchParams.get("ticker"));
+    const includeFundamentals = searchParams.get("fundamentals") !== "0";
 
     if (!ticker) {
       return Response.json(
@@ -213,36 +278,59 @@ export async function GET(req) {
       );
     }
 
-    let asset = null;
-    let errors = [];
+    const errors = [];
 
+    let quote = null;
     try {
-      asset = await getHGAsset(ticker);
-    } catch (err) {
-      errors.push("HG Brasil: " + err.message);
+      quote = await getHGQuotes(ticker);
+      if (!quote.ok) errors.push("Quotes: " + quote.error);
+    } catch (e) {
+      errors.push("Quotes: " + e.message);
     }
 
-    if (!asset || !asset.ok || asset.price === null) {
-      const fallback = await getStooqFallback(ticker);
-      if (fallback?.ok) asset = fallback;
-    }
+    let fallback = null;
+    if (!quote?.ok) fallback = await getStooqFallback(ticker);
 
-    if (!asset || !asset.ok) {
-      return Response.json({
-        ok: true,
-        requestedTicker: ticker,
-        updatedAt: new Date().toISOString(),
-        asset: {
+    const fundamentals = includeFundamentals
+      ? await getHGFundamentals(ticker)
+      : { ok: false, source: "HG Brasil Finance - Fundamentals", error: "Não solicitado" };
+
+    if (fundamentals?.error) errors.push("Fundamentals: " + fundamentals.error);
+
+    const asset = quote?.ok
+      ? summarizeQuote(quote, ticker)
+      : fallback?.ok
+      ? {
+          ok: true,
+          source: fallback.source,
+          ticker,
+          fullTicker: fallback.symbol,
+          symbol: ticker,
+          name: ticker,
+          fullName: null,
+          taxId: null,
+          isin: null,
+          assetType: fallback.assetType,
+          currency: fallback.currency,
+          unit: "currency",
+          price: fallback.price,
+          changeValue: null,
+          changePercent: null,
+          marketCap: null,
+          updatedAt: fallback.updatedAt,
+          market: fallback.market,
+          dividends: {},
+          related: [],
+          logo: null,
+          rawAvailableFields: [],
+        }
+      : {
           ok: false,
           source: "manual",
           ticker,
-          error: errors.join(" | ") || "Dados automáticos indisponíveis",
+          error: "Dados automáticos indisponíveis",
           manualFallback: true,
-        },
-        manualFallback: true,
-        errors,
-      });
-    }
+        };
 
     return Response.json({
       ok: true,
@@ -251,7 +339,12 @@ export async function GET(req) {
       priorityRule:
         "Se o usuário informar valor manual, usar o manual. Se manual vazio, usar automático. Se automático indisponível, marcar como não informado.",
       asset,
-      manualFallback: false,
+      fundamentals: summarizeFundamentals(fundamentals),
+      raw: {
+        quote: quote?.raw || null,
+        fundamentals: fundamentals?.raw || null,
+      },
+      manualFallback: !asset.ok,
       errors,
     });
   } catch (err) {
