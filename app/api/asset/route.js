@@ -123,7 +123,12 @@ async function getStooqFallback(ticker) {
     const tk = normalizeTicker(ticker);
     const symbols = [];
 
-    if (/^[A-Z]{4}[0-9]{1,2}$/.test(tk)) symbols.push(tk.toLowerCase() + ".sa");
+    if (/^[A-Z]{4}[0-9]{1,2}$/.test(tk)) {
+      symbols.push(tk.toLowerCase() + ".sa");
+    } else if (/^[A-Z]{1,5}$/.test(tk)) {
+      // US stocks and ETFs on Stooq usually use .us
+      symbols.push(tk.toLowerCase() + ".us");
+    }
     symbols.push(tk.toLowerCase());
 
     const today = new Date();
@@ -161,13 +166,15 @@ async function getStooqFallback(ticker) {
         ticker: tk,
         symbol,
         name: tk,
-        assetType: "unknown",
+        assetType: /^[A-Z]{1,5}$/.test(tk) && !/^[A-Z]{4}[0-9]{1,2}$/.test(tk) ? "us_asset" : "unknown",
         currency: tk.match(/^[A-Z]{4}[0-9]/) ? "BRL" : "USD",
         price: close,
         updatedAt: last[0],
         market: {
+          open: safeNumber(last[1]),
           high: safeNumber(last[2]),
           low: safeNumber(last[3]),
+          close,
           volume: safeNumber(last[5]),
         },
       };
