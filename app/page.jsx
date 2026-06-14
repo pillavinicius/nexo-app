@@ -38,6 +38,13 @@ function macroLabel(item) {
   return `não informado (${item.mode || "manual"})`;
 }
 
+
+function macroStatusText(item) {
+  if (!item) return "Dado manual opcional";
+  if (item.ok) return `Automático · ${item.source}${item.date ? " · " + item.date : ""}`;
+  return "Dado automático indisponível · preencher manualmente";
+}
+
 function Badge({ text }) {
   const value = asText(text || "N/D").toUpperCase();
 
@@ -279,12 +286,46 @@ export default function NEXOApp() {
   const locked = loading || hasScan || hasDeep || hasFinal || ended;
 
   const canMacro = !loading && !hasScan && !hasDeep && !hasFinal && !ended;
-  const canScan = ticker.trim().length >= 3 && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
+
+  const macro = macroData?.automatic || {};
+  const coreMacroReady =
+    !!macroData &&
+    !!macro?.selic_meta?.ok &&
+    !!macro?.cdi_diario?.ok &&
+    !!macro?.ipca_mensal?.ok &&
+    !!macro?.usd_ptax?.ok &&
+    !!macro?.fed_funds?.ok;
+
+  const ibovReady = !!macro?.ibovespa_pontos?.ok || ibovManual.trim().length > 0;
+  const sp500Ready = !!macro?.sp500_pontos?.ok || sp500Manual.trim().length > 0;
+  const ifixReady = !!macro?.ifix_pontos?.ok || ifixManual.trim().length > 0;
+
+  const requiredInputsReady =
+    ticker.trim().length >= 3 &&
+    currentPrice.trim().length > 0 &&
+    coreMacroReady &&
+    ibovReady &&
+    sp500Ready &&
+    ifixReady;
+
+  const scanBlockReason = !ticker.trim()
+    ? "Informe o ticker."
+    : ticker.trim().length < 3
+    ? "Ticker precisa ter pelo menos 3 caracteres."
+    : !currentPrice.trim()
+    ? "Informe o valor atual / cota atual."
+    : !macroData
+    ? "Clique em Atualizar Macro antes de rodar o Scan."
+    : !coreMacroReady
+    ? "Dados macro essenciais indisponíveis. Tente Atualizar Macro novamente."
+    : !ibovReady || !sp500Ready || !ifixReady
+    ? "Preencha manualmente Ibovespa, S&P 500 e IFIX quando o automático não vier."
+    : "";
+
+  const canScan = requiredInputsReady && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
   const canDeep = hasScan && !hasDeep && !isVeto && !loading && !hasFinal && !ended;
   const canFinalize = (hasScan || hasDeep) && !loading && !hasFinal && !ended;
   const canFollow = hasDeep && !loading && !hasFinal && !ended && (followQ.trim() || followUrl.trim());
-
-  const macro = macroData?.automatic || {};
 
   function buildManualContext() {
     const ibovAuto = macro?.ibovespa_pontos;
@@ -584,6 +625,10 @@ export default function NEXOApp() {
     .ftxt::placeholder{color:#2A2318}
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
     .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+    .help-box{border:1px solid #2A2318;background:rgba(201,168,76,.04);padding:12px 14px;margin-bottom:14px}
+    .help-title{font-family:'JetBrains Mono',monospace;font-size:9px;color:#C9A84C;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
+    .help-text{font-size:11px;color:#8A7A58;line-height:1.6}
+    .scan-hint{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);background:rgba(210,160,60,.06);padding:9px 12px;margin-bottom:10px;letter-spacing:.8px}
     .macro-card{border:1px solid #2A2318;padding:8px 10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#A89060}
     .macro-title{font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
     .macro-value{font-size:13px;color:#E8D5A3;font-weight:700}
@@ -646,6 +691,15 @@ export default function NEXOApp() {
           ))}
         </div>
 
+        <div className="help-box">
+          <div className="help-title">Como usar o NEXO App</div>
+          <div className="help-text">
+            1) Informe o ticker. 2) Clique em Atualizar Macro para buscar Selic, CDI, IPCA, USD e Fed. 
+            3) Informe o valor atual da cota/ação. 4) Se Ibovespa, S&P 500 ou IFIX não vierem automaticamente, preencha manualmente. 
+            Os campos históricos e de P/L são opcionais, mas ajudam a refinar o Scan, o Deep e a Reclassificação Final.
+          </div>
+        </div>
+
         <div className="field">
           <div className="flbl">Ticker</div>
           <input className="finp" disabled={locked} value={ticker} maxLength={12} placeholder="Ex: KNSC11, VALE3, VWCE, NVDA" onChange={(e) => setTicker(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") handleScan(); }} />
@@ -680,8 +734,9 @@ export default function NEXOApp() {
 
         <div className="grid2">
           <div className="field">
-            <div className="flbl">Valor atual / cota atual</div>
+            <div className="flbl">Valor atual / cota atual *</div>
             <input className="finp-sm" disabled={locked} value={currentPrice} placeholder="Ex: 35,80" onChange={(e) => setCurrentPrice(e.target.value)} />
+            <div className="macro-note">Campo obrigatório para habilitar o Scan</div>
           </div>
           <div className="field">
             <div className="flbl">Moeda</div>
@@ -689,6 +744,7 @@ export default function NEXOApp() {
               <option value="BRL">BRL</option>
               <option value="USD">USD</option>
             </select>
+            <div className="macro-note">Unidade usada nos campos de preço</div>
           </div>
         </div>
 
@@ -696,10 +752,12 @@ export default function NEXOApp() {
           <div className="field">
             <div className="flbl">Mínimo histórico</div>
             <input className="finp-sm" disabled={locked} value={histMin} placeholder="Ex: 18,40" onChange={(e) => setHistMin(e.target.value)} />
+            <div className="macro-note">Dado manual opcional</div>
           </div>
           <div className="field">
             <div className="flbl">Data do mínimo</div>
-            <input className="finp-sm" type="date" disabled={locked} value={histMinDate} onChange={(e) => setHistMinDate(e.target.value)} />
+            <input className="finp-sm" disabled={locked} value={histMinDate} maxLength={5} placeholder="Ex: 02/21" onChange={(e) => setHistMinDate(e.target.value)} />
+            <div className="macro-note">Formato MM/AA · dado manual opcional</div>
           </div>
         </div>
 
@@ -707,21 +765,25 @@ export default function NEXOApp() {
           <div className="field">
             <div className="flbl">Máximo histórico</div>
             <input className="finp-sm" disabled={locked} value={histMax} placeholder="Ex: 42,77" onChange={(e) => setHistMax(e.target.value)} />
+            <div className="macro-note">Dado manual opcional</div>
           </div>
           <div className="field">
             <div className="flbl">Data do máximo</div>
-            <input className="finp-sm" type="date" disabled={locked} value={histMaxDate} onChange={(e) => setHistMaxDate(e.target.value)} />
+            <input className="finp-sm" disabled={locked} value={histMaxDate} maxLength={5} placeholder="Ex: 11/25" onChange={(e) => setHistMaxDate(e.target.value)} />
+            <div className="macro-note">Formato MM/AA · dado manual opcional</div>
           </div>
         </div>
 
         <div className="grid3">
           <div className="field">
             <div className="flbl">P/L Ibovespa</div>
-            <input className="finp-sm" disabled={locked} value={plIbov} placeholder="Manual" onChange={(e) => setPlIbov(e.target.value)} />
+            <input className="finp-sm" disabled={locked} value={plIbov} placeholder="Ex: 8,5" onChange={(e) => setPlIbov(e.target.value)} />
+            <div className="macro-note">Dado manual opcional</div>
           </div>
           <div className="field">
             <div className="flbl">P/L S&P 500</div>
-            <input className="finp-sm" disabled={locked} value={plSp500} placeholder="Manual" onChange={(e) => setPlSp500(e.target.value)} />
+            <input className="finp-sm" disabled={locked} value={plSp500} placeholder="Ex: 22,0" onChange={(e) => setPlSp500(e.target.value)} />
+            <div className="macro-note">Dado manual opcional</div>
           </div>
           <div className="field">
             <div className="flbl">Valuations clássicos?</div>
@@ -729,31 +791,33 @@ export default function NEXOApp() {
               <option value="NAO">NÃO</option>
               <option value="SIM">SIM</option>
             </select>
+            <div className="macro-note">Referência auxiliar, não decisória</div>
           </div>
         </div>
 
         <div className="grid2">
           <div className="field">
-            <div className="flbl">Ibovespa pontos</div>
-            <input className="finp-sm" disabled={locked} value={ibovManual} placeholder={macro?.ibovespa_pontos?.ok ? macroValue(macro.ibovespa_pontos) : "Manual"} onChange={(e) => setIbovManual(e.target.value)} />
-            <div className="macro-note">{macro?.ibovespa_pontos?.mode || "manual_fallback"}</div>
+            <div className="flbl">Ibovespa pontos *</div>
+            <input className="finp-sm" disabled={locked} value={ibovManual} placeholder={macro?.ibovespa_pontos?.ok ? macroValue(macro.ibovespa_pontos) : "Ex: 145000"} onChange={(e) => setIbovManual(e.target.value)} />
+            <div className="macro-note">{macroStatusText(macro?.ibovespa_pontos)}</div>
           </div>
           <div className="field">
-            <div className="flbl">S&P 500 pontos</div>
-            <input className="finp-sm" disabled={locked} value={sp500Manual} placeholder={macro?.sp500_pontos?.ok ? macroValue(macro.sp500_pontos) : "Manual"} onChange={(e) => setSp500Manual(e.target.value)} />
-            <div className="macro-note">{macro?.sp500_pontos?.mode || "manual_fallback"}</div>
+            <div className="flbl">S&P 500 pontos *</div>
+            <input className="finp-sm" disabled={locked} value={sp500Manual} placeholder={macro?.sp500_pontos?.ok ? macroValue(macro.sp500_pontos) : "Ex: 6100"} onChange={(e) => setSp500Manual(e.target.value)} />
+            <div className="macro-note">{macroStatusText(macro?.sp500_pontos)}</div>
           </div>
         </div>
 
         <div className="grid2">
           <div className="field">
-            <div className="flbl">IFIX pontos</div>
-            <input className="finp-sm" disabled={locked} value={ifixManual} placeholder={macro?.ifix_pontos?.ok ? macroValue(macro.ifix_pontos) : "Manual"} onChange={(e) => setIfixManual(e.target.value)} />
-            <div className="macro-note">{macro?.ifix_pontos?.mode || "manual_fallback"}</div>
+            <div className="flbl">IFIX pontos *</div>
+            <input className="finp-sm" disabled={locked} value={ifixManual} placeholder={macro?.ifix_pontos?.ok ? macroValue(macro.ifix_pontos) : "Ex: 3400"} onChange={(e) => setIfixManual(e.target.value)} />
+            <div className="macro-note">{macroStatusText(macro?.ifix_pontos)}</div>
           </div>
           <div className="field">
             <div className="flbl">Juros futuro Brasil</div>
-            <input className="finp-sm" disabled={locked} value={jurosFuturoManual} placeholder="Manual" onChange={(e) => setJurosFuturoManual(e.target.value)} />
+            <input className="finp-sm" disabled={locked} value={jurosFuturoManual} placeholder="Ex: DI Jan/29 13,20%" onChange={(e) => setJurosFuturoManual(e.target.value)} />
+            <div className="macro-note">Dado manual opcional</div>
           </div>
         </div>
 
@@ -772,6 +836,12 @@ export default function NEXOApp() {
           <button className="btn-scan" onClick={handleScan} disabled={!canScan}>{loadingKind === "scan" ? "Analisando..." : "Scan NEXO →"}</button>
           <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>{loadingKind === "deep" ? "Analisando..." : "Deep NEXO"}</button>
         </div>
+
+        {!canScan && !locked && (
+          <div className="scan-hint">
+            Para habilitar o Scan: {scanBlockReason}
+          </div>
+        )}
 
         <div className="output">
           <span className="out-lbl">{hasFinal ? "Reclassificação Final" : hasDeep || deepAdds.length > 0 ? "Deep NEXO" : "Scan NEXO"}</span>
