@@ -303,10 +303,7 @@ export default function NEXOApp() {
   const requiredInputsReady =
     ticker.trim().length >= 3 &&
     currentPrice.trim().length > 0 &&
-    coreMacroReady &&
-    ibovReady &&
-    sp500Ready &&
-    ifixReady;
+    coreMacroReady;
 
   const scanBlockReason = !ticker.trim()
     ? "Informe o ticker."
@@ -319,7 +316,7 @@ export default function NEXOApp() {
     : !coreMacroReady
     ? "Dados macro essenciais indisponíveis. Tente Atualizar Macro novamente."
     : !ibovReady || !sp500Ready || !ifixReady
-    ? "Preencha manualmente Ibovespa, S&P 500 e IFIX quando o automático não vier."
+    ? "Dados macro essenciais indisponíveis. Tente Atualizar Macro novamente."
     : "";
 
   const canScan = requiredInputsReady && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
