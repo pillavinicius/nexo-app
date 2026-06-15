@@ -1,943 +1,1582 @@
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
- * NEXO Asset Route — Data Core V1
+ * NEXO Data Core - Asset Route V2
  *
- * Fontes:
- * - B3 / Brasil: HG Brasil
- *   - /v2/finance/quotes
- *   - /v2/finance/fundamentals
- *   - /v2/finance/history
- *   - /v2/finance/balance-sheets
- *   - /v2/finance/income-statements
- *   - /v2/finance/cash-flows
+ * Arquitetura atual:
+ * - Ações BR: HG Brasil
+ * - FIIs / ETFs BR: HG Brasil básico + histórico, com Partnr futura
+ * - Ações EUA: Twelve Data com quote + time_series + statistics no modo padrão
+ * - ETFs EUA: Twelve Data com quote + time_series + etf registry no modo padrão
  *
- * - Internacional: Twelve Data
- *   - /price
- *   - /time_series
- *
- * Alpha Vantage removido.
+ * Objetivo desta revisão:
+ * - Consolidar as melhorias descobertas no Twelve Data
+ * - Reduzir chamadas no plano free
+ * - Concentrar cálculos NEXO localmente
+ * - Deixar Partnr pronta como fase futura, sem quebrar o core atual
  */
 
-function normalizeTicker(raw) {
-  return String(raw || "").trim().toUpperCase().replace(/\s+/g, "");
-}
+const HG_BASE_URL = "https://api.hgbrasil.com/v2/finance";
+const TWELVE_BASE_URL = "https://api.twelvedata.com";
 
-function isB3Ticker(ticker) {
-  return /^[A-Z]{4}[0-9]{1,2}$/.test(normalizeTicker(ticker));
-}
-
-function hgTicker(ticker) {
-  const tk = normalizeTicker(ticker);
-  return isB3Ticker(tk) ? `B3:${tk}` : tk;
-}
-
-function safeNumber(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const number = Number(String(value).replace(",", ".").replace("%", ""));
-  return Number.isFinite(number) ? number : null;
-}
-
-function round(value, decimals = 2) {
-  const n = safeNumber(value);
-  if (n === null) return null;
-  const factor = Math.pow(10, decimals);
-  return Math.round(n * factor) / factor;
-}
-
-function nowISO() {
+function nowIso() {
   return new Date().toISOString();
 }
 
-function isoDateOnly(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
-  return d.toISOString().slice(0, 10);
+function toNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
-function daysAgoISO(days) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+function round(value, decimals = 2) {
+  const n = toNumber(value);
+  if (n === null) return null;
+  return Number(n.toFixed(decimals));
 }
 
-function getPeriodDays(period) {
-  const p = String(period || "1y").toLowerCase();
-  if (p === "1m") return 30;
-  if (p === "3m") return 90;
-  if (p === "6m") return 180;
-  if (p === "1y") return 365;
-  if (p === "2y") return 730;
-  if (p === "3y") return 1095;
-  if (p === "5y") return 1825;
-  return 365;
+function maskKey(url, key) {
+  if (!url || !key) return url;
+  return url.replaceAll(key, "***");
 }
 
-async function fetchJSON(url) {
+function normalizeTicker(raw) {
+  return String(raw || "").trim().toUpperCase().replace(/^B3:/, "");
+}
+
+function isB3Ticker(ticker) {
+  return /\d/.test(ticker);
+}
+
+function isLikelyFiiOrFund(ticker, assetType) {
+  const t = String(ticker || "").toUpperCase();
+  const type = String(assetType || "").toLowerCase();
+  return (
+    t.endsWith("11") ||
+    type.includes("fii") ||
+    type.includes("fundo") ||
+    type.includes("fund")
+  );
+}
+
+function isLikelyB3Etf(assetType) {
+  return String(assetType || "").toLowerCase().includes("etf");
+}
+
+function buildUrl(base, params) {
+  const url = new URL(base);
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  });
+  return url.toString();
+}
+
+async function fetchJson(url, options = {}) {
   const response = await fetch(url, {
     method: "GET",
     cache: "no-store",
+    ...options,
   });
 
   const text = await response.text();
 
-  let data;
+  let json = null;
   try {
-    data = JSON.parse(text);
+    json = JSON.parse(text);
   } catch {
-    throw new Error("Resposta não-JSON: " + text.slice(0, 300));
+    json = null;
   }
 
-  if (!response.ok) {
-    throw new Error(
-      "HTTP " +
-        response.status +
-        ": " +
-        (data?.message ||
-          data?.error ||
-          data?.metadata?.message ||
-          data?.status ||
-          "erro desconhecido")
-    );
-  }
-
-  return data;
+  return {
+    ok: response.ok,
+    status: response.status,
+    json,
+    textPreview: text.slice(0, 700),
+  };
 }
 
-function makeHGUrl(path, ticker, extra = {}) {
-  const key = process.env.HG_BRASIL_KEY || "";
-  const url = new URL(path, "https://api.hgbrasil.com");
-
-  url.searchParams.set("tickers", hgTicker(ticker));
-  if (key) url.searchParams.set("key", key);
-
-  for (const [k, v] of Object.entries(extra)) {
-    if (v !== null && v !== undefined && v !== "") {
-      url.searchParams.set(k, String(v));
-    }
-  }
-
-  return url.href;
+function isErrorPayload(json) {
+  if (!json) return true;
+  if (json.status === "error") return true;
+  if (json.code && Number(json.code) >= 400) return true;
+  if (json.error) return true;
+  return false;
 }
 
-function makeTwelveUrl(path, ticker, extra = {}) {
-  const key = process.env.TWELVEDATA_API_KEY || "";
-  const url = new URL(path, "https://api.twelvedata.com");
+function extractFirstHgResult(json) {
+  if (!json) return null;
 
-  if (key) url.searchParams.set("apikey", key);
+  if (Array.isArray(json.results)) return json.results[0] || null;
 
-  url.searchParams.set("symbol", normalizeTicker(ticker));
-  url.searchParams.set("format", "JSON");
-
-  for (const [k, v] of Object.entries(extra)) {
-    if (v !== null && v !== undefined && v !== "") {
-      url.searchParams.set(k, String(v));
-    }
-  }
-
-  return url.href;
-}
-
-function firstResult(data) {
-  if (Array.isArray(data?.results) && data.results.length > 0) return data.results[0];
-
-  if (data?.results && typeof data.results === "object") {
-    const vals = Object.values(data.results);
-    if (vals.length > 0) return vals[0];
+  if (json.results && typeof json.results === "object") {
+    const values = Object.values(json.results);
+    return values[0] || null;
   }
 
   return null;
 }
 
-async function getHGQuote(ticker) {
-  const data = await fetchJSON(makeHGUrl("/v2/finance/quotes", ticker));
-  const item = firstResult(data);
+function pickLatestByPeriod(statements = [], preferredPeriod = "ttm") {
+  if (!Array.isArray(statements) || statements.length === 0) return null;
 
-  if (!item) {
+  const preferred = statements.find(
+    (s) => String(s.period_type || "").toLowerCase() === preferredPeriod
+  );
+  if (preferred) return preferred;
+
+  return statements[0] || null;
+}
+
+function pickLatestFY(statements = []) {
+  if (!Array.isArray(statements) || statements.length === 0) return null;
+  return (
+    statements.find(
+      (s) =>
+        String(s.period_type || "").toLowerCase() === "annual" ||
+        String(s.fiscal_period || "").toUpperCase() === "FY"
+    ) || null
+  );
+}
+
+function pickPreviousFY(statements = []) {
+  if (!Array.isArray(statements) || statements.length < 2) return null;
+  const annuals = statements.filter(
+    (s) =>
+      String(s.period_type || "").toLowerCase() === "annual" ||
+      String(s.fiscal_period || "").toUpperCase() === "FY"
+  );
+  return annuals[1] || null;
+}
+
+function candlesFromTwelve(json) {
+  const values = Array.isArray(json?.values) ? json.values : [];
+  return values
+    .map((v) => ({
+      date: String(v.datetime || "").slice(0, 10),
+      open: toNumber(v.open),
+      high: toNumber(v.high),
+      low: toNumber(v.low),
+      close: toNumber(v.close),
+      volume: toNumber(v.volume),
+    }))
+    .filter((c) => c.date && c.close !== null)
+    .reverse();
+}
+
+function groupHgIntradayToDaily(samples = []) {
+  const byDate = new Map();
+
+  for (const s of samples || []) {
+    const date = String(s.date || s.datetime || "").slice(0, 10);
+    if (!date) continue;
+
+    const row = {
+      date,
+      open: toNumber(s.open),
+      high: toNumber(s.high),
+      low: toNumber(s.low),
+      close: toNumber(s.close),
+      volume: toNumber(s.volume),
+    };
+
+    if (row.close === null) continue;
+
+    const existing = byDate.get(date);
+
+    if (!existing) {
+      byDate.set(date, {
+        date,
+        open: row.open,
+        high: row.high,
+        low: row.low,
+        close: row.close,
+        volume: row.volume || 0,
+      });
+    } else {
+      existing.high =
+        existing.high === null
+          ? row.high
+          : Math.max(existing.high, row.high ?? existing.high);
+      existing.low =
+        existing.low === null
+          ? row.low
+          : Math.min(existing.low, row.low ?? existing.low);
+      existing.close = row.close;
+      existing.volume = (existing.volume || 0) + (row.volume || 0);
+    }
+  }
+
+  return Array.from(byDate.values()).sort((a, b) =>
+    a.date.localeCompare(b.date)
+  );
+}
+
+function average(values) {
+  const nums = values.map(toNumber).filter((v) => v !== null);
+  if (!nums.length) return null;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+function pct(a, b) {
+  const x = toNumber(a);
+  const y = toNumber(b);
+  if (x === null || y === null || y === 0) return null;
+  return ((x - y) / y) * 100;
+}
+
+function annualizedVolatility(candles, period = 90) {
+  if (!Array.isArray(candles) || candles.length < 3) return null;
+  const slice = candles.slice(-period);
+  if (slice.length < Math.min(period, 20)) return null;
+
+  const returns = [];
+  for (let i = 1; i < slice.length; i++) {
+    const prev = slice[i - 1].close;
+    const curr = slice[i].close;
+    if (prev && curr) returns.push(Math.log(curr / prev));
+  }
+
+  if (returns.length < 2) return null;
+
+  const avg = average(returns);
+  const variance =
+    returns.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) /
+    (returns.length - 1);
+
+  return Math.sqrt(variance) * Math.sqrt(252) * 100;
+}
+
+function computeMarketDerived(candles, currentPrice) {
+  const valid = (candles || []).filter((c) => c.close !== null);
+  const count = valid.length;
+
+  if (!count) {
     return {
       ok: false,
-      source: "HG Brasil Finance - Quotes",
-      error: "Ticker não encontrado em /v2/finance/quotes",
-      metadata: data?.metadata || null,
+      error: "Histórico indisponível ou vazio",
     };
   }
+
+  const first = valid[0];
+  const last = valid[count - 1];
+  const closes = valid.map((c) => c.close);
+  const highs = valid.map((c) => c.high ?? c.close);
+  const lows = valid.map((c) => c.low ?? c.close);
+  const volumes = valid.map((c) => c.volume).filter((v) => v !== null);
+
+  const price = toNumber(currentPrice) ?? last.close;
+
+  const maxPrice = Math.max(...highs);
+  const minPrice = Math.min(...lows);
+
+  const maxRow = valid.find((c) => (c.high ?? c.close) === maxPrice);
+  const minRow = valid.find((c) => (c.low ?? c.close) === minPrice);
+
+  const sma20 = count >= 20 ? average(closes.slice(-20)) : null;
+  const sma50 = count >= 50 ? average(closes.slice(-50)) : null;
+  const sma200 = count >= 200 ? average(closes.slice(-200)) : null;
+
+  const closeNDaysAgo = (n) => {
+    if (count <= n) return null;
+    return valid[count - 1 - n]?.close ?? null;
+  };
+
+  const pricePositionPercent =
+    maxPrice !== minPrice ? ((price - minPrice) / (maxPrice - minPrice)) * 100 : null;
+
+  const derived = {
+    ok: true,
+    period: "available_history",
+    candlesCount: count,
+    firstDate: first.date,
+    lastDate: last.date,
+    currentPrice: round(price, 4),
+    startPrice: round(first.close, 4),
+    maxPrice: round(maxPrice, 4),
+    maxDate: maxRow?.date || null,
+    minPrice: round(minPrice, 4),
+    minDate: minRow?.date || null,
+    returnPercent: round(pct(price, first.close), 2),
+    drawdownFromHighPercent: round(pct(price, maxPrice), 2),
+    amplitudePercent: round(pct(maxPrice, minPrice), 2),
+    averageVolume: round(average(volumes), 0),
+    explanation:
+      "Cálculos derivados automaticamente da série histórica diária normalizada.",
+  };
+
+  const derivedAdvanced = {
+    ok: true,
+    candlesCount: count,
+    sma20: round(sma20, 4),
+    sma50: round(sma50, 4),
+    sma200: round(sma200, 4),
+    distanceFromSma20Percent: round(pct(price, sma20), 2),
+    distanceFromSma50Percent: round(pct(price, sma50), 2),
+    distanceFromSma200Percent: round(pct(price, sma200), 2),
+    return30dPercent: round(pct(price, closeNDaysAgo(30)), 2),
+    return90dPercent: round(pct(price, closeNDaysAgo(90)), 2),
+    return180dPercent: round(pct(price, closeNDaysAgo(180)), 2),
+    return1yPercent: round(pct(price, closeNDaysAgo(252)), 2),
+    volatility30dAnnualizedPercent: round(annualizedVolatility(valid, 30), 2),
+    volatility90dAnnualizedPercent: round(annualizedVolatility(valid, 90), 2),
+    volatility1yAnnualizedPercent: round(annualizedVolatility(valid, 252), 2),
+    note:
+      "Métricas avançadas calculadas localmente para reduzir dependência de endpoints pagos.",
+  };
+
+  const nexoMetrics = {
+    ok: true,
+    pricePositionPercent: round(pricePositionPercent, 2),
+    distanceFromHighPercent: round(pct(price, maxPrice), 2),
+    distanceFromLowPercent: round(pct(price, minPrice), 2),
+    historicalAmplitudePercent: round(pct(maxPrice, minPrice), 2),
+    momentumPeriodPercent: round(pct(price, first.close), 2),
+    averageVolume: round(average(volumes), 0),
+    trendVsSma20Percent: derivedAdvanced.distanceFromSma20Percent,
+    trendVsSma50Percent: derivedAdvanced.distanceFromSma50Percent,
+    trendVsSma200Percent: derivedAdvanced.distanceFromSma200Percent,
+    volatility90dAnnualizedPercent:
+      derivedAdvanced.volatility90dAnnualizedPercent,
+    liquidityHint:
+      average(volumes) === null
+        ? "não informado"
+        : average(volumes) >= 1000000
+        ? "alta"
+        : average(volumes) >= 300000
+        ? "média"
+        : "baixa",
+    note:
+      "Métricas auxiliares para TNH, PIN, GNP, filtros de liquidez e contexto histórico do NEXO.",
+  };
+
+  return { derived, derivedAdvanced, nexoMetrics };
+}
+
+function computeGrowth(latest, previous, fields) {
+  const result = {};
+  for (const field of fields) {
+    result[`${field}_growth_percent`] = round(pct(latest?.[field], previous?.[field]), 2);
+  }
+  return result;
+}
+
+function safeDivide(a, b) {
+  const x = toNumber(a);
+  const y = toNumber(b);
+  if (x === null || y === null || y === 0) return null;
+  return x / y;
+}
+
+/* =========================
+   HG BRASIL
+========================= */
+
+async function hgFetch(endpoint, params, key) {
+  const url = buildUrl(`${HG_BASE_URL}/${endpoint}`, {
+    ...params,
+    key,
+  });
+
+  const result = await fetchJson(url);
+
+  return {
+    ...result,
+    requestUrl: maskKey(url, key),
+  };
+}
+
+async function fetchHgQuote(ticker, key) {
+  const fullTicker = `B3:${ticker}`;
+
+  /**
+   * Mantém fallbacks porque a HG já mudou nomes de rotas em diferentes versões.
+   * O route usa a primeira resposta que trouxer results.
+   */
+  const attempts = [
+    {
+      endpoint: "quotes",
+      params: { tickers: fullTicker },
+    },
+    {
+      endpoint: "stock_price",
+      params: { tickers: fullTicker },
+    },
+    {
+      endpoint: "stock_price",
+      params: { symbol: fullTicker },
+    },
+  ];
+
+  const errors = [];
+
+  for (const attempt of attempts) {
+    const result = await hgFetch(attempt.endpoint, attempt.params, key);
+    const first = extractFirstHgResult(result.json);
+
+    if (result.ok && first) {
+      return {
+        ok: true,
+        source: `HG Brasil Finance - ${attempt.endpoint}`,
+        requestUrl: result.requestUrl,
+        raw: result.json,
+        data: first,
+      };
+    }
+
+    errors.push({
+      endpoint: attempt.endpoint,
+      status: result.status,
+      message:
+        result.json?.message || result.json?.error || result.textPreview || "sem results",
+    });
+  }
+
+  return {
+    ok: false,
+    source: "HG Brasil Finance - Quotes",
+    error: "Não foi possível obter cotação na HG",
+    attempts: errors,
+  };
+}
+
+function normalizeHgAsset(raw, ticker) {
+  if (!raw) {
+    return {
+      ok: false,
+      ticker,
+      error: "Quote HG ausente",
+    };
+  }
+
+  const quote = raw.quote || raw.market || {};
+  const market = raw.market || raw.quote || {};
+  const classification = raw.classification || {};
+
+  const assetType =
+    raw.kind ||
+    raw.type ||
+    raw.asset_type ||
+    classification.kind ||
+    classification.type ||
+    null;
+
+  const price =
+    toNumber(quote.price) ??
+    toNumber(quote.close) ??
+    toNumber(market.close) ??
+    toNumber(raw.price) ??
+    toNumber(raw.close);
 
   return {
     ok: true,
     source: "HG Brasil Finance - Quotes",
-    metadata: data?.metadata || null,
-    raw: item,
-  };
-}
-
-async function getHGFundamentals(ticker) {
-  try {
-    const data = await fetchJSON(
-      makeHGUrl("/v2/finance/fundamentals", ticker, { period: "annual" })
-    );
-
-    const item = firstResult(data);
-
-    if (!item) {
-      return {
-        ok: false,
-        source: "HG Brasil Finance - Fundamentals",
-        error: "Sem resultados",
-        metadata: data?.metadata || null,
-      };
-    }
-
-    return {
-      ok: true,
-      source: "HG Brasil Finance - Fundamentals",
-      metadata: data?.metadata || null,
-      raw: item,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      source: "HG Brasil Finance - Fundamentals",
-      error: error.message,
-    };
-  }
-}
-
-async function getHGHistory(ticker) {
-  try {
-    const data = await fetchJSON(makeHGUrl("/v2/finance/history", ticker));
-    const item = firstResult(data);
-    const samples = Array.isArray(item?.samples) ? item.samples : [];
-
-    if (!item || samples.length === 0) {
-      return {
-        ok: false,
-        source: "HG Brasil Finance - History",
-        error: "Histórico indisponível ou vazio",
-        metadata: data?.metadata || null,
-        samples: [],
-      };
-    }
-
-    return {
-      ok: true,
-      source: "HG Brasil Finance - History",
-      metadata: data?.metadata || null,
-      raw: item,
-      samples,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      source: "HG Brasil Finance - History",
-      error: error.message,
-      samples: [],
-    };
-  }
-}
-
-async function getHGFinancialStatement(ticker, endpoint, label) {
-  try {
-    const data = await fetchJSON(makeHGUrl(`/v2/finance/${endpoint}`, ticker));
-    const item = firstResult(data);
-    const statements = Array.isArray(item?.statements) ? item.statements : [];
-
-    if (!item || statements.length === 0) {
-      return {
-        ok: false,
-        source: `HG Brasil Finance - ${label}`,
-        error: "Statements indisponíveis ou vazios",
-        metadata: data?.metadata || null,
-        statements: [],
-        raw: item || null,
-      };
-    }
-
-    return {
-      ok: true,
-      source: `HG Brasil Finance - ${label}`,
-      metadata: data?.metadata || null,
-      raw: item,
-      statements,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      source: `HG Brasil Finance - ${label}`,
-      error: error.message,
-      statements: [],
-    };
-  }
-}
-
-async function getTwelvePrice(ticker) {
-  try {
-    const data = await fetchJSON(
-      makeTwelveUrl("/price", ticker, {
-        interval: "1day",
-      })
-    );
-
-    const price = safeNumber(data?.price);
-
-    if (price === null) {
-      return {
-        ok: false,
-        source: "Twelve Data - Price",
-        error: data?.message || data?.status || "Preço indisponível",
-        raw: data,
-      };
-    }
-
-    return {
-      ok: true,
-      source: "Twelve Data - Price",
-      price,
-      raw: data,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      source: "Twelve Data - Price",
-      error: error.message,
-    };
-  }
-}
-
-async function getTwelveTimeSeries(ticker, period = "1y") {
-  try {
-    const days = getPeriodDays(period);
-    const start = daysAgoISO(days);
-    const end = new Date().toISOString().slice(0, 10);
-
-    const data = await fetchJSON(
-      makeTwelveUrl("/time_series", ticker, {
-        interval: "1day",
-        start_date: start,
-        end_date: end,
-        outputsize: 5000,
-      })
-    );
-
-    if (data?.status === "error") {
-      return {
-        ok: false,
-        source: "Twelve Data - Time Series",
-        error: data?.message || "Erro Twelve Data",
-        raw: data,
-        values: [],
-      };
-    }
-
-    const values = Array.isArray(data?.values) ? data.values : [];
-
-    if (values.length === 0) {
-      return {
-        ok: false,
-        source: "Twelve Data - Time Series",
-        error: "Série histórica vazia",
-        meta: data?.meta || null,
-        raw: data,
-        values: [],
-      };
-    }
-
-    return {
-      ok: true,
-      source: "Twelve Data - Time Series",
-      meta: data?.meta || null,
-      values,
-      raw: data,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      source: "Twelve Data - Time Series",
-      error: error.message,
-      values: [],
-    };
-  }
-}
-
-function summarizeHGQuote(result, ticker) {
-  const item = result?.raw || {};
-  const quote = item.quote || {};
-  const market = item.market || {};
-  const dividends = item.dividends || {};
-  const classification = item.classification || {};
-  const logos = item.logos || {};
-
-  return {
-    ok: !!result?.ok,
-    source: result?.source || null,
     dataProvider: "HG Brasil",
     ticker,
-    fullTicker: item.ticker || hgTicker(ticker),
-    symbol: item.symbol || ticker,
-    name: item.name || ticker,
-    fullName: item.full_name || null,
-    taxId: item.tax_id || null,
-    isin: item.isin || null,
-    assetType: item.kind || item.type || "unknown",
-    currency: item.currency || "BRL",
-    unit: item.unit || "currency",
-    sharesOutstanding: safeNumber(item.shares_outstanding),
-    sector: classification.sector || null,
-    subsector: classification.subsector || null,
-    segment: classification.segment || null,
-    price: safeNumber(quote.value),
-    changeValue: safeNumber(quote.change_value),
-    changePercent: safeNumber(quote.change_percent),
-    marketCap: safeNumber(quote.market_cap),
-    updatedAt: quote.updated_at || market.updated_at || nowISO(),
+    fullTicker: raw.ticker || `B3:${ticker}`,
+    symbol: raw.symbol || ticker,
+    name: raw.name || null,
+    fullName: raw.full_name || raw.fullName || null,
+    taxId: raw.tax_id || null,
+    isin: raw.isin || null,
+    assetType,
+    currency: raw.currency || "BRL",
+    unit: raw.unit || "currency",
+    sharesOutstanding: toNumber(raw.shares_outstanding),
+    sector:
+      classification.sector ||
+      raw.sector ||
+      raw.segment ||
+      raw.subsector ||
+      null,
+    subsector: classification.subsector || raw.subsector || null,
+    segment: classification.segment || raw.segment || null,
+    price,
+    changeValue: toNumber(quote.change) ?? toNumber(quote.change_value),
+    changePercent:
+      toNumber(quote.change_percent) ??
+      toNumber(quote.percent_change) ??
+      toNumber(quote.changePercent),
+    marketCap: toNumber(raw.market_cap) ?? toNumber(raw.marketCap),
+    updatedAt:
+      quote.updated_at ||
+      market.updated_at ||
+      raw.updated_at ||
+      raw.updatedAt ||
+      null,
     market: {
-      isOpen: market.is_open ?? null,
-      previousValue: safeNumber(market.previous_value),
-      open: safeNumber(market.open),
-      close: safeNumber(market.close),
-      high: safeNumber(market.high),
-      low: safeNumber(market.low),
-      volume: safeNumber(market.volume),
-      updatedAt: market.updated_at || null,
+      isOpen: market.is_open ?? quote.is_open ?? null,
+      previousValue:
+        toNumber(quote.previous_close) ??
+        toNumber(market.previous_close) ??
+        toNumber(raw.previous_close),
+      open: toNumber(quote.open) ?? toNumber(market.open),
+      close: toNumber(quote.close) ?? toNumber(market.close) ?? price,
+      high: toNumber(quote.high) ?? toNumber(market.high),
+      low: toNumber(quote.low) ?? toNumber(market.low),
+      volume:
+        toNumber(quote.volume) ??
+        toNumber(market.volume) ??
+        toNumber(raw.volume),
+      updatedAt:
+        quote.updated_at ||
+        market.updated_at ||
+        raw.updated_at ||
+        raw.updatedAt ||
+        null,
     },
     dividends: {
-      yield12mPercent: safeNumber(dividends.yield_12m_percent),
-      yield12mCash: safeNumber(dividends.yield_12m_cash),
+      yield12mPercent:
+        toNumber(raw.dividends?.yield_12m) ??
+        toNumber(raw.dividends?.yield12mPercent) ??
+        toNumber(raw.dividends?.yield_percent),
+      yield12mCash:
+        toNumber(raw.dividends?.cash_12m) ??
+        toNumber(raw.dividends?.yield_12m_cash) ??
+        toNumber(raw.dividends?.yield_currency),
     },
-    related: Array.isArray(item.related) ? item.related : [],
-    logo: logos.square_large || logos.square_small || null,
-    rawAvailableFields: Object.keys(item || {}).slice(0, 100),
+    related: raw.related || [],
+    logo: raw.logos?.big || raw.logo || null,
+    rawAvailableFields: Object.keys(raw || {}),
   };
 }
 
-function summarizeHGFundamentals(result) {
-  if (!result?.ok) {
-    return {
-      ok: false,
-      source: result?.source || "HG Brasil Finance - Fundamentals",
-      error: result?.error || "Indisponível",
-    };
-  }
+async function fetchHgFundamentals(ticker, key) {
+  const result = await hgFetch(
+    "fundamentals",
+    { tickers: `B3:${ticker}` },
+    key
+  );
 
-  const raw = result.raw || {};
-  const statements = Array.isArray(raw.statements) ? raw.statements : [];
-  const st = statements[0] || {};
+  const first = extractFirstHgResult(result.json);
+  const statement =
+    first?.statements?.[0] ||
+    first?.statement ||
+    first?.fundamentals ||
+    first ||
+    null;
+
+  const ok = result.ok && statement && Object.keys(statement || {}).length > 0;
 
   return {
-    ok: statements.length > 0,
-    source: result.source,
+    ok,
+    source: "HG Brasil Finance - Fundamentals",
+    requestUrl: result.requestUrl,
+    raw: first || result.json,
+    statement,
+    error: ok ? null : result.json?.message || "Fundamentals indisponíveis",
+  };
+}
+
+function normalizeHgFundamentals(statement) {
+  const s = statement || {};
+  return {
+    ok: !!statement,
+    source: "HG Brasil Finance - Fundamentals",
     period: {
-      type: st.period_type || null,
-      fiscalYear: st.fiscal_year || null,
-      fiscalPeriod: st.fiscal_period || null,
-      startDate: st.start_date || null,
-      endDate: st.end_date || null,
+      type: s.period_type || null,
+      fiscalYear: s.fiscal_year || null,
+      fiscalPeriod: s.fiscal_period || null,
+      startDate: s.start_date || null,
+      endDate: s.end_date || null,
     },
-    valuation: st.valuation || {},
-    leverage: st.leverage || {},
-    margins: st.margins || {},
-    profitability: st.profitability || {},
-    dividends: st.dividends || {},
-    rawStatementKeys: Object.keys(st || {}),
+    valuation: s.valuation || {},
+    leverage: s.leverage || {},
+    margins: s.margins || {},
+    profitability: s.profitability || {},
+    dividends: s.dividends || {},
+    rawStatementKeys: Object.keys(s),
   };
 }
 
-function pickStatement(statements, kind) {
-  const list = Array.isArray(statements) ? statements : [];
-
-  if (kind === "ttm") {
-    return list.find((s) => String(s.period_type).toLowerCase() === "ttm") || null;
-  }
-
-  if (kind === "latestFY") {
-    return (
-      list.find(
-        (s) =>
-          String(s.period_type).toLowerCase() === "annual" ||
-          String(s.fiscal_period).toUpperCase() === "FY"
-      ) || null
-    );
-  }
-
-  if (kind === "previousFY") {
-    const annuals = list.filter(
-      (s) =>
-        String(s.period_type).toLowerCase() === "annual" ||
-        String(s.fiscal_period).toUpperCase() === "FY"
-    );
-    return annuals[1] || null;
-  }
-
-  return null;
-}
-
-function summarizeStatementBlock(result, type) {
-  const statements = Array.isArray(result?.statements) ? result.statements : [];
+async function fetchHgStatement(endpoint, ticker, key, type) {
+  const result = await hgFetch(endpoint, { tickers: `B3:${ticker}` }, key);
+  const first = extractFirstHgResult(result.json);
+  const statements = Array.isArray(first?.statements) ? first.statements : [];
+  const ok = result.ok && statements.length > 0;
 
   return {
-    ok: !!result?.ok,
-    source: result?.source || null,
+    ok,
+    source: `HG Brasil Finance - ${endpoint}`,
+    requestUrl: result.requestUrl,
     type,
-    error: result?.error || null,
+    error: ok ? null : "Statements indisponíveis ou vazios",
     count: statements.length,
-    latestTTM: pickStatement(statements, "ttm"),
-    latestFY: pickStatement(statements, "latestFY"),
-    previousFY: pickStatement(statements, "previousFY"),
+    latestTTM: pickLatestByPeriod(statements, "ttm"),
+    latestFY: pickLatestFY(statements),
+    previousFY: pickPreviousFY(statements),
     statements,
   };
 }
 
-function buildFinancialStatements(balanceSheet, incomeStatement, cashFlow) {
+async function fetchHgHistory(ticker, key) {
+  const result = await hgFetch("history", { tickers: `B3:${ticker}` }, key);
+
+  const first = extractFirstHgResult(result.json);
+  const samples = Array.isArray(first?.samples) ? first.samples : [];
+  const candles = groupHgIntradayToDaily(samples);
+
   return {
-    ok: !!(balanceSheet?.ok || incomeStatement?.ok || cashFlow?.ok),
-    source: "HG Brasil Finance + CVM",
-    balanceSheet: summarizeStatementBlock(balanceSheet, "balance_sheet"),
-    incomeStatement: summarizeStatementBlock(incomeStatement, "income_statement"),
-    cashFlow: summarizeStatementBlock(cashFlow, "cash_flow"),
+    ok: result.ok && candles.length > 0,
+    source: "HG Brasil Finance - History",
+    requestUrl: result.requestUrl,
+    samplesType: "intraday_grouped_to_daily",
+    rawSamplesCount: samples.length,
+    dailyCandlesCount: candles.length,
+    error: candles.length ? null : "Histórico indisponível",
+    candles,
   };
 }
 
-function buildKeyIndicators(asset, fundamentals) {
+function keyIndicatorsFromHg(asset, fundamentals) {
   const valuation = fundamentals?.valuation || {};
   const leverage = fundamentals?.leverage || {};
   const profitability = fundamentals?.profitability || {};
   const dividends = fundamentals?.dividends || {};
 
-  const dividendYield =
-    safeNumber(asset?.dividends?.yield12mPercent) ??
-    safeNumber(dividends?.yield_percent);
-
   return {
-    ok: !!(asset?.ok || fundamentals?.ok),
-    price: safeNumber(asset?.price),
-    currency: asset?.currency || null,
-    marketCap: safeNumber(asset?.marketCap),
-    volume: safeNumber(asset?.market?.volume),
-    dividendYieldPercent: dividendYield,
-    dividends12mCash: safeNumber(asset?.dividends?.yield12mCash),
-    pe: safeNumber(valuation.price_to_earnings_ratio),
-    pb: safeNumber(valuation.price_to_book_ratio),
-    evEbitda: safeNumber(valuation.ev_to_ebitda),
-    evEbit: safeNumber(valuation.ev_to_ebit),
-    priceToEbitda: safeNumber(valuation.price_to_ebitda),
-    priceToFcf: safeNumber(valuation.price_to_free_cash_flow_ratio),
-    eps: safeNumber(valuation.earnings_per_share),
-    bookValuePerShare: safeNumber(valuation.book_value_per_share),
-    roe: safeNumber(profitability.return_on_equity),
-    roa: safeNumber(profitability.return_on_assets),
-    roic: safeNumber(profitability.return_on_invested_capital),
-    roce: safeNumber(profitability.return_on_capital_employed),
-    currentRatio: safeNumber(leverage.current_ratio),
-    debtToEquity: safeNumber(leverage.debt_to_equity_ratio),
-    netDebtToEbitda: safeNumber(leverage.net_debt_to_ebitda_ratio),
-    netDebtToEbit: safeNumber(leverage.net_debt_to_ebit_ratio),
+    ok: true,
+    price: asset?.price ?? null,
+    currency: asset?.currency || "BRL",
+    marketCap: asset?.marketCap ?? null,
+    volume: asset?.market?.volume ?? null,
+    dividendYieldPercent:
+      asset?.dividends?.yield12mPercent ??
+      dividends.yield_percent ??
+      dividends.yieldPercent ??
+      null,
+    dividends12mCash:
+      asset?.dividends?.yield12mCash ??
+      dividends.yield_currency ??
+      dividends.yieldCurrency ??
+      null,
+    pe: valuation.price_to_earnings_ratio ?? null,
+    pb: valuation.price_to_book_ratio ?? null,
+    evEbitda: valuation.ev_to_ebitda ?? null,
+    evEbit: valuation.ev_to_ebit ?? null,
+    priceToEbitda: valuation.price_to_ebitda ?? null,
+    priceToFcf: valuation.price_to_free_cash_flow_ratio ?? null,
+    eps: valuation.earnings_per_share ?? null,
+    bookValuePerShare: valuation.book_value_per_share ?? null,
+    roe: profitability.return_on_equity ?? null,
+    roa: profitability.return_on_assets ?? null,
+    roic: profitability.return_on_invested_capital ?? null,
+    roce: profitability.return_on_capital_employed ?? null,
+    currentRatio: leverage.current_ratio ?? null,
+    debtToEquity: leverage.debt_to_equity_ratio ?? null,
+    netDebtToEbitda: leverage.net_debt_to_ebitda_ratio ?? null,
+    netDebtToEbit: leverage.net_debt_to_ebit_ratio ?? null,
     note:
-      "Indicadores consolidados para uso rápido pelo NEXO. Alguns campos podem ser nulos para FIIs, ETFs e ativos internacionais no plano atual.",
+      "Indicadores consolidados para uso rápido pelo NEXO. Campos podem ser nulos para FIIs/ETFs.",
   };
 }
 
-function groupIntradaySamplesByDay(samples) {
-  const map = new Map();
+async function buildB3Asset(ticker, options) {
+  const key = process.env.HG_BRASIL_KEY || process.env.HG_API_KEY;
+  const errors = [];
 
-  for (const s of samples || []) {
-    const date = isoDateOnly(s.date);
-    if (!date) continue;
+  if (!key) {
+    return {
+      ok: false,
+      requestedTicker: ticker,
+      route: "B3_HG_BRASIL",
+      error: "HG_BRASIL_KEY não encontrada",
+    };
+  }
 
-    const open = safeNumber(s.open);
-    const close = safeNumber(s.close);
-    const high = safeNumber(s.high);
-    const low = safeNumber(s.low);
-    const volume = safeNumber(s.volume) || 0;
+  const quoteResult = await fetchHgQuote(ticker, key);
 
-    if (open === null && close === null && high === null && low === null) continue;
+  if (!quoteResult.ok) {
+    return {
+      ok: false,
+      requestedTicker: ticker,
+      route: "B3_HG_BRASIL",
+      updatedAt: nowIso(),
+      error: quoteResult.error,
+      details: quoteResult,
+    };
+  }
 
-    if (!map.has(date)) {
-      map.set(date, { date, open, close, high, low, volume });
-      continue;
+  const asset = normalizeHgAsset(quoteResult.data, ticker);
+  const assetType = String(asset.assetType || "").toLowerCase();
+
+  const history = await fetchHgHistory(ticker, key);
+  if (!history.ok && history.error) errors.push(`HG History: ${history.error}`);
+
+  const derivedPackage = computeMarketDerived(history.candles || [], asset.price);
+
+  const shouldFetchCorporateFinancials =
+    assetType.includes("stock") ||
+    assetType.includes("ação") ||
+    assetType.includes("acao") ||
+    (!isLikelyFiiOrFund(ticker, assetType) && !isLikelyB3Etf(assetType));
+
+  let fundamentals = {
+    ok: false,
+    source: "HG Brasil Finance - Fundamentals",
+    period: {},
+    valuation: {},
+    leverage: {},
+    margins: {},
+    profitability: {},
+    dividends: {},
+    rawStatementKeys: [],
+    error: shouldFetchCorporateFinancials
+      ? "Não consultado"
+      : "Não aplicável para FII/ETF no modo econômico",
+  };
+
+  let financialStatements = {
+    ok: false,
+    source: "HG Brasil Finance + CVM",
+    balanceSheet: {
+      ok: false,
+      type: "balance_sheet",
+      error: shouldFetchCorporateFinancials
+        ? "Não consultado"
+        : "Não aplicável para FII/ETF no modo econômico",
+      count: 0,
+      statements: [],
+    },
+    incomeStatement: {
+      ok: false,
+      type: "income_statement",
+      error: shouldFetchCorporateFinancials
+        ? "Não consultado"
+        : "Não aplicável para FII/ETF no modo econômico",
+      count: 0,
+      statements: [],
+    },
+    cashFlow: {
+      ok: false,
+      type: "cash_flow",
+      error: shouldFetchCorporateFinancials
+        ? "Não consultado"
+        : "Não aplicável para FII/ETF no modo econômico",
+      count: 0,
+      statements: [],
+    },
+  };
+
+  if (shouldFetchCorporateFinancials || options.forceStatements) {
+    const fundamentalsRaw = await fetchHgFundamentals(ticker, key);
+    if (fundamentalsRaw.ok) {
+      fundamentals = normalizeHgFundamentals(fundamentalsRaw.statement);
+    } else {
+      fundamentals.error = fundamentalsRaw.error;
+      errors.push(`HG Fundamentals: ${fundamentalsRaw.error}`);
     }
 
-    const day = map.get(date);
-    if (day.open === null && open !== null) day.open = open;
-    day.close = close !== null ? close : day.close;
-    day.high = day.high == null ? high : high == null ? day.high : Math.max(day.high, high);
-    day.low = day.low == null ? low : low == null ? day.low : Math.min(day.low, low);
-    day.volume += volume;
+    const [balanceSheet, incomeStatement, cashFlow] = await Promise.all([
+      fetchHgStatement("balance-sheets", ticker, key, "balance_sheet"),
+      fetchHgStatement("income-statements", ticker, key, "income_statement"),
+      fetchHgStatement("cash-flows", ticker, key, "cash_flow"),
+    ]);
+
+    financialStatements = {
+      ok: balanceSheet.ok || incomeStatement.ok || cashFlow.ok,
+      source: "HG Brasil Finance + CVM",
+      balanceSheet,
+      incomeStatement,
+      cashFlow,
+    };
+
+    for (const item of [balanceSheet, incomeStatement, cashFlow]) {
+      if (!item.ok && item.error) errors.push(`${item.source}: ${item.error}`);
+    }
   }
 
-  return Array.from(map.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
-}
+  const keyIndicators = keyIndicatorsFromHg(asset, fundamentals);
 
-function normalizeTwelveCandles(values) {
-  return (values || [])
-    .map((v) => ({
-      date: isoDateOnly(v.datetime),
-      open: safeNumber(v.open),
-      close: safeNumber(v.close),
-      high: safeNumber(v.high),
-      low: safeNumber(v.low),
-      volume: safeNumber(v.volume) || 0,
-    }))
-    .filter((v) => v.date && (v.open !== null || v.close !== null || v.high !== null || v.low !== null))
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-}
-
-function calculateDerivedFromDailyCandles(candles, currentPrice, period = "1y") {
-  const clean = (candles || [])
-    .filter((c) => c?.date && (safeNumber(c.high) !== null || safeNumber(c.low) !== null || safeNumber(c.close) !== null))
-    .map((c) => ({
-      date: c.date,
-      open: safeNumber(c.open),
-      close: safeNumber(c.close),
-      high: safeNumber(c.high),
-      low: safeNumber(c.low),
-      volume: safeNumber(c.volume) || 0,
-    }))
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-
-  if (clean.length === 0) {
-    return { ok: false, period, error: "Sem candles suficientes para cálculo" };
-  }
-
-  const first = clean[0];
-  const last = clean[clean.length - 1];
-  let maxPrice = null, maxDate = null, minPrice = null, minDate = null;
-  let volumeSum = 0, volumeCount = 0;
-
-  for (const c of clean) {
-    const h = safeNumber(c.high) ?? safeNumber(c.close);
-    const l = safeNumber(c.low) ?? safeNumber(c.close);
-
-    if (h !== null && (maxPrice === null || h > maxPrice)) { maxPrice = h; maxDate = c.date; }
-    if (l !== null && (minPrice === null || l < minPrice)) { minPrice = l; minDate = c.date; }
-
-    const v = safeNumber(c.volume);
-    if (v !== null && v > 0) { volumeSum += v; volumeCount += 1; }
-  }
-
-  const startPrice = safeNumber(first.open) ?? safeNumber(first.close) ?? safeNumber(first.low) ?? safeNumber(first.high);
-  const lastPrice = safeNumber(currentPrice) ?? safeNumber(last.close) ?? safeNumber(last.open) ?? safeNumber(last.low) ?? safeNumber(last.high);
+  const nexoFinancialDerived =
+    financialStatements?.incomeStatement?.latestFY ||
+    financialStatements?.cashFlow?.latestFY
+      ? {
+          ok: true,
+          source: "NEXO local calculations from HG statements",
+          growth: {
+            incomeFY: computeGrowth(
+              financialStatements.incomeStatement.latestFY,
+              financialStatements.incomeStatement.previousFY,
+              ["revenue", "ebit", "net_income"]
+            ),
+          },
+          cash: {
+            operatingCashFlow:
+              financialStatements.cashFlow.latestFY?.operating?.total ?? null,
+            capex:
+              financialStatements.cashFlow.latestFY?.investing
+                ?.capital_expenditures ?? null,
+            freeCashFlow:
+              (financialStatements.cashFlow.latestFY?.operating?.total ?? null) !== null &&
+              (financialStatements.cashFlow.latestFY?.investing
+                ?.capital_expenditures ?? null) !== null
+                ? financialStatements.cashFlow.latestFY.operating.total +
+                  financialStatements.cashFlow.latestFY.investing.capital_expenditures
+                : null,
+            dividendsPaid:
+              financialStatements.cashFlow.latestFY?.financing?.dividends_paid ??
+              null,
+          },
+          note:
+            "Cálculos locais reduzem chamadas adicionais e preparam insumos para SEE, RES, ECS e futuro WACC.",
+        }
+      : {
+          ok: false,
+          reason: "financial_statements_unavailable",
+        };
 
   return {
-    ok: true,
-    period,
-    candlesCount: clean.length,
-    firstDate: first.date,
-    lastDate: last.date,
-    currentPrice: round(lastPrice, 4),
-    startPrice: round(startPrice, 4),
-    maxPrice: round(maxPrice, 4),
-    maxDate,
-    minPrice: round(minPrice, 4),
-    minDate,
-    returnPercent: startPrice && lastPrice !== null ? round((lastPrice / startPrice - 1) * 100, 2) : null,
-    drawdownFromHighPercent: maxPrice && lastPrice !== null ? round((lastPrice / maxPrice - 1) * 100, 2) : null,
-    amplitudePercent: maxPrice && minPrice ? round((maxPrice / minPrice - 1) * 100, 2) : null,
-    averageVolume: volumeCount > 0 ? Math.round(volumeSum / volumeCount) : null,
-    explanation: "Cálculos derivados automaticamente da série histórica diária. Para B3, os candles intradiários da HG foram agrupados por dia antes do cálculo.",
-  };
-}
-
-function simpleMovingAverage(candles, days) {
-  const clean = (candles || []).filter((c) => safeNumber(c.close) !== null);
-  if (clean.length < days) return null;
-  const slice = clean.slice(-days);
-  return slice.reduce((acc, c) => acc + safeNumber(c.close), 0) / days;
-}
-
-function returnOverDays(candles, days, currentPrice) {
-  const clean = (candles || []).filter((c) => safeNumber(c.close) !== null);
-  if (clean.length < days + 1) return null;
-  const base = safeNumber(clean[clean.length - 1 - days]?.close);
-  const last = safeNumber(currentPrice) ?? safeNumber(clean[clean.length - 1]?.close);
-  if (base === null || base === 0 || last === null) return null;
-  return (last / base - 1) * 100;
-}
-
-function volatilityAnnualized(candles, days) {
-  const clean = (candles || []).filter((c) => safeNumber(c.close) !== null);
-  if (clean.length < days + 1) return null;
-  const slice = clean.slice(-(days + 1));
-  const returns = [];
-  for (let i = 1; i < slice.length; i++) {
-    const prev = safeNumber(slice[i - 1].close);
-    const curr = safeNumber(slice[i].close);
-    if (prev && curr) returns.push(Math.log(curr / prev));
-  }
-  if (returns.length < 2) return null;
-  const avg = returns.reduce((a, b) => a + b, 0) / returns.length;
-  const variance = returns.reduce((acc, r) => acc + Math.pow(r - avg, 2), 0) / (returns.length - 1);
-  return Math.sqrt(variance) * Math.sqrt(252) * 100;
-}
-
-function calculateDerivedAdvanced(candles, currentPrice) {
-  const clean = (candles || [])
-    .filter((c) => c?.date && safeNumber(c.close) !== null)
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-
-  if (clean.length === 0) {
-    return { ok: false, error: "Sem candles suficientes para métricas avançadas" };
-  }
-
-  const price = safeNumber(currentPrice) ?? safeNumber(clean[clean.length - 1]?.close);
-  const sma20 = simpleMovingAverage(clean, 20);
-  const sma50 = simpleMovingAverage(clean, 50);
-  const sma200 = simpleMovingAverage(clean, 200);
-
-  function distanceFrom(value) {
-    if (price === null || value === null || value === 0) return null;
-    return (price / value - 1) * 100;
-  }
-
-  return {
-    ok: true,
-    candlesCount: clean.length,
-    sma20: round(sma20, 4),
-    sma50: round(sma50, 4),
-    sma200: round(sma200, 4),
-    distanceFromSma20Percent: round(distanceFrom(sma20), 2),
-    distanceFromSma50Percent: round(distanceFrom(sma50), 2),
-    distanceFromSma200Percent: round(distanceFrom(sma200), 2),
-    return30dPercent: round(returnOverDays(clean, 21, price), 2),
-    return90dPercent: round(returnOverDays(clean, 63, price), 2),
-    return180dPercent: round(returnOverDays(clean, 126, price), 2),
-    return1yPercent: round(returnOverDays(clean, 252, price), 2),
-    volatility30dAnnualizedPercent: round(volatilityAnnualized(clean, 21), 2),
-    volatility90dAnnualizedPercent: round(volatilityAnnualized(clean, 63), 2),
-    volatility1yAnnualizedPercent: round(volatilityAnnualized(clean, 252), 2),
-    note: "Métricas avançadas calculadas localmente a partir de candles diários. Campos podem ser nulos quando a série histórica disponível for curta.",
-  };
-}
-
-function buildNexoMetrics(asset, derived, derivedAdvanced) {
-  const price = safeNumber(asset?.price);
-  const max = safeNumber(derived?.maxPrice);
-  const min = safeNumber(derived?.minPrice);
-  let pricePositionPercent = null;
-  if (price !== null && max !== null && min !== null && max !== min) {
-    pricePositionPercent = ((price - min) / (max - min)) * 100;
-  }
-  return {
-    ok: !!(asset?.ok && derived?.ok),
-    pricePositionPercent: round(pricePositionPercent, 2),
-    distanceFromHighPercent: round(derived?.drawdownFromHighPercent, 2),
-    distanceFromLowPercent: price !== null && min !== null && min !== 0 ? round((price / min - 1) * 100, 2) : null,
-    historicalAmplitudePercent: round(derived?.amplitudePercent, 2),
-    momentumPeriodPercent: round(derived?.returnPercent, 2),
-    averageVolume: safeNumber(derived?.averageVolume),
-    trendVsSma20Percent: derivedAdvanced?.distanceFromSma20Percent ?? null,
-    trendVsSma50Percent: derivedAdvanced?.distanceFromSma50Percent ?? null,
-    trendVsSma200Percent: derivedAdvanced?.distanceFromSma200Percent ?? null,
-    volatility90dAnnualizedPercent: derivedAdvanced?.volatility90dAnnualizedPercent ?? null,
-    liquidityHint: safeNumber(derived?.averageVolume) === null ? "indisponível" : safeNumber(derived.averageVolume) >= 1000000 ? "alta" : safeNumber(derived.averageVolume) >= 300000 ? "média" : "baixa",
-    note: "Métricas auxiliares para TNH, PIN, GNP, filtros de liquidez e contexto histórico do NEXO.",
-  };
-}
-
-function summarizeTwelveAsset(ticker, priceResult, timeSeriesResult) {
-  const meta = timeSeriesResult?.meta || {};
-  const values = normalizeTwelveCandles(timeSeriesResult?.values || []);
-  const last = values[values.length - 1] || null;
-  const currentPrice = safeNumber(priceResult?.price) ?? safeNumber(last?.close) ?? safeNumber(last?.open);
-  return {
-    ok: !!(priceResult?.ok || timeSeriesResult?.ok),
-    source: [priceResult?.ok ? priceResult.source : null, timeSeriesResult?.ok ? timeSeriesResult.source : null].filter(Boolean).join(" + "),
-    dataProvider: "Twelve Data",
-    ticker,
-    fullTicker: ticker,
-    symbol: ticker,
-    name: meta?.symbol || ticker,
-    fullName: null,
-    taxId: null,
-    isin: null,
-    assetType: meta?.type || "international_asset",
-    currency: meta?.currency || "USD",
-    unit: "currency",
-    sharesOutstanding: null,
-    sector: null,
-    subsector: null,
-    segment: null,
-    price: currentPrice,
-    changeValue: null,
-    changePercent: null,
-    marketCap: null,
-    updatedAt: last?.date || nowISO(),
-    market: {
-      isOpen: null,
-      previousValue: null,
-      open: safeNumber(last?.open),
-      close: safeNumber(last?.close),
-      high: safeNumber(last?.high),
-      low: safeNumber(last?.low),
-      volume: safeNumber(last?.volume),
-      updatedAt: last?.date || null,
-    },
-    dividends: { yield12mPercent: null, yield12mCash: null },
-    international: {
-      exchange: meta?.exchange || null,
-      exchangeTimezone: meta?.exchange_timezone || null,
-      micCode: meta?.mic_code || null,
-      type: meta?.type || null,
-      note: "Plano gratuito Twelve Data: fundamentos contábeis, profile/statistics, press releases e holdings ficam para fase futura.",
-    },
-    related: [],
-    logo: null,
-    rawAvailableFields: {
-      price: priceResult?.raw ? Object.keys(priceResult.raw).slice(0, 40) : [],
-      timeSeriesMeta: Object.keys(meta || {}).slice(0, 40),
-    },
-  };
-}
-
-function buildDataCoverage({ asset, fundamentals, historyOk, balanceSheet, incomeStatement, cashFlow, route }) {
-  return {
-    route,
-    quotes: !!asset?.ok,
-    fundamentals: !!fundamentals?.ok,
-    history: !!historyOk,
-    balanceSheet: !!balanceSheet?.ok,
-    incomeStatement: !!incomeStatement?.ok,
-    cashFlow: !!cashFlow?.ok,
-    b3FinancialStatementsComplete: !!(balanceSheet?.ok && incomeStatement?.ok && cashFlow?.ok),
-    note: "Cobertura real do payload. FIIs/ETFs B3 e ativos internacionais podem ter statements vazios sem caracterizar erro.",
-  };
-}
-
-async function handleB3Asset(ticker, period, includeRaw) {
-  const errors = [];
-  let quote = null;
-  try {
-    quote = await getHGQuote(ticker);
-    if (!quote.ok) errors.push("HG Quote: " + quote.error);
-  } catch (error) {
-    errors.push("HG Quote: " + error.message);
-  }
-
-  const [fundamentalsRaw, historyRaw, balanceSheetRaw, incomeStatementRaw, cashFlowRaw] = await Promise.all([
-    getHGFundamentals(ticker),
-    getHGHistory(ticker),
-    getHGFinancialStatement(ticker, "balance-sheets", "Balance Sheets"),
-    getHGFinancialStatement(ticker, "income-statements", "Income Statements"),
-    getHGFinancialStatement(ticker, "cash-flows", "Cash Flows"),
-  ]);
-
-  for (const item of [fundamentalsRaw, historyRaw, balanceSheetRaw, incomeStatementRaw, cashFlowRaw]) {
-    if (item?.error) errors.push(`${item.source}: ${item.error}`);
-  }
-
-  const asset = quote?.ok ? summarizeHGQuote(quote, ticker) : { ok: false, source: "manual", dataProvider: "manual", ticker, error: "Dados automáticos indisponíveis", manualFallback: true };
-  const fundamentals = summarizeHGFundamentals(fundamentalsRaw);
-  const keyIndicators = buildKeyIndicators(asset, fundamentals);
-  const dailyCandles = historyRaw?.ok ? groupIntradaySamplesByDay(historyRaw.samples) : [];
-  const derived = calculateDerivedFromDailyCandles(dailyCandles, asset?.price, period);
-  const derivedAdvanced = calculateDerivedAdvanced(dailyCandles, asset?.price);
-  const nexoMetrics = buildNexoMetrics(asset, derived, derivedAdvanced);
-  const financialStatements = buildFinancialStatements(balanceSheetRaw, incomeStatementRaw, cashFlowRaw);
-  const dataCoverage = buildDataCoverage({ asset, fundamentals, historyOk: historyRaw?.ok, balanceSheet: balanceSheetRaw, incomeStatement: incomeStatementRaw, cashFlow: cashFlowRaw, route: "B3_HG_BRASIL" });
-
-  return Response.json({
     ok: true,
     requestedTicker: ticker,
     route: "B3_HG_BRASIL",
-    updatedAt: nowISO(),
-    priorityRule: "Se o usuário informar valor manual, usar o manual. Se manual vazio, usar automático. Se automático indisponível, marcar como não informado.",
+    updatedAt: nowIso(),
+    priorityRule:
+      "Se o usuário informar valor manual, usar manual. Se manual vazio, usar automático. Se automático indisponível, marcar como não informado.",
     asset,
     keyIndicators,
     fundamentals,
     financialStatements,
     history: {
-      ok: !!historyRaw?.ok,
-      source: historyRaw?.source || "HG Brasil Finance - History",
-      samplesType: historyRaw?.ok ? "intraday_15min_grouped_to_daily" : null,
-      rawSamplesCount: Array.isArray(historyRaw?.samples) ? historyRaw.samples.length : 0,
-      dailyCandlesCount: dailyCandles.length,
-      error: historyRaw?.error || null,
+      ok: history.ok,
+      source: history.source,
+      samplesType: history.samplesType,
+      rawSamplesCount: history.rawSamplesCount,
+      dailyCandlesCount: history.dailyCandlesCount,
+      error: history.error,
     },
-    derived,
-    derivedAdvanced,
-    nexoMetrics,
-    dataCoverage,
-    manualFallback: !asset.ok,
+    derived: derivedPackage.derived || derivedPackage,
+    derivedAdvanced: derivedPackage.derivedAdvanced || null,
+    nexoMetrics: derivedPackage.nexoMetrics || null,
+    nexoFinancialDerived,
+    dataCoverage: {
+      route: "B3_HG_BRASIL",
+      quotes: !!asset.ok,
+      fundamentals: !!fundamentals.ok,
+      history: !!history.ok,
+      balanceSheet: !!financialStatements.balanceSheet?.ok,
+      incomeStatement: !!financialStatements.incomeStatement?.ok,
+      cashFlow: !!financialStatements.cashFlow?.ok,
+      b3FinancialStatementsComplete:
+        !!financialStatements.balanceSheet?.ok &&
+        !!financialStatements.incomeStatement?.ok &&
+        !!financialStatements.cashFlow?.ok,
+      optimizedMode:
+        !shouldFetchCorporateFinancials && !options.forceStatements
+          ? "FII/ETF B3: statements HG pulados para economizar chamadas"
+          : "Ação B3: fundamentals/statements consultados",
+      note:
+        "FIIs/ETFs B3 recebem dados profundos futuramente via Partnr. Hoje HG cobre preço, histórico, DY e liquidez.",
+    },
+    manualFallback: false,
     errors,
-    raw: includeRaw ? { quote: quote?.raw || null, fundamentals: fundamentalsRaw?.raw || null, balanceSheet: balanceSheetRaw?.raw || null, incomeStatement: incomeStatementRaw?.raw || null, cashFlow: cashFlowRaw?.raw || null, history: historyRaw?.raw || null, dailyCandles } : undefined,
-  });
+  };
 }
 
-async function handleInternationalAsset(ticker, period, includeRaw) {
+/* =========================
+   TWELVE DATA
+========================= */
+
+async function twelveFetch(endpoint, params, key) {
+  const url = buildUrl(`${TWELVE_BASE_URL}/${endpoint}`, {
+    ...params,
+    apikey: key,
+    format: "JSON",
+  });
+
+  const result = await fetchJson(url);
+
+  return {
+    ...result,
+    requestUrl: maskKey(url, key),
+  };
+}
+
+function normalizeTwelveQuote(json, ticker) {
+  if (!json || isErrorPayload(json)) return null;
+
+  return {
+    symbol: json.symbol || ticker,
+    name: json.name || ticker,
+    exchange: json.exchange || null,
+    micCode: json.mic_code || null,
+    currency: json.currency || "USD",
+    datetime: json.datetime || null,
+    timestamp: json.timestamp || null,
+    open: toNumber(json.open),
+    high: toNumber(json.high),
+    low: toNumber(json.low),
+    close: toNumber(json.close),
+    volume: toNumber(json.volume),
+    previousClose: toNumber(json.previous_close),
+    changeValue: toNumber(json.change),
+    changePercent: toNumber(json.percent_change),
+    averageVolume: toNumber(json.average_volume),
+    isMarketOpen: json.is_market_open ?? null,
+    fiftyTwoWeek: json.fifty_two_week || null,
+  };
+}
+
+function normalizeTwelveProfile(json) {
+  if (!json || isErrorPayload(json)) return null;
+  return {
+    ok: true,
+    symbol: json.symbol || null,
+    name: json.name || null,
+    sector: json.sector || null,
+    industry: json.industry || null,
+    employees: toNumber(json.employees),
+    website: json.website || null,
+    description: json.description || null,
+    type: json.type || null,
+    CEO: json.CEO || null,
+    country: json.country || null,
+  };
+}
+
+function normalizeTwelveStatistics(json) {
+  if (!json || isErrorPayload(json)) return null;
+  const stats = json.statistics || {};
+  const valuation = stats.valuations_metrics || {};
+  const financials = stats.financials || {};
+  const income = financials.income_statement || {};
+  const balance = financials.balance_sheet || {};
+  const cashFlow = financials.cash_flow || {};
+  const stockStats = stats.stock_statistics || {};
+  const stockPrice = stats.stock_price_summary || {};
+  const dividends = stats.dividends_and_splits || {};
+
+  return {
+    ok: true,
+    source: "Twelve Data - Statistics",
+    meta: json.meta || {},
+    valuation,
+    financials: {
+      grossMargin: toNumber(financials.gross_margin),
+      profitMargin: toNumber(financials.profit_margin),
+      operatingMargin: toNumber(financials.operating_margin),
+      returnOnAssetsTtm: toNumber(financials.return_on_assets_ttm),
+      returnOnEquityTtm: toNumber(financials.return_on_equity_ttm),
+      revenueTtm: toNumber(income.revenue_ttm),
+      revenuePerShareTtm: toNumber(income.revenue_per_share_ttm),
+      quarterlyRevenueGrowth: toNumber(income.quarterly_revenue_growth),
+      grossProfitTtm: toNumber(income.gross_profit_ttm),
+      ebitda: toNumber(income.ebitda),
+      netIncomeToCommonTtm: toNumber(income.net_income_to_common_ttm),
+      dilutedEpsTtm: toNumber(income.diluted_eps_ttm),
+      quarterlyEarningsGrowthYoy: toNumber(
+        income.quarterly_earnings_growth_yoy
+      ),
+      totalCashMrq: toNumber(balance.total_cash_mrq),
+      totalCashPerShareMrq: toNumber(balance.total_cash_per_share_mrq),
+      totalDebtMrq: toNumber(balance.total_debt_mrq),
+      totalDebtToEquityMrq: toNumber(balance.total_debt_to_equity_mrq),
+      currentRatioMrq: toNumber(balance.current_ratio_mrq),
+      bookValuePerShareMrq: toNumber(balance.book_value_per_share_mrq),
+      operatingCashFlowTtm: toNumber(cashFlow.operating_cash_flow_ttm),
+      leveredFreeCashFlowTtm: toNumber(cashFlow.levered_free_cash_flow_ttm),
+    },
+    stockStatistics: stockStats,
+    stockPriceSummary: stockPrice,
+    dividendsAndSplits: dividends,
+  };
+}
+
+function keyIndicatorsFromTwelve(asset, statistics) {
+  const valuation = statistics?.valuation || {};
+  const f = statistics?.financials || {};
+  const stockPrice = statistics?.stockPriceSummary || {};
+  const dividends = statistics?.dividendsAndSplits || {};
+
+  return {
+    ok: true,
+    price: asset?.price ?? null,
+    currency: asset?.currency || "USD",
+    marketCap: toNumber(valuation.market_capitalization),
+    enterpriseValue: toNumber(valuation.enterprise_value),
+    volume: asset?.market?.volume ?? null,
+    averageVolume: asset?.market?.averageVolume ?? null,
+    dividendYieldPercent:
+      toNumber(dividends.trailing_annual_dividend_yield) !== null
+        ? toNumber(dividends.trailing_annual_dividend_yield) * 100
+        : null,
+    forwardDividendYieldPercent:
+      toNumber(dividends.forward_annual_dividend_yield) !== null
+        ? toNumber(dividends.forward_annual_dividend_yield) * 100
+        : null,
+    dividends12mCash: toNumber(dividends.trailing_annual_dividend_rate),
+    forwardAnnualDividendRate: toNumber(dividends.forward_annual_dividend_rate),
+    pe: toNumber(valuation.trailing_pe),
+    forwardPe: toNumber(valuation.forward_pe),
+    pegRatio: toNumber(valuation.peg_ratio),
+    pb: toNumber(valuation.price_to_book_mrq),
+    ps: toNumber(valuation.price_to_sales_ttm),
+    evRevenue: toNumber(valuation.enterprise_to_revenue),
+    evEbitda: toNumber(valuation.enterprise_to_ebitda),
+    eps: f.dilutedEpsTtm,
+    bookValuePerShare: f.bookValuePerShareMrq,
+    grossMargin: f.grossMargin,
+    operatingMargin: f.operatingMargin,
+    profitMargin: f.profitMargin,
+    roe: f.returnOnEquityTtm !== null ? f.returnOnEquityTtm * 100 : null,
+    roa: f.returnOnAssetsTtm !== null ? f.returnOnAssetsTtm * 100 : null,
+    currentRatio: f.currentRatioMrq,
+    debtToEquity: f.totalDebtToEquityMrq,
+    beta: toNumber(stockPrice.beta),
+    fiftyTwoWeekLow: toNumber(stockPrice.fifty_two_week_low),
+    fiftyTwoWeekHigh: toNumber(stockPrice.fifty_two_week_high),
+    sma50: toNumber(stockPrice.day_50_ma),
+    sma200: toNumber(stockPrice.day_200_ma),
+    note:
+      "Indicadores internacionais consolidados via Twelve Data Statistics. Para reduzir chamadas, este route usa statistics como fonte principal de fundamentals no modo padrão.",
+  };
+}
+
+function normalizeTwelveStatements(json, fieldName) {
+  if (!json || isErrorPayload(json)) {
+    return {
+      ok: false,
+      count: 0,
+      latest: null,
+      previous: null,
+      statements: [],
+      error: json?.message || "Indisponível",
+    };
+  }
+
+  const rows = Array.isArray(json[fieldName]) ? json[fieldName] : [];
+
+  return {
+    ok: rows.length > 0,
+    count: rows.length,
+    latest: rows[0] || null,
+    previous: rows[1] || null,
+    statements: rows,
+    error: rows.length ? null : "Lista vazia",
+  };
+}
+
+function extractTwelveDividends(json) {
+  if (!json || isErrorPayload(json)) {
+    return {
+      ok: false,
+      count: 0,
+      latest: null,
+      dividends: [],
+      error: json?.message || "Indisponível",
+    };
+  }
+
+  const rows = Array.isArray(json.dividends) ? json.dividends : [];
+  return {
+    ok: rows.length > 0,
+    count: rows.length,
+    latest: rows[0] || null,
+    dividends: rows,
+  };
+}
+
+function normalizeTwelveEtfRegistry(json, ticker) {
+  if (!json || isErrorPayload(json)) {
+    return {
+      ok: false,
+      count: 0,
+      matches: [],
+      preferred: null,
+      error: json?.message || "Indisponível",
+    };
+  }
+
+  const rows = Array.isArray(json.data) ? json.data : [];
+  const preferred =
+    rows.find(
+      (r) =>
+        String(r.symbol || "").toUpperCase() === ticker &&
+        String(r.country || "").toLowerCase() === "united states" &&
+        String(r.currency || "").toUpperCase() === "USD"
+    ) ||
+    rows.find((r) => String(r.currency || "").toUpperCase() === "USD") ||
+    rows[0] ||
+    null;
+
+  return {
+    ok: rows.length > 0,
+    count: rows.length,
+    matches: rows,
+    preferred,
+    note:
+      "Endpoint ETF da Twelve Data funciona como registry/cadastro, não como holdings/composição no plano atual.",
+  };
+}
+
+function computeTwelveFinancialDerived(statistics, statements) {
+  const valuation = statistics?.valuation || {};
+  const f = statistics?.financials || {};
+
+  const marketCap = toNumber(valuation.market_capitalization);
+  const enterpriseValue = toNumber(valuation.enterprise_value);
+  const totalDebt = f.totalDebtMrq;
+  const totalCash = f.totalCashMrq;
+  const ebitda = f.ebitda;
+  const fcf = f.leveredFreeCashFlowTtm;
+  const ocf = f.operatingCashFlowTtm;
+  const netIncome = f.netIncomeToCommonTtm;
+  const revenue = f.revenueTtm;
+
+  const netDebt =
+    totalDebt !== null && totalCash !== null ? totalDebt - totalCash : null;
+
+  const fcfYieldPercent =
+    fcf !== null && marketCap ? (fcf / marketCap) * 100 : null;
+
+  const netDebtToEbitda =
+    netDebt !== null && ebitda ? netDebt / ebitda : null;
+
+  const fcfConversion =
+    fcf !== null && netIncome ? (fcf / netIncome) * 100 : null;
+
+  const ocfMargin =
+    ocf !== null && revenue ? (ocf / revenue) * 100 : null;
+
+  let statementGrowth = null;
+
+  const latestIncome = statements?.incomeStatement?.latest;
+  const prevIncome = statements?.incomeStatement?.previous;
+
+  if (latestIncome && prevIncome) {
+    statementGrowth = {
+      salesGrowthPercent: round(pct(latestIncome.sales, prevIncome.sales), 2),
+      ebitdaGrowthPercent: round(pct(latestIncome.ebitda, prevIncome.ebitda), 2),
+      ebitGrowthPercent: round(pct(latestIncome.ebit, prevIncome.ebit), 2),
+      netIncomeGrowthPercent: round(
+        pct(latestIncome.net_income, prevIncome.net_income),
+        2
+      ),
+      epsDilutedGrowthPercent: round(
+        pct(latestIncome.eps_diluted, prevIncome.eps_diluted),
+        2
+      ),
+    };
+  }
+
+  return {
+    ok: !!statistics?.ok,
+    source: "NEXO local calculations from Twelve Data",
+    capitalStructure: {
+      marketCap: round(marketCap, 0),
+      enterpriseValue: round(enterpriseValue, 0),
+      totalDebt: round(totalDebt, 0),
+      totalCash: round(totalCash, 0),
+      netDebt: round(netDebt, 0),
+      netDebtToEbitda: round(netDebtToEbitda, 2),
+    },
+    cashGeneration: {
+      revenueTtm: round(revenue, 0),
+      ebitda: round(ebitda, 0),
+      netIncome: round(netIncome, 0),
+      operatingCashFlow: round(ocf, 0),
+      leveredFreeCashFlow: round(fcf, 0),
+      fcfYieldPercent: round(fcfYieldPercent, 2),
+      fcfConversionPercent: round(fcfConversion, 2),
+      ocfMarginPercent: round(ocfMargin, 2),
+    },
+    quality: {
+      grossMarginPercent:
+        f.grossMargin !== null ? round(f.grossMargin * 100, 2) : null,
+      operatingMarginPercent:
+        f.operatingMargin !== null ? round(f.operatingMargin * 100, 2) : null,
+      profitMarginPercent:
+        f.profitMargin !== null ? round(f.profitMargin * 100, 2) : null,
+      roePercent:
+        f.returnOnEquityTtm !== null ? round(f.returnOnEquityTtm * 100, 2) : null,
+      roaPercent:
+        f.returnOnAssetsTtm !== null ? round(f.returnOnAssetsTtm * 100, 2) : null,
+      currentRatio: round(f.currentRatioMrq, 2),
+    },
+    growth: statementGrowth,
+    waccInputs: {
+      beta: toNumber(statistics?.stockPriceSummary?.beta),
+      marketCap: round(marketCap, 0),
+      totalDebt: round(totalDebt, 0),
+      totalCash: round(totalCash, 0),
+      note:
+        "WACC será calculado no NEXO Cost of Capital Engine. Este route apenas prepara os insumos.",
+    },
+    note:
+      "Cálculos locais reduzem chamadas extras e entregam insumos prontos para SEE, ECS, RES, PIJR, DCF e futuro WACC.",
+  };
+}
+
+async function buildInternationalAsset(ticker, options) {
+  const key = process.env.TWELVEDATA_API_KEY;
+
+  if (!key) {
+    return {
+      ok: false,
+      requestedTicker: ticker,
+      route: "INTERNATIONAL_TWELVE_DATA",
+      error: "TWELVEDATA_API_KEY não encontrada",
+    };
+  }
+
   const errors = [];
-  const [priceResult, timeSeriesResult] = await Promise.all([getTwelvePrice(ticker), getTwelveTimeSeries(ticker, period)]);
-  if (priceResult?.error) errors.push("Twelve Price: " + priceResult.error);
-  if (timeSeriesResult?.error) errors.push("Twelve Time Series: " + timeSeriesResult.error);
+  const requests = [];
 
-  const asset = priceResult?.ok || timeSeriesResult?.ok ? summarizeTwelveAsset(ticker, priceResult, timeSeriesResult) : { ok: false, source: "manual", dataProvider: "manual", ticker, error: "Dados automáticos internacionais indisponíveis", manualFallback: true };
-  const dailyCandles = timeSeriesResult?.ok ? normalizeTwelveCandles(timeSeriesResult.values) : [];
-  const derived = calculateDerivedFromDailyCandles(dailyCandles, asset?.price, period);
-  const derivedAdvanced = calculateDerivedAdvanced(dailyCandles, asset?.price);
-  const nexoMetrics = buildNexoMetrics(asset, derived, derivedAdvanced);
+  async function safeTwelve(endpoint, params = {}) {
+    const result = await twelveFetch(endpoint, { symbol: ticker, ...params }, key);
+    requests.push({
+      endpoint,
+      status: result.status,
+      ok: result.ok && !isErrorPayload(result.json),
+      requestUrl: result.requestUrl,
+      error:
+        result.ok && !isErrorPayload(result.json)
+          ? null
+          : result.json?.message || result.textPreview || "Erro",
+    });
+    return result;
+  }
 
-  const fundamentals = { ok: false, source: "Twelve Data", error: "Fundamentos contábeis, profile/statistics, press releases e holdings ficam para fase futura.", futureEndpoints: ["profile", "statistics", "income_statement", "balance_sheet", "cash_flow", "press_releases", "etf"] };
-  const financialStatements = {
+  /**
+   * MODO ECONÔMICO PADRÃO:
+   * - quote: preço, volume, 52 semanas
+   * - time_series: histórico para cálculos NEXO
+   * - statistics: fundamentals internacionais em uma única chamada
+   *
+   * profile/statements/dividends entram apenas quando:
+   * - deep=true
+   * ou quando statistics estiver disponível e o usuário quiser relatório mais completo.
+   */
+  const quoteResult = await safeTwelve("quote");
+  const timeSeriesResult = await safeTwelve("time_series", {
+    interval: "1day",
+    outputsize: options.outputsize || 250,
+  });
+
+  const quote = normalizeTwelveQuote(quoteResult.json, ticker);
+  const candles = candlesFromTwelve(timeSeriesResult.json);
+  const meta = timeSeriesResult.json?.meta || {};
+  const assetType = meta.type || null;
+  const isEtf = String(assetType || "").toLowerCase().includes("etf");
+
+  let statistics = null;
+  let profile = null;
+  let etfRegistry = null;
+  let dividends = null;
+
+  let statements = {
     ok: false,
     source: "Twelve Data",
-    balanceSheet: { ok: false, type: "balance_sheet", error: "Fase futura", count: 0, latestTTM: null, latestFY: null, previousFY: null, statements: [] },
-    incomeStatement: { ok: false, type: "income_statement", error: "Fase futura", count: 0, latestTTM: null, latestFY: null, previousFY: null, statements: [] },
-    cashFlow: { ok: false, type: "cash_flow", error: "Fase futura", count: 0, latestTTM: null, latestFY: null, previousFY: null, statements: [] },
+    incomeStatement: {
+      ok: false,
+      error: "Não consultado no modo econômico",
+      count: 0,
+      statements: [],
+    },
+    balanceSheet: {
+      ok: false,
+      error: "Não consultado no modo econômico",
+      count: 0,
+      statements: [],
+    },
+    cashFlow: {
+      ok: false,
+      error: "Não consultado no modo econômico",
+      count: 0,
+      statements: [],
+    },
   };
-  const keyIndicators = buildKeyIndicators(asset, fundamentals);
-  const dataCoverage = buildDataCoverage({ asset, fundamentals, historyOk: timeSeriesResult?.ok, balanceSheet: null, incomeStatement: null, cashFlow: null, route: "INTERNATIONAL_TWELVE_DATA" });
 
-  return Response.json({
+  if (!isEtf || options.forceStatistics) {
+    const statisticsResult = await safeTwelve("statistics");
+
+    if (statisticsResult.ok && !isErrorPayload(statisticsResult.json)) {
+      statistics = normalizeTwelveStatistics(statisticsResult.json);
+    } else {
+      errors.push(`Twelve statistics: ${statisticsResult.json?.message || "indisponível"}`);
+    }
+  }
+
+  if (isEtf) {
+    const etfResult = await safeTwelve("etf");
+    etfRegistry = normalizeTwelveEtfRegistry(etfResult.json, ticker);
+    if (!etfRegistry.ok && etfRegistry.error) {
+      errors.push(`Twelve ETF registry: ${etfRegistry.error}`);
+    }
+  }
+
+  if (options.deep && !isEtf) {
+    const [profileResult, incomeResult, balanceResult, cashResult, dividendsResult] =
+      await Promise.all([
+        safeTwelve("profile"),
+        safeTwelve("income_statement"),
+        safeTwelve("balance_sheet"),
+        safeTwelve("cash_flow"),
+        safeTwelve("dividends"),
+      ]);
+
+    profile = normalizeTwelveProfile(profileResult.json);
+
+    const incomeStatement = normalizeTwelveStatements(
+      incomeResult.json,
+      "income_statement"
+    );
+    const balanceSheet = normalizeTwelveStatements(
+      balanceResult.json,
+      "balance_sheet"
+    );
+    const cashFlow = normalizeTwelveStatements(cashResult.json, "cash_flow");
+
+    statements = {
+      ok: incomeStatement.ok || balanceSheet.ok || cashFlow.ok,
+      source: "Twelve Data",
+      incomeStatement,
+      balanceSheet,
+      cashFlow,
+    };
+
+    dividends = extractTwelveDividends(dividendsResult.json);
+
+    for (const item of [
+      { name: "profile", value: profile },
+      { name: "income_statement", value: incomeStatement },
+      { name: "balance_sheet", value: balanceSheet },
+      { name: "cash_flow", value: cashFlow },
+      { name: "dividends", value: dividends },
+    ]) {
+      if (!item.value?.ok && item.value?.error) {
+        errors.push(`Twelve ${item.name}: ${item.value.error}`);
+      }
+    }
+  }
+
+  const price = quote?.close ?? (candles.length ? candles[candles.length - 1].close : null);
+  const derivedPackage = computeMarketDerived(candles, price);
+
+  const asset = {
+    ok: !!quote,
+    source: "Twelve Data - Quote + Time Series",
+    dataProvider: "Twelve Data",
+    ticker,
+    fullTicker: ticker,
+    symbol: ticker,
+    name: quote?.name || ticker,
+    fullName: profile?.name || quote?.name || null,
+    taxId: null,
+    isin: etfRegistry?.preferred?.isin || null,
+    assetType: assetType || profile?.type || null,
+    currency: quote?.currency || meta.currency || "USD",
+    unit: "currency",
+    sharesOutstanding: statistics?.stockStatistics?.shares_outstanding ?? null,
+    sector: profile?.sector || null,
+    subsector: profile?.industry || null,
+    segment: null,
+    price,
+    changeValue: quote?.changeValue ?? null,
+    changePercent: quote?.changePercent ?? null,
+    marketCap: statistics?.valuation?.market_capitalization ?? null,
+    updatedAt: quote?.datetime || null,
+    market: {
+      isOpen: quote?.isMarketOpen ?? null,
+      previousValue: quote?.previousClose ?? null,
+      open: quote?.open ?? null,
+      close: quote?.close ?? null,
+      high: quote?.high ?? null,
+      low: quote?.low ?? null,
+      volume: quote?.volume ?? null,
+      averageVolume: quote?.averageVolume ?? null,
+      updatedAt: quote?.datetime || null,
+      fiftyTwoWeek: quote?.fiftyTwoWeek || null,
+    },
+    dividends: {
+      yield12mPercent:
+        statistics?.dividendsAndSplits?.trailing_annual_dividend_yield !==
+          undefined &&
+        statistics?.dividendsAndSplits?.trailing_annual_dividend_yield !== null
+          ? statistics.dividendsAndSplits.trailing_annual_dividend_yield * 100
+          : null,
+      yield12mCash:
+        statistics?.dividendsAndSplits?.trailing_annual_dividend_rate ?? null,
+    },
+    international: {
+      exchange: quote?.exchange || meta.exchange || null,
+      exchangeTimezone: meta.exchange_timezone || null,
+      micCode: quote?.micCode || meta.mic_code || null,
+      type: assetType || profile?.type || null,
+      profileAvailable: !!profile,
+      statisticsAvailable: !!statistics,
+      etfRegistryAvailable: !!etfRegistry?.ok,
+      note: isEtf
+        ? "ETF internacional: modo econômico usa quote + time_series + etf registry. Holdings/composição dependem de fonte futura/add-on."
+        : "Ação internacional: modo econômico usa quote + time_series + statistics. Use deep=true para DRE/Balanço/DFC completos.",
+    },
+    related: [],
+    logo: null,
+    rawAvailableFields: {
+      quote: quoteResult.json ? Object.keys(quoteResult.json) : [],
+      timeSeriesMeta: meta ? Object.keys(meta) : [],
+      statistics: statistics ? Object.keys(statistics) : [],
+    },
+  };
+
+  const keyIndicators = statistics
+    ? keyIndicatorsFromTwelve(asset, statistics)
+    : {
+        ok: true,
+        price,
+        currency: asset.currency,
+        marketCap: null,
+        volume: asset.market.volume,
+        dividendYieldPercent: null,
+        dividends12mCash: null,
+        pe: null,
+        pb: null,
+        evEbitda: null,
+        eps: null,
+        beta: null,
+        note:
+          "Statistics indisponível ou não consultado. Indicadores limitados ao quote/time_series.",
+      };
+
+  const nexoFinancialDerived = statistics
+    ? computeTwelveFinancialDerived(statistics, statements)
+    : {
+        ok: false,
+        reason: "statistics_unavailable_or_skipped",
+      };
+
+  return {
     ok: true,
     requestedTicker: ticker,
     route: "INTERNATIONAL_TWELVE_DATA",
-    updatedAt: nowISO(),
-    priorityRule: "Se o usuário informar valor manual, usar o manual. Se manual vazio, usar automático. Se automático indisponível, marcar como não informado.",
+    updatedAt: nowIso(),
+    priorityRule:
+      "Se o usuário informar valor manual, usar manual. Se manual vazio, usar automático. Se automático indisponível, marcar como não informado.",
     asset,
     keyIndicators,
-    fundamentals,
-    financialStatements,
-    history: { ok: !!timeSeriesResult?.ok, source: timeSeriesResult?.source || "Twelve Data - Time Series", samplesType: "daily", dailyCandlesCount: dailyCandles.length, error: timeSeriesResult?.error || null },
-    derived,
-    derivedAdvanced,
-    nexoMetrics,
-    dataCoverage,
-    manualFallback: !asset.ok,
+    profile: profile || {
+      ok: false,
+      source: "Twelve Data",
+      error: options.deep
+        ? "Profile indisponível"
+        : "Não consultado no modo econômico para economizar créditos",
+    },
+    fundamentals: statistics || {
+      ok: false,
+      source: "Twelve Data - Statistics",
+      error: isEtf
+        ? "Statistics bloqueado/limitado para ETFs no plano atual; usar quote/time_series/etf registry."
+        : "Statistics indisponível",
+    },
+    financialStatements: statements,
+    dividends: dividends || {
+      ok: false,
+      source: "Twelve Data - Dividends",
+      error: options.deep
+        ? "Dividendos indisponíveis"
+        : "Não consultado no modo econômico para economizar créditos",
+    },
+    etfRegistry: etfRegistry || {
+      ok: false,
+      source: "Twelve Data - ETF Registry",
+      error: isEtf
+        ? "ETF registry indisponível"
+        : "Não aplicável para ação comum",
+    },
+    history: {
+      ok: candles.length > 0,
+      source: "Twelve Data - Time Series",
+      samplesType: "daily",
+      dailyCandlesCount: candles.length,
+      error: candles.length ? null : "Histórico indisponível",
+    },
+    derived: derivedPackage.derived || derivedPackage,
+    derivedAdvanced: derivedPackage.derivedAdvanced || null,
+    nexoMetrics: derivedPackage.nexoMetrics || null,
+    nexoFinancialDerived,
+    dataCoverage: {
+      route: "INTERNATIONAL_TWELVE_DATA",
+      quotes: !!quote,
+      profile: !!profile,
+      statistics: !!statistics,
+      history: candles.length > 0,
+      dividends: !!dividends?.ok,
+      balanceSheet: !!statements.balanceSheet?.ok,
+      incomeStatement: !!statements.incomeStatement?.ok,
+      cashFlow: !!statements.cashFlow?.ok,
+      etfRegistry: !!etfRegistry?.ok,
+      internationalStatementsComplete:
+        !!statements.balanceSheet?.ok &&
+        !!statements.incomeStatement?.ok &&
+        !!statements.cashFlow?.ok,
+      optimizedMode: options.deep
+        ? "deep=true: chama statements/profile/dividends para ação internacional"
+        : isEtf
+        ? "ETF free-mode: quote + time_series + etf registry"
+        : "Stock free-mode: quote + time_series + statistics",
+      callsMade: requests.length,
+      note:
+        "Modo padrão reduz chamadas para evitar limite free. Use deep=true somente para relatórios completos.",
+    },
+    apiRequests: requests,
+    manualFallback: false,
     errors,
-    raw: includeRaw ? { price: priceResult?.raw || null, timeSeries: timeSeriesResult?.raw || null, dailyCandles } : undefined,
-  });
+  };
 }
+
+/* =========================
+   ROUTE
+========================= */
 
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const ticker = normalizeTicker(searchParams.get("ticker"));
-    const period = String(searchParams.get("period") || "1y").toLowerCase();
-    const includeRaw = searchParams.get("raw") === "1";
+
+    const ticker = normalizeTicker(searchParams.get("ticker") || "");
+    const market = String(searchParams.get("market") || "").toLowerCase();
+
+    const deep = searchParams.get("deep") === "true";
+    const forceStatements = searchParams.get("forceStatements") === "true";
+    const forceStatistics = searchParams.get("forceStatistics") === "true";
+    const outputsize = toNumber(searchParams.get("outputsize")) || 250;
 
     if (!ticker) {
       return Response.json(
         {
           ok: false,
-          error: "Informe o ticker em /api/asset?ticker=BBSE3",
-          examples: [
-            "/api/asset?ticker=BBSE3",
-            "/api/asset?ticker=GGRC11",
-            "/api/asset?ticker=BOVA11",
-            "/api/asset?ticker=XLE",
-            "/api/asset?ticker=VOO",
-            "/api/asset?ticker=AAPL",
-            "/api/asset?ticker=BBSE3&period=3m",
-            "/api/asset?ticker=BBSE3&raw=1",
-          ],
-          manualFallback: true,
+          error: "Informe ticker. Ex: /api/asset?ticker=BBSE3 ou /api/asset?ticker=AAPL",
         },
         { status: 400 }
       );
     }
 
-    if (isB3Ticker(ticker)) return await handleB3Asset(ticker, period, includeRaw);
-    return await handleInternationalAsset(ticker, period, includeRaw);
+    const routeIsB3 =
+      market === "br" ||
+      market === "b3" ||
+      (market !== "intl" && market !== "international" && isB3Ticker(ticker));
+
+    const options = {
+      deep,
+      forceStatements,
+      forceStatistics,
+      outputsize,
+    };
+
+    const data = routeIsB3
+      ? await buildB3Asset(ticker, options)
+      : await buildInternationalAsset(ticker, options);
+
+    return Response.json(data);
   } catch (error) {
-    return Response.json({ ok: false, error: error.message, manualFallback: true }, { status: 500 });
+    return Response.json(
+      {
+        ok: false,
+        error: error.message,
+      },
+      { status: 500 }
+    );
   }
 }
+
