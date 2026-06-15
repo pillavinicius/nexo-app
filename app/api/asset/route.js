@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /**
- * NEXO Data Core - Asset Route V2.1
+ * NEXO Data Core - Asset Route V2.2.2
  *
  * Arquitetura atual:
  * - Ações BR: HG Brasil
@@ -14,6 +14,7 @@ export const maxDuration = 120;
  * - Consolidar as melhorias descobertas no Twelve Data
  * - Reduzir chamadas no plano free
  * - Concentrar cálculos NEXO localmente
+ * - Adicionar bloco nexoMethodology para a Claude interpretar os indicadores proprietários
  * - Deixar Partnr pronta como fase futura, sem quebrar o core atual
  * - Adicionar Quant Engine local: Max Drawdown, Recovery, Sharpe, Sortino, CAGR, Ulcer, Calmar e ICR NEXO
  */
@@ -523,6 +524,83 @@ function computeMarketDerived(candles, currentPrice) {
   return { derived, derivedAdvanced, nexoMetrics };
 }
 
+
+function buildNexoMethodology(assetContext = {}) {
+  return {
+    version: "2.2",
+    purpose:
+      "Bloco metodológico enviado junto com os dados para que a IA interprete corretamente os indicadores proprietários do NEXO, mesmo sem conhecimento prévio do método.",
+    assetContext: {
+      ticker: assetContext.ticker || null,
+      assetType: assetContext.assetType || null,
+      route: assetContext.route || null,
+      currency: assetContext.currency || null,
+    },
+    interpretationRules: {
+      general:
+        "A análise deve separar qualidade econômica do ativo, momento de mercado, risco de trajetória e suficiência de dados. Indicadores quantitativos não são recomendação automática.",
+      missingData:
+        "Campos nulos devem ser tratados como dado indisponível, não como zero. Para FIIs/ETFs, ausência de demonstrativos no HG Brasil é esperada no modo econômico.",
+      periodWarning:
+        "Os indicadores derivados usam o histórico disponível no payload. Se candlesCount for inferior a 252, CAGR, Sharpe, Sortino, Calmar e ICR devem ser interpretados como leitura parcial, não como histórico anual completo.",
+      negativeRatios:
+        "Sharpe, Sortino, Calmar e Recovery negativos indicam retorno negativo no período analisado ou retorno insuficiente para compensar risco/drawdown.",
+    },
+    metricsDictionary: {
+      pricePositionPercent:
+        "Posição do preço atual dentro do intervalo mínimo-máximo do histórico analisado. Escala 0-100. Quanto maior, mais perto da máxima do período.",
+      distanceFromHighPercent:
+        "Distância percentual do preço atual em relação à máxima do período analisado. Valores negativos indicam queda desde o topo.",
+      distanceFromLowPercent:
+        "Distância percentual do preço atual em relação à mínima do período analisado. Valores positivos indicam recuperação desde o fundo.",
+      historicalAmplitudePercent:
+        "Amplitude percentual entre máxima e mínima do período analisado. Mede a largura do intervalo de negociação.",
+      momentumPeriodPercent:
+        "Retorno percentual entre o primeiro candle disponível e o preço atual. Mede o momentum acumulado do período.",
+      volatility90dAnnualizedPercent:
+        "Volatilidade anualizada calculada a partir dos retornos diários recentes. Mede intensidade de oscilação.",
+      maxDrawdownPercent:
+        "Maior queda percentual entre um topo anterior e um fundo posterior dentro da série analisada. Quanto mais negativo, maior o estresse de trajetória.",
+      recoveryRatio:
+        "Retorno acumulado dividido pelo módulo do máximo drawdown. Mede quanto retorno foi obtido para cada unidade de drawdown sofrida.",
+      sharpeRatio:
+        "Retorno anualizado excedente dividido pela volatilidade anualizada. Mede eficiência retorno/risco total. Na V2.2 usa taxa livre de risco padrão zero no cálculo local.",
+      sortinoRatio:
+        "Retorno anualizado excedente dividido pela volatilidade negativa anualizada. Mede eficiência considerando apenas oscilações negativas.",
+      cagrPercent:
+        "Taxa composta anualizada estimada com base no primeiro e último preço do histórico disponível. Deve ser interpretada com cautela quando o histórico tiver menos de 252 candles.",
+      ulcerIndex:
+        "Índice de dor da trajetória. Mede profundidade e persistência dos drawdowns. Quanto menor, menor a dor do investidor ao longo do caminho.",
+      calmarRatio:
+        "CAGR dividido pelo módulo do máximo drawdown. Mede retorno composto em relação ao pior drawdown do período.",
+      icrNexoPercent:
+        "Índice de Consistência de Retorno NEXO. Mede a proporção de períodos diários positivos no histórico analisado. Escala 0-100. Quanto maior, mais consistente foi a trajetória positiva.",
+      liquidityHint:
+        "Classificação simples de liquidez baseada no volume médio do histórico. Ajuda a filtrar ativos com risco operacional de entrada/saída.",
+    },
+    nexoModuleMapping: {
+      TNH:
+        "Usar pricePositionPercent, distanceFromHighPercent, distanceFromLowPercent, historicalAmplitudePercent e momentumPeriodPercent para avaliar temperatura histórica do preço.",
+      PIN:
+        "Usar momentumPeriodPercent, maxDrawdownPercent, recoveryRatio e pricePositionPercent para estimar se o preço carrega narrativa de prêmio, negligência ou punição.",
+      GNP:
+        "Usar Sharpe, Sortino, Calmar, Ulcer Index e ICR NEXO para medir a qualidade da trajetória e risco comportamental.",
+      RES:
+        "Usar maxDrawdownPercent, ulcerIndex, volatility90dAnnualizedPercent, recoveryRatio e liquidityHint para avaliar resiliência de mercado.",
+      SEE:
+        "Combinar qualidade econômica dos fundamentals com eficiência de trajetória. Uma empresa pode ter SEE forte e momento de mercado fraco.",
+      ECS:
+        "Usar indicadores de dívida, liquidez, caixa, netDebtToEbitda e dados de balanço/DFC quando disponíveis.",
+      IQD:
+        "Usar qualidade, completude e consistência dos dados. Penalizar análises quando dados essenciais estiverem ausentes.",
+      WACC:
+        "O route apenas prepara insumos. O WACC deve ser calculado em motor separado usando taxa livre de risco, prêmio de risco, beta, custo da dívida e estrutura de capital.",
+    },
+    claudeInstructions:
+      "Ao analisar este payload, use os dados numéricos e este dicionário metodológico. Não trate indicadores proprietários como métricas conhecidas externamente; interprete-os conforme as definições fornecidas. Sempre destaque limitações de dados, principalmente em FIIs, ETFs e ativos sem statements/fundamentals.",
+  };
+}
+
 function computeGrowth(latest, previous, fields) {
   const result = {};
   for (const field of fields) {
@@ -1019,6 +1097,12 @@ async function buildB3Asset(ticker, options) {
     derivedAdvanced: derivedPackage.derivedAdvanced || null,
     nexoMetrics: derivedPackage.nexoMetrics || null,
     nexoFinancialDerived,
+    nexoMethodology: buildNexoMethodology({
+      ticker,
+      assetType: asset.assetType,
+      route: "B3_HG_BRASIL",
+      currency: asset.currency,
+    }),
     dataCoverage: {
       route: "B3_HG_BRASIL",
       quotes: !!asset.ok,
@@ -1664,6 +1748,12 @@ async function buildInternationalAsset(ticker, options) {
     derivedAdvanced: derivedPackage.derivedAdvanced || null,
     nexoMetrics: derivedPackage.nexoMetrics || null,
     nexoFinancialDerived,
+    nexoMethodology: buildNexoMethodology({
+      ticker,
+      assetType: asset.assetType,
+      route: "INTERNATIONAL_TWELVE_DATA",
+      currency: asset.currency,
+    }),
     dataCoverage: {
       route: "INTERNATIONAL_TWELVE_DATA",
       quotes: !!quote,
