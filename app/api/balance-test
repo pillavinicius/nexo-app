@@ -1,0 +1,11 @@
+const ticker = searchParams.get("ticker") || "BBSE3";
+
+const url =
+  `https://api.hgbrasil.com/v2/finance/balance-sheets` +
+  `?tickers=B3:${ticker}` +
+  `&key=${process.env.HG_BRASIL_KEY}`;
+
+const response = await fetch(url);
+const data = await response.json();
+
+return Response.json(data);
