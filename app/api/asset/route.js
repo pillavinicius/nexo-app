@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /**
- * NEXO Data Core - Asset Route V2
+ * NEXO Data Core - Asset Route V2.1
  *
  * Arquitetura atual:
  * - Ações BR: HG Brasil
@@ -15,6 +15,7 @@ export const maxDuration = 120;
  * - Reduzir chamadas no plano free
  * - Concentrar cálculos NEXO localmente
  * - Deixar Partnr pronta como fase futura, sem quebrar o core atual
+ * - Adicionar Quant Engine local: Max Drawdown, Recovery, Sharpe, Sortino, CAGR, Ulcer, Calmar e ICR NEXO
  */
 
 const HG_BASE_URL = "https://api.hgbrasil.com/v2/finance";
@@ -249,6 +250,146 @@ function annualizedVolatility(candles, period = 90) {
   return Math.sqrt(variance) * Math.sqrt(252) * 100;
 }
 
+
+function computeMaxDrawdownPercent(closes = []) {
+  const values = (closes || []).map(toNumber).filter((v) => v !== null && v > 0);
+  if (values.length < 2) return null;
+
+  let peak = values[0];
+  let maxDrawdown = 0;
+
+  for (const value of values) {
+    if (value > peak) peak = value;
+    const drawdown = ((value - peak) / peak) * 100;
+    if (drawdown < maxDrawdown) maxDrawdown = drawdown;
+  }
+
+  return maxDrawdown;
+}
+
+function computeCagrPercent(firstPrice, lastPrice, years) {
+  const first = toNumber(firstPrice);
+  const last = toNumber(lastPrice);
+  const y = toNumber(years);
+
+  if (first === null || last === null || y === null || first <= 0 || last <= 0 || y <= 0) {
+    return null;
+  }
+
+  return (Math.pow(last / first, 1 / y) - 1) * 100;
+}
+
+function computeDailyLogReturns(candles = []) {
+  const values = (candles || [])
+    .map((c) => toNumber(c?.close))
+    .filter((v) => v !== null && v > 0);
+
+  const returns = [];
+
+  for (let i = 1; i < values.length; i++) {
+    if (values[i - 1] > 0 && values[i] > 0) {
+      returns.push(Math.log(values[i] / values[i - 1]));
+    }
+  }
+
+  return returns;
+}
+
+function computeSharpeRatio(candles = [], riskFreeRateAnnualPercent = 0) {
+  const returns = computeDailyLogReturns(candles);
+  if (returns.length < 2) return null;
+
+  const avgDailyReturn = average(returns);
+  const variance =
+    returns.reduce((sum, r) => sum + Math.pow(r - avgDailyReturn, 2), 0) /
+    (returns.length - 1);
+
+  const annualizedReturnPercent = avgDailyReturn * 252 * 100;
+  const annualizedVolatilityPercent = Math.sqrt(variance) * Math.sqrt(252) * 100;
+
+  if (!annualizedVolatilityPercent) return null;
+
+  return (annualizedReturnPercent - riskFreeRateAnnualPercent) / annualizedVolatilityPercent;
+}
+
+function computeSortinoRatio(candles = [], riskFreeRateAnnualPercent = 0) {
+  const returns = computeDailyLogReturns(candles);
+  if (returns.length < 2) return null;
+
+  const avgDailyReturn = average(returns);
+  const negativeReturns = returns.filter((r) => r < 0);
+
+  if (negativeReturns.length < 1) return null;
+
+  const downsideVariance =
+    negativeReturns.reduce((sum, r) => sum + Math.pow(r, 2), 0) /
+    negativeReturns.length;
+
+  const downsideDeviationPercent = Math.sqrt(downsideVariance) * Math.sqrt(252) * 100;
+  const annualizedReturnPercent = avgDailyReturn * 252 * 100;
+
+  if (!downsideDeviationPercent) return null;
+
+  return (annualizedReturnPercent - riskFreeRateAnnualPercent) / downsideDeviationPercent;
+}
+
+function computeUlcerIndex(closes = []) {
+  const values = (closes || []).map(toNumber).filter((v) => v !== null && v > 0);
+  if (values.length < 2) return null;
+
+  let peak = values[0];
+  const squaredDrawdowns = [];
+
+  for (const value of values) {
+    if (value > peak) peak = value;
+    const drawdownPercent = ((value - peak) / peak) * 100;
+    squaredDrawdowns.push(drawdownPercent * drawdownPercent);
+  }
+
+  return Math.sqrt(
+    squaredDrawdowns.reduce((sum, value) => sum + value, 0) /
+      squaredDrawdowns.length
+  );
+}
+
+function computeRecoveryRatio(totalReturnPercent, maxDrawdownPercent) {
+  const ret = toNumber(totalReturnPercent);
+  const dd = toNumber(maxDrawdownPercent);
+
+  if (ret === null || dd === null || dd === 0) return null;
+
+  return ret / Math.abs(dd);
+}
+
+function computeCalmarRatio(cagrPercent, maxDrawdownPercent) {
+  const cagr = toNumber(cagrPercent);
+  const dd = toNumber(maxDrawdownPercent);
+
+  if (cagr === null || dd === null || dd === 0) return null;
+
+  return cagr / Math.abs(dd);
+}
+
+function computeIcrNexoPercent(candles = []) {
+  const values = (candles || [])
+    .map((c) => toNumber(c?.close))
+    .filter((v) => v !== null && v > 0);
+
+  if (values.length < 2) return null;
+
+  const returns = [];
+
+  for (let i = 1; i < values.length; i++) {
+    returns.push((values[i] - values[i - 1]) / values[i - 1]);
+  }
+
+  if (!returns.length) return null;
+
+  const positivePeriods = returns.filter((r) => r > 0).length;
+
+  return (positivePeriods / returns.length) * 100;
+}
+
 function computeMarketDerived(candles, currentPrice) {
   const valid = (candles || []).filter((c) => c.close !== null);
   const count = valid.length;
@@ -287,6 +428,17 @@ function computeMarketDerived(candles, currentPrice) {
   const pricePositionPercent =
     maxPrice !== minPrice ? ((price - minPrice) / (maxPrice - minPrice)) * 100 : null;
 
+  const totalReturnPercent = pct(price, first.close);
+  const years = count / 252;
+  const maxDrawdownPercent = computeMaxDrawdownPercent(closes);
+  const cagrPercent = computeCagrPercent(first.close, price, years);
+  const sharpeRatio = computeSharpeRatio(valid);
+  const sortinoRatio = computeSortinoRatio(valid);
+  const ulcerIndex = computeUlcerIndex(closes);
+  const recoveryRatio = computeRecoveryRatio(totalReturnPercent, maxDrawdownPercent);
+  const calmarRatio = computeCalmarRatio(cagrPercent, maxDrawdownPercent);
+  const icrNexoPercent = computeIcrNexoPercent(valid);
+
   const derived = {
     ok: true,
     period: "available_history",
@@ -299,7 +451,7 @@ function computeMarketDerived(candles, currentPrice) {
     maxDate: maxRow?.date || null,
     minPrice: round(minPrice, 4),
     minDate: minRow?.date || null,
-    returnPercent: round(pct(price, first.close), 2),
+    returnPercent: round(totalReturnPercent, 2),
     drawdownFromHighPercent: round(pct(price, maxPrice), 2),
     amplitudePercent: round(pct(maxPrice, minPrice), 2),
     averageVolume: round(average(volumes), 0),
@@ -323,6 +475,14 @@ function computeMarketDerived(candles, currentPrice) {
     volatility30dAnnualizedPercent: round(annualizedVolatility(valid, 30), 2),
     volatility90dAnnualizedPercent: round(annualizedVolatility(valid, 90), 2),
     volatility1yAnnualizedPercent: round(annualizedVolatility(valid, 252), 2),
+    maxDrawdownPercent: round(maxDrawdownPercent, 2),
+    recoveryRatio: round(recoveryRatio, 2),
+    sharpeRatio: round(sharpeRatio, 2),
+    sortinoRatio: round(sortinoRatio, 2),
+    cagrPercent: round(cagrPercent, 2),
+    ulcerIndex: round(ulcerIndex, 2),
+    calmarRatio: round(calmarRatio, 2),
+    icrNexoPercent: round(icrNexoPercent, 2),
     note:
       "Métricas avançadas calculadas localmente para reduzir dependência de endpoints pagos.",
   };
@@ -333,13 +493,21 @@ function computeMarketDerived(candles, currentPrice) {
     distanceFromHighPercent: round(pct(price, maxPrice), 2),
     distanceFromLowPercent: round(pct(price, minPrice), 2),
     historicalAmplitudePercent: round(pct(maxPrice, minPrice), 2),
-    momentumPeriodPercent: round(pct(price, first.close), 2),
+    momentumPeriodPercent: round(totalReturnPercent, 2),
     averageVolume: round(average(volumes), 0),
     trendVsSma20Percent: derivedAdvanced.distanceFromSma20Percent,
     trendVsSma50Percent: derivedAdvanced.distanceFromSma50Percent,
     trendVsSma200Percent: derivedAdvanced.distanceFromSma200Percent,
     volatility90dAnnualizedPercent:
       derivedAdvanced.volatility90dAnnualizedPercent,
+    maxDrawdownPercent: round(maxDrawdownPercent, 2),
+    recoveryRatio: round(recoveryRatio, 2),
+    sharpeRatio: round(sharpeRatio, 2),
+    sortinoRatio: round(sortinoRatio, 2),
+    cagrPercent: round(cagrPercent, 2),
+    ulcerIndex: round(ulcerIndex, 2),
+    calmarRatio: round(calmarRatio, 2),
+    icrNexoPercent: round(icrNexoPercent, 2),
     liquidityHint:
       average(volumes) === null
         ? "não informado"
@@ -1579,4 +1747,3 @@ export async function GET(request) {
     );
   }
 }
-
