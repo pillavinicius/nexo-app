@@ -22,6 +22,17 @@ export const maxDuration = 120;
 const HG_BASE_URL = "https://api.hgbrasil.com/v2/finance";
 const TWELVE_BASE_URL = "https://api.twelvedata.com";
 
+/**
+ * CORRECAO HISTORICO HG (v2.4.4):
+ * O endpoint /history do HG retorna intraday (5min) por padrao, o que
+ * limitava o historico a ~63 candles diarios apos agrupamento.
+ * Pedindo sample_by=1d + days_ago, trazemos candle diario ja pronto
+ * e janela longa o suficiente para SMA200/Sharpe/CAGR terem significancia.
+ * Ajuste HISTORY_DAYS_AGO se o teste mostrar poucos candles (teto do plano).
+ */
+const HG_HISTORY_SAMPLE_BY = "1d";
+const HG_HISTORY_DAYS_AGO = 400;
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -1062,18 +1073,36 @@ async function fetchHgStatement(endpoint, ticker, key, type) {
   };
 }
 
-async function fetchHgHistory(ticker, key) {
-  const result = await hgFetch("history", { tickers: `B3:${ticker}` }, key);
+async function fetchHgHistory(ticker, key, options = {}) {
+  // v2.4.4: pede candle diario (sample_by=1d) com janela longa (days_ago)
+  // para superar o limite de ~63 candles do modo intraday padrao.
+  const sampleBy = options.historySampleBy || HG_HISTORY_SAMPLE_BY;
+  const daysAgo = options.historyDaysAgo || HG_HISTORY_DAYS_AGO;
+
+  const result = await hgFetch(
+    "history",
+    {
+      tickers: `B3:${ticker}`,
+      sample_by: sampleBy,
+      days_ago: daysAgo,
+    },
+    key
+  );
 
   const first = extractFirstHgResult(result.json);
   const samples = Array.isArray(first?.samples) ? first.samples : [];
+
+  // groupHgIntradayToDaily continua seguro: com sample_by=1d cada sample
+  // ja eh 1 candle/dia, e o agrupamento por data apenas confirma isso.
   const candles = groupHgIntradayToDaily(samples);
 
   return {
     ok: result.ok && candles.length > 0,
     source: "HG Brasil Finance - History",
     requestUrl: result.requestUrl,
-    samplesType: "intraday_grouped_to_daily",
+    samplesType: sampleBy === "1d" ? "daily_native" : "intraday_grouped_to_daily",
+    sampleBy,
+    daysAgo,
     rawSamplesCount: samples.length,
     dailyCandlesCount: candles.length,
     error: candles.length ? null : "Histórico indisponível",
@@ -1153,7 +1182,7 @@ async function buildB3Asset(ticker, options) {
   const asset = normalizeHgAsset(quoteResult.data, ticker);
   const assetType = String(asset.assetType || "").toLowerCase();
 
-  const history = await fetchHgHistory(ticker, key);
+  const history = await fetchHgHistory(ticker, key, options);
   if (!history.ok && history.error) errors.push(`HG History: ${history.error}`);
 
   const derivedPackage = computeMarketDerived(history.candles || [], asset.price, asset.currency, null);
