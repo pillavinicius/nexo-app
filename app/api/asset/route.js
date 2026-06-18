@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /**
- * NEXO Data Core - Asset Route V2.2.2
+ * NEXO Data Core - Asset Route V2.4.3.2
  *
  * Arquitetura atual:
  * - Ações BR: HG Brasil
@@ -391,7 +391,118 @@ function computeIcrNexoPercent(candles = []) {
   return (positivePeriods / returns.length) * 100;
 }
 
-function computeMarketDerived(candles, currentPrice) {
+
+function averageCloseSlice(candles = [], start = 0, length = 5) {
+  const slice = (candles || [])
+    .slice(start, start + length)
+    .map((c) => toNumber(c?.close))
+    .filter((v) => v !== null && v > 0);
+
+  return average(slice);
+}
+
+function computeSmoothedCagrPercent(candles = [], currentPrice = null, years = null, endpointWindow = 5) {
+  const valid = (candles || []).filter((c) => {
+    const close = toNumber(c?.close);
+    return close !== null && close > 0;
+  });
+
+  const y = toNumber(years);
+  const window = Math.max(1, Math.min(endpointWindow, valid.length || endpointWindow));
+
+  if (!valid.length || y === null || y <= 0) {
+    return {
+      value: null,
+      method: "unavailable",
+      startAnchor: null,
+      endAnchor: null,
+      endpointWindow: window,
+    };
+  }
+
+  const startAnchor = averageCloseSlice(valid, 0, window);
+
+  const endSlice = valid
+    .slice(Math.max(0, valid.length - window))
+    .map((c) => toNumber(c?.close))
+    .filter((v) => v !== null && v > 0);
+
+  let endAnchor = average(endSlice);
+
+  const current = toNumber(currentPrice);
+  if (current !== null && current > 0 && endAnchor !== null) {
+    endAnchor = average([endAnchor, current]);
+  }
+
+  if (startAnchor === null || endAnchor === null || startAnchor <= 0 || endAnchor <= 0) {
+    return {
+      value: null,
+      method: "unavailable",
+      startAnchor,
+      endAnchor,
+      endpointWindow: window,
+    };
+  }
+
+  return {
+    value: (Math.pow(endAnchor / startAnchor, 1 / y) - 1) * 100,
+    method: `smoothed_endpoint_average_${window}_candles`,
+    startAnchor,
+    endAnchor,
+    endpointWindow: window,
+  };
+}
+
+function resolveRiskFreeRateAnnualPercent(currency = "BRL", macro = null) {
+  const curr = String(currency || "").toUpperCase();
+
+  const candidatesBR = [
+    macro?.riskFreeRateAnnualPercent,
+    macro?.riskFreeRatePercent,
+    macro?.cdiAnnualPercent,
+    macro?.cdiPercent,
+    macro?.selicAnnualPercent,
+    macro?.selicMetaPercent,
+    macro?.selicPercent,
+  ];
+
+  const candidatesInternational = [
+    macro?.riskFreeRateAnnualPercent,
+    macro?.riskFreeRatePercent,
+    macro?.tBill3mAnnualPercent,
+    macro?.treasury3mAnnualPercent,
+    macro?.us3mTreasuryPercent,
+    macro?.fedFundsPercent,
+  ];
+
+  const candidates = curr === "BRL" ? candidatesBR : candidatesInternational;
+
+  const value = candidates
+    .map(toNumber)
+    .find((v) => v !== null && Number.isFinite(v) && v >= 0);
+
+  if (value !== undefined) {
+    return {
+      value,
+      source:
+        curr === "BRL"
+          ? "macro_input_cdi_selic"
+          : "macro_input_tbill_or_short_treasury",
+      status: "applied_from_macro",
+    };
+  }
+
+  return {
+    value: 0,
+    source:
+      curr === "BRL"
+        ? "fallback_zero_pending_cdi_selic"
+        : "fallback_zero_pending_tbill",
+    status: "fallback_zero",
+  };
+}
+
+function computeMarketDerived(candles, currentPrice, currency = "BRL", macro = null) {
   const valid = (candles || []).filter((c) => c.close !== null);
   const count = valid.length;
 
@@ -408,6 +519,7 @@ function computeMarketDerived(candles, currentPrice) {
   const highs = valid.map((c) => c.high ?? c.close);
   const lows = valid.map((c) => c.low ?? c.close);
   const volumes = valid.map((c) => c.volume).filter((v) => v !== null);
+  const avgFinancialVolume = computeAverageFinancialVolume(valid);
 
   const price = toNumber(currentPrice) ?? last.close;
 
@@ -431,10 +543,12 @@ function computeMarketDerived(candles, currentPrice) {
 
   const totalReturnPercent = pct(price, first.close);
   const years = count / 252;
+  const riskFreeRate = resolveRiskFreeRateAnnualPercent(currency, macro);
   const maxDrawdownPercent = computeMaxDrawdownPercent(closes);
-  const cagrPercent = computeCagrPercent(first.close, price, years);
-  const sharpeRatio = computeSharpeRatio(valid);
-  const sortinoRatio = computeSortinoRatio(valid);
+  const smoothedCagr = computeSmoothedCagrPercent(valid, price, years, 5);
+  const cagrPercent = smoothedCagr.value;
+  const sharpeRatio = computeSharpeRatio(valid, riskFreeRate.value);
+  const sortinoRatio = computeSortinoRatio(valid, riskFreeRate.value);
   const ulcerIndex = computeUlcerIndex(closes);
   const recoveryRatio = computeRecoveryRatio(totalReturnPercent, maxDrawdownPercent);
   const calmarRatio = computeCalmarRatio(cagrPercent, maxDrawdownPercent);
@@ -456,6 +570,7 @@ function computeMarketDerived(candles, currentPrice) {
     drawdownFromHighPercent: round(pct(price, maxPrice), 2),
     amplitudePercent: round(pct(maxPrice, minPrice), 2),
     averageVolume: round(average(volumes), 0),
+    averageFinancialVolume: round(avgFinancialVolume, 0),
     explanation:
       "Cálculos derivados automaticamente da série histórica diária normalizada.",
   };
@@ -481,6 +596,16 @@ function computeMarketDerived(candles, currentPrice) {
     sharpeRatio: round(sharpeRatio, 2),
     sortinoRatio: round(sortinoRatio, 2),
     cagrPercent: round(cagrPercent, 2),
+    cagrMethod: smoothedCagr.method,
+    riskFreeRateUsedPercent: round(riskFreeRate.value, 2),
+    riskFreeRateSource: riskFreeRate.source,
+    riskFreeRateStatus: riskFreeRate.status,
+    cagrMethod: smoothedCagr.method,
+    cagrStartAnchor: round(smoothedCagr.startAnchor, 4),
+    cagrEndAnchor: round(smoothedCagr.endAnchor, 4),
+    riskFreeRateUsedPercent: round(riskFreeRate.value, 2),
+    riskFreeRateSource: riskFreeRate.source,
+    riskFreeRateStatus: riskFreeRate.status,
     ulcerIndex: round(ulcerIndex, 2),
     calmarRatio: round(calmarRatio, 2),
     icrNexoPercent: round(icrNexoPercent, 2),
@@ -496,6 +621,7 @@ function computeMarketDerived(candles, currentPrice) {
     historicalAmplitudePercent: round(pct(maxPrice, minPrice), 2),
     momentumPeriodPercent: round(totalReturnPercent, 2),
     averageVolume: round(average(volumes), 0),
+    averageFinancialVolume: round(avgFinancialVolume, 0),
     trendVsSma20Percent: derivedAdvanced.distanceFromSma20Percent,
     trendVsSma50Percent: derivedAdvanced.distanceFromSma50Percent,
     trendVsSma200Percent: derivedAdvanced.distanceFromSma200Percent,
@@ -509,14 +635,7 @@ function computeMarketDerived(candles, currentPrice) {
     ulcerIndex: round(ulcerIndex, 2),
     calmarRatio: round(calmarRatio, 2),
     icrNexoPercent: round(icrNexoPercent, 2),
-    liquidityHint:
-      average(volumes) === null
-        ? "não informado"
-        : average(volumes) >= 1000000
-        ? "alta"
-        : average(volumes) >= 300000
-        ? "média"
-        : "baixa",
+    liquidityHint: classifyLiquidityByFinancialVolume(avgFinancialVolume, currency),
     note:
       "Métricas auxiliares para TNH, PIN, GNP, filtros de liquidez e contexto histórico do NEXO.",
   };
@@ -524,6 +643,43 @@ function computeMarketDerived(candles, currentPrice) {
   return { derived, derivedAdvanced, nexoMetrics };
 }
 
+
+
+function computeAverageFinancialVolume(candles = []) {
+  const values = (candles || [])
+    .map((c) => {
+      const close = toNumber(c?.close);
+      const volume = toNumber(c?.volume);
+      if (close === null || volume === null || close <= 0 || volume < 0) return null;
+      return close * volume;
+    })
+    .filter((v) => v !== null);
+
+  return average(values);
+}
+
+function classifyLiquidityByFinancialVolume(avgFinancialVolume, currency = "BRL") {
+  const value = toNumber(avgFinancialVolume);
+  if (value === null) return "indefinida";
+
+  const curr = String(currency || "").toUpperCase();
+
+  if (curr === "BRL") {
+    if (value >= 5_000_000) return "alta";
+    if (value >= 300_000) return "média";
+    return "baixa";
+  }
+
+  if (curr === "USD") {
+    if (value >= 10_000_000) return "alta";
+    if (value >= 1_000_000) return "média";
+    return "baixa";
+  }
+
+  if (value >= 5_000_000) return "alta";
+  if (value >= 300_000) return "média";
+  return "baixa";
+}
 
 function buildNexoMethodology(assetContext = {}) {
   return {
@@ -546,6 +702,53 @@ function buildNexoMethodology(assetContext = {}) {
       negativeRatios:
         "Sharpe, Sortino, Calmar e Recovery negativos indicam retorno negativo no período analisado ou retorno insuficiente para compensar risco/drawdown.",
     },
+    hierarchyRule: {
+      principle: "Trajetória de preço não é valuation.",
+      description:
+        "Sharpe, Sortino, Calmar, Ulcer, Max Drawdown, Recovery, ICR e volatilidade descrevem a trajetória histórica do preço. Eles não determinam isoladamente se um ativo está barato, caro, bom ou ruim.",
+      decisionHierarchy: [
+        "1. Valor econômico e valor intrínseco",
+        "2. Qualidade econômica e geração de caixa",
+        "3. Estrutura de capital e sobrevivência",
+        "4. Narrativa e percepção de mercado",
+        "5. Trajetória histórica e risco comportamental",
+      ],
+      warning:
+        "Um ativo pode ter Sharpe baixo e ainda ser uma oportunidade se houver grande desconto econômico e sobrevivência adequada. Um ativo pode ter Sharpe alto e ainda estar caro se o preço estiver acima do valor intrínseco.",
+    },
+    icrRule: {
+      description:
+        "ICR NEXO mede consistência direcional da série, não qualidade econômica e não magnitude do retorno.",
+      warning:
+        "ICR nunca deve ser interpretado isoladamente. Um ativo pode ter muitos dias positivos pequenos e poucos dias negativos grandes, resultando em ICR razoável e retorno ruim.",
+      mustCombineWith: [
+        "momentumPeriodPercent",
+        "cagrPercent",
+        "sharpeRatio",
+        "sortinoRatio",
+        "maxDrawdownPercent",
+        "ulcerIndex",
+        "retorno acumulado",
+      ],
+    },
+    liquidityRule: {
+      description:
+        "Liquidez deve priorizar volume financeiro médio, calculado como média de close × volume, e não apenas quantidade negociada.",
+      averageFinancialVolume:
+        "averageFinancialVolume = média(close × volume) no histórico disponível.",
+      brFilter:
+        "Para ativos B3, a régua NEXO mínima de triagem é aproximadamente R$ 300.000/dia de volume financeiro médio.",
+    },
+    riskFreeRule: {
+      currentStatus:
+        "Na V2.4, Sharpe e Sortino recebem riskFreeRateAnnualPercent via computeMarketDerived. Quando macro não estiver disponível, o payload informa fallback_zero em riskFreeRateStatus.",
+      futureRuleBR:
+        "No trilho Brasil, o Sharpe Econômico NEXO deve usar CDI/Selic como custo de oportunidade.",
+      futureRuleInternational:
+        "No trilho internacional, o Sharpe Econômico NEXO deve usar T-Bill curto, Treasury 3M ou proxy equivalente como custo de oportunidade.",
+      warning:
+        "Quando riskFreeRateStatus for fallback_zero, a IA deve tratar Sharpe/Sortino como preliminares e menos confiáveis, especialmente em ambientes de juros altos.",
+    },
     metricsDictionary: {
       pricePositionPercent:
         "Posição do preço atual dentro do intervalo mínimo-máximo do histórico analisado. Escala 0-100. Quanto maior, mais perto da máxima do período.",
@@ -564,27 +767,29 @@ function buildNexoMethodology(assetContext = {}) {
       recoveryRatio:
         "Retorno acumulado dividido pelo módulo do máximo drawdown. Mede quanto retorno foi obtido para cada unidade de drawdown sofrida.",
       sharpeRatio:
-        "Retorno anualizado excedente dividido pela volatilidade anualizada. Mede eficiência retorno/risco total. Na V2.2 usa taxa livre de risco padrão zero no cálculo local.",
+        "Retorno anualizado excedente dividido pela volatilidade anualizada. Mede eficiência retorno/risco total. Na V2.4 usa a taxa livre de risco recebida no cálculo local; se macro não estiver disponível, o payload sinaliza fallback_zero.",
       sortinoRatio:
         "Retorno anualizado excedente dividido pela volatilidade negativa anualizada. Mede eficiência considerando apenas oscilações negativas.",
       cagrPercent:
-        "Taxa composta anualizada estimada com base no primeiro e último preço do histórico disponível. Deve ser interpretada com cautela quando o histórico tiver menos de 252 candles.",
+        "Taxa composta anualizada estimada por média suavizada dos candles iniciais e finais do histórico disponível. O campo cagrMethod informa o método usado. Deve ser interpretada com cautela quando o histórico tiver menos de 252 candles.",
       ulcerIndex:
         "Índice de dor da trajetória. Mede profundidade e persistência dos drawdowns. Quanto menor, menor a dor do investidor ao longo do caminho.",
       calmarRatio:
         "CAGR dividido pelo módulo do máximo drawdown. Mede retorno composto em relação ao pior drawdown do período.",
       icrNexoPercent:
         "Índice de Consistência de Retorno NEXO. Mede a proporção de períodos diários positivos no histórico analisado. Escala 0-100. Quanto maior, mais consistente foi a trajetória positiva.",
+      averageFinancialVolume:
+        "Volume financeiro médio do histórico disponível, calculado como média de close × volume. Deve ser usado preferencialmente para filtros de liquidez.",
       liquidityHint:
-        "Classificação simples de liquidez baseada no volume médio do histórico. Ajuda a filtrar ativos com risco operacional de entrada/saída.",
+        "Classificação simples de liquidez baseada no volume financeiro médio. Ajuda a filtrar ativos com risco operacional de entrada/saída.",
     },
     nexoModuleMapping: {
       TNH:
         "Usar pricePositionPercent, distanceFromHighPercent, distanceFromLowPercent, historicalAmplitudePercent e momentumPeriodPercent para avaliar temperatura histórica do preço.",
       PIN:
-        "Usar momentumPeriodPercent, maxDrawdownPercent, recoveryRatio e pricePositionPercent para estimar se o preço carrega narrativa de prêmio, negligência ou punição.",
+        "Usar momentumPeriodPercent, maxDrawdownPercent, recoveryRatio e pricePositionPercent para contextualizar narrativa de prêmio, negligência ou punição. O PIN não deve substituir o valor intrínseco.",
       GNP:
-        "Usar Sharpe, Sortino, Calmar, Ulcer Index e ICR NEXO para medir a qualidade da trajetória e risco comportamental.",
+        "Usar Sharpe, Sortino, Calmar, Ulcer Index e ICR NEXO para medir a qualidade da trajetória e risco comportamental, sem substituir valuation ou valor intrínseco.",
       RES:
         "Usar maxDrawdownPercent, ulcerIndex, volatility90dAnnualizedPercent, recoveryRatio e liquidityHint para avaliar resiliência de mercado.",
       SEE:
@@ -597,7 +802,7 @@ function buildNexoMethodology(assetContext = {}) {
         "O route apenas prepara insumos. O WACC deve ser calculado em motor separado usando taxa livre de risco, prêmio de risco, beta, custo da dívida e estrutura de capital.",
     },
     claudeInstructions:
-      "Ao analisar este payload, use os dados numéricos e este dicionário metodológico. Não trate indicadores proprietários como métricas conhecidas externamente; interprete-os conforme as definições fornecidas. Sempre destaque limitações de dados, principalmente em FIIs, ETFs e ativos sem statements/fundamentals.",
+      "Ao analisar este payload, use os dados numéricos e este dicionário metodológico. Não trate indicadores proprietários como métricas conhecidas externamente; interprete-os conforme as definições fornecidas. Preserve a hierarquia NEXO: trajetória de preço é contexto de risco/comportamento, não valuation. Nunca conclua que um ativo está barato/caro apenas por Sharpe, Sortino, Calmar, Ulcer, Drawdown, Recovery ou ICR. Sempre destaque limitações de dados, principalmente em FIIs, ETFs e ativos sem statements/fundamentals.",
   };
 }
 
@@ -951,7 +1156,7 @@ async function buildB3Asset(ticker, options) {
   const history = await fetchHgHistory(ticker, key);
   if (!history.ok && history.error) errors.push(`HG History: ${history.error}`);
 
-  const derivedPackage = computeMarketDerived(history.candles || [], asset.price);
+  const derivedPackage = computeMarketDerived(history.candles || [], asset.price, asset.currency, null);
 
   const shouldFetchCorporateFinancials =
     assetType.includes("stock") ||
@@ -1605,7 +1810,7 @@ async function buildInternationalAsset(ticker, options) {
   }
 
   const price = quote?.close ?? (candles.length ? candles[candles.length - 1].close : null);
-  const derivedPackage = computeMarketDerived(candles, price);
+  const derivedPackage = computeMarketDerived(candles, price, quote?.currency || "USD", null);
 
   const asset = {
     ok: !!quote,
