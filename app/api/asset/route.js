@@ -1,8 +1,18 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 /**
- * NEXO Data Core - Asset Route V2.4.3.2
+ * NEXO Data Core - Asset Route V2.4.5
+ *
+ * V2.4.5 (fio do risk-free fechado):
+ * - Lê data/nexo_macro.csv (gerado pelo coletor offline, commitado no repo)
+ * - Passa Selic vigente (BRL) / Fed Funds vigente (USD) ao computeMarketDerived
+ *   no lugar do macro=null -> mata o fallback_zero do Sharpe/Sortino.
+ * - Expoe nexoMacroRegime no payload (consciencia de ciclo p/ a Claude).
+ * - Falha graciosa: sem CSV, volta ao fallback_zero honesto (nao quebra).
  *
  * Arquitetura atual:
  * - Ações BR: HG Brasil
@@ -462,6 +472,105 @@ function computeSmoothedCagrPercent(candles = [], currentPrice = null, years = n
     endAnchor,
     endpointWindow: window,
   };
+}
+
+/* =========================
+   NEXO MACRO — leitura do banco macro (v2.4.5)
+   Fonte: data/nexo_macro.csv, gerado pelo coletor offline (Cloud Shell) e
+   commitado no repo. O app NUNCA executa o coletor; só lê a tabela pronta.
+   Devolve a Selic / Fed Funds vigentes (juro_fim do mandato atual) + o regime,
+   no formato que o resolveRiskFreeRateAnnualPercent já sabe ler.
+   Cache de 1 leitura por cold start. Falha graciosa -> null -> fallback_zero.
+========================= */
+let _nexoMacroCache;
+
+function splitCsvLine(line) {
+  const out = [];
+  let cur = "";
+  let q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) {
+      if (c === '"' && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (c === '"') {
+        q = false;
+      } else {
+        cur += c;
+      }
+    } else if (c === '"') {
+      q = true;
+    } else if (c === ",") {
+      out.push(cur);
+      cur = "";
+    } else {
+      cur += c;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function buildRegimeView(r) {
+  if (!r) return null;
+  return {
+    gestao: r.gestao || null,
+    regime_juro: r.regime_juro || null,
+    regime_inflacao: r.regime_inflacao || null,
+    regime_credito: r.regime_credito || null,
+    regime_cambial: r.regime_cambial || null,
+    fase_ciclo: r.fase_ciclo || null,
+    data_quality: r.data_quality || null,
+  };
+}
+
+function loadNexoMacro() {
+  if (_nexoMacroCache !== undefined) return _nexoMacroCache;
+  try {
+    const csv = readFileSync(
+      join(process.cwd(), "data", "nexo_macro.csv"),
+      "utf8"
+    );
+    const lines = csv.trim().split("\n");
+    const head = lines[0].split(",");
+    const rows = lines.slice(1).map((line) => {
+      const cells = splitCsvLine(line);
+      const row = {};
+      head.forEach((h, i) => {
+        row[h] = cells[i] ?? "";
+      });
+      return row;
+    });
+
+    // mandato atual de cada país = o de maior data de início (ini)
+    const latest = (pais) =>
+      rows
+        .filter((r) => r.pais === pais)
+        .sort((a, b) => String(b.ini).localeCompare(String(a.ini)))[0] || null;
+
+    const br = latest("BR");
+    const us = latest("US");
+    const n = (v) => {
+      const x = Number(v);
+      return Number.isFinite(x) ? x : undefined;
+    };
+
+    _nexoMacroCache = {
+      // campos lidos pelo resolveRiskFreeRateAnnualPercent:
+      selicMetaPercent: n(br?.juro_fim), // BRL
+      fedFundsPercent: n(us?.juro_fim), // internacional (USD)
+      // contexto de ciclo (Marks: consciência de ciclo, não timing):
+      regime: {
+        br: buildRegimeView(br),
+        us: buildRegimeView(us),
+      },
+      source: "nexo_macro.csv",
+    };
+  } catch {
+    _nexoMacroCache = null; // CSV ausente/ilegível -> fallback_zero honesto
+  }
+  return _nexoMacroCache;
 }
 
 function resolveRiskFreeRateAnnualPercent(currency = "BRL", macro = null) {
@@ -1185,7 +1294,7 @@ async function buildB3Asset(ticker, options) {
   const history = await fetchHgHistory(ticker, key, options);
   if (!history.ok && history.error) errors.push(`HG History: ${history.error}`);
 
-  const derivedPackage = computeMarketDerived(history.candles || [], asset.price, asset.currency, null);
+  const derivedPackage = computeMarketDerived(history.candles || [], asset.price, asset.currency, loadNexoMacro());
 
   const shouldFetchCorporateFinancials =
     assetType.includes("stock") ||
@@ -1337,6 +1446,7 @@ async function buildB3Asset(ticker, options) {
       route: "B3_HG_BRASIL",
       currency: asset.currency,
     }),
+    nexoMacroRegime: loadNexoMacro()?.regime || null,
     dataCoverage: {
       route: "B3_HG_BRASIL",
       quotes: !!asset.ok,
@@ -1839,7 +1949,7 @@ async function buildInternationalAsset(ticker, options) {
   }
 
   const price = quote?.close ?? (candles.length ? candles[candles.length - 1].close : null);
-  const derivedPackage = computeMarketDerived(candles, price, quote?.currency || "USD", null);
+  const derivedPackage = computeMarketDerived(candles, price, quote?.currency || "USD", loadNexoMacro());
 
   const asset = {
     ok: !!quote,
@@ -1988,6 +2098,7 @@ async function buildInternationalAsset(ticker, options) {
       route: "INTERNATIONAL_TWELVE_DATA",
       currency: asset.currency,
     }),
+    nexoMacroRegime: loadNexoMacro()?.regime || null,
     dataCoverage: {
       route: "INTERNATIONAL_TWELVE_DATA",
       quotes: !!quote,
