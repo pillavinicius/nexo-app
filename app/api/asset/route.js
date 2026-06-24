@@ -5,9 +5,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * NEXO Data Core - Asset Route V2.5.0
+ * NEXO Data Core - Asset Route V2.5.1
  *
- * V2.5.0 (IQD determinístico):
+ * V2.5.1 (IQD v2 setorial):
  * - Lê data/nexo_macro.csv (gerado pelo coletor offline, commitado no repo)
  * - Passa Selic vigente (BRL) / Fed Funds vigente (USD) ao computeMarketDerived
  *   no lugar do macro=null -> mata o fallback_zero do Sharpe/Sortino.
@@ -25,6 +25,13 @@ import { join } from "node:path";
  * - Mantém os módulos proprietários como números auditáveis, não apenas prompt.
  * - IQD usa pesos explícitos e trata FIIs/ETFs com FundamentalDepth/StatementsDepth = N/A.
  * - Inclui margens BR em hasMargin para ações brasileiras.
+ *
+ * V2.5.1:
+ * - Evolui o IQD para v2 setorial.
+ * - Separa margem ausente por falha de fonte de margem não aplicável ao modelo de negócio.
+ * - Cria perfil econômico do ativo: corporate_industrial, financial_bank, financial_insurance, fund_or_etf.
+ * - Para bancos/seguradoras, FundamentalDepth não exige margens industriais.
+ * - Mantém FII/ETF com FundamentalDepth/StatementsDepth = N/A no modo econômico.
  *
  * Arquitetura atual:
  * - Ações BR: HG Brasil
@@ -932,6 +939,90 @@ function computeHistoryDepthDimension(history = {}, derivedAdvanced = {}, nexoMe
   };
 }
 
+
+function normalizeTextForProfile(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function inferEconomicProfile(asset = {}) {
+  const assetType = normalizeTextForProfile(asset?.assetType);
+  const name = normalizeTextForProfile(`${asset?.name || ""} ${asset?.fullName || ""}`);
+  const sector = normalizeTextForProfile(`${asset?.sector || ""} ${asset?.subsector || ""} ${asset?.segment || ""}`);
+  const ticker = normalizeTextForProfile(asset?.ticker || asset?.symbol || "");
+
+  const haystack = `${assetType} ${name} ${sector} ${ticker}`;
+
+  const isFundOrEtf =
+    assetType.includes("fii") ||
+    assetType.includes("fund") ||
+    assetType.includes("fundo") ||
+    assetType.includes("etf");
+
+  if (isFundOrEtf) {
+    return {
+      profile: "fund_or_etf",
+      marginApplicability: "not_applicable",
+      reason: "Veículo de investimento/fundo/ETF: margens corporativas industriais não são aplicáveis neste route.",
+    };
+  }
+
+  const isInsurance =
+    haystack.includes("segur") ||
+    haystack.includes("insurance") ||
+    haystack.includes("bb seguridade") ||
+    haystack.includes("bbse");
+
+  if (isInsurance) {
+    return {
+      profile: "financial_insurance",
+      marginApplicability: "not_applicable",
+      reason: "Seguradoras devem ser avaliadas por ROE, solvência, sinistralidade/combined ratio e qualidade do underwriting, não por margem bruta industrial.",
+    };
+  }
+
+  const isBank =
+    haystack.includes("banco") ||
+    haystack.includes("bank") ||
+    haystack.includes("itau") ||
+    haystack.includes("itub") ||
+    haystack.includes("bradesco") ||
+    haystack.includes("bbas") ||
+    haystack.includes("banco do brasil") ||
+    haystack.includes("santander") ||
+    haystack.includes("sanb");
+
+  if (isBank) {
+    return {
+      profile: "financial_bank",
+      marginApplicability: "not_applicable",
+      reason: "Bancos devem ser avaliados por ROE, capitalização, qualidade da carteira, eficiência e inadimplência, não por margem bruta industrial.",
+    };
+  }
+
+  return {
+    profile: "corporate_industrial",
+    marginApplicability: "applicable",
+    reason: "Empresa operacional não financeira: margens industriais/operacionais são aplicáveis quando disponíveis.",
+  };
+}
+
+function hasFinancialCoreMetrics(keyIndicators = {}) {
+  const values = [
+    keyIndicators?.roe,
+    keyIndicators?.roa,
+    keyIndicators?.roic,
+    keyIndicators?.pb,
+    keyIndicators?.pe,
+    keyIndicators?.dividendYieldPercent,
+    keyIndicators?.dividends12mCash,
+  ];
+
+  return values.some((v) => toNumber(v) !== null);
+}
+
 function hasAnyMargin(keyIndicators = {}, fundamentals = {}) {
   const margins = fundamentals?.margins || {};
   const values = [
@@ -951,21 +1042,17 @@ function hasAnyMargin(keyIndicators = {}, fundamentals = {}) {
 }
 
 function computeFundamentalDepthDimension(asset = {}, keyIndicators = {}, fundamentals = {}, route = "") {
+  const economicProfile = inferEconomicProfile(asset);
   const assetType = String(asset?.assetType || "").toLowerCase();
-  const routeName = String(route || "");
 
-  const isFundOrEtf =
-    assetType.includes("fii") ||
-    assetType.includes("fund") ||
-    assetType.includes("fundo") ||
-    assetType.includes("etf");
-
-  if (isFundOrEtf) {
+  if (economicProfile.profile === "fund_or_etf") {
     return {
       applicable: false,
       weight: 0,
       score: null,
       status: "N/A",
+      profile: economicProfile.profile,
+      marginApplicability: economicProfile.marginApplicability,
       reason:
         "FundamentalDepth corporativo não é aplicável para FIIs/ETFs no modo econômico atual. O IQD redistribui o peso entre quote, histórico, macro e consistência.",
       components: {
@@ -981,10 +1068,6 @@ function computeFundamentalDepthDimension(asset = {}, keyIndicators = {}, fundam
     evEbitda: keyIndicators?.evEbitda,
     eps: keyIndicators?.eps,
     bookValuePerShare: keyIndicators?.bookValuePerShare,
-  };
-
-  const marginChecks = {
-    hasMargin: hasAnyMargin(keyIndicators, fundamentals),
   };
 
   const profitabilityChecks = {
@@ -1006,7 +1089,6 @@ function computeFundamentalDepthDimension(asset = {}, keyIndicators = {}, fundam
 
   const valuationScore =
     (countPresent(Object.values(valuationChecks)) / Object.keys(valuationChecks).length) * 100;
-  const marginScore = marginChecks.hasMargin ? 100 : 0;
   const profitabilityScore =
     (countPresent(Object.values(profitabilityChecks)) / Object.keys(profitabilityChecks).length) * 100;
   const leverageScore =
@@ -1014,32 +1096,80 @@ function computeFundamentalDepthDimension(asset = {}, keyIndicators = {}, fundam
   const dividendScore =
     (countPresent(Object.values(dividendChecks)) / Object.keys(dividendChecks).length) * 100;
 
-  const score =
-    valuationScore * 0.30 +
-    marginScore * 0.25 +
-    profitabilityScore * 0.20 +
-    leverageScore * 0.20 +
-    dividendScore * 0.05;
+  const hasMargin = hasAnyMargin(keyIndicators, fundamentals);
+
+  let score = null;
+  let status = "indefinido";
+  let marginScore = null;
+  let sectorSpecificScore = null;
+  let sectorSpecificStatus = null;
+
+  if (
+    economicProfile.profile === "financial_bank" ||
+    economicProfile.profile === "financial_insurance"
+  ) {
+    const financialCoreChecks = {
+      roe: keyIndicators?.roe,
+      roa: keyIndicators?.roa,
+      pb: keyIndicators?.pb,
+      pe: keyIndicators?.pe,
+      dividendYieldPercent: keyIndicators?.dividendYieldPercent,
+    };
+
+    const financialCoreScore =
+      (countPresent(Object.values(financialCoreChecks)) / Object.keys(financialCoreChecks).length) * 100;
+
+    sectorSpecificScore = financialCoreScore;
+    sectorSpecificStatus =
+      financialCoreScore >= 80 ? "financial_core_present" : "financial_core_partial";
+
+    score =
+      valuationScore * 0.30 +
+      profitabilityScore * 0.30 +
+      leverageScore * 0.20 +
+      dividendScore * 0.10 +
+      financialCoreScore * 0.10;
+
+    marginScore = null;
+  } else {
+    marginScore = hasMargin ? 100 : 0;
+
+    score =
+      valuationScore * 0.30 +
+      marginScore * 0.25 +
+      profitabilityScore * 0.20 +
+      leverageScore * 0.20 +
+      dividendScore * 0.05;
+  }
+
+  status =
+    score >= 85
+      ? "deep"
+      : score >= 70
+      ? "good"
+      : score >= 50
+      ? "partial"
+      : "shallow";
 
   return {
     applicable: true,
     weight: 25,
     score: round(score, 0),
-    status:
-      score >= 85
-        ? "deep"
-        : score >= 70
-        ? "good"
-        : score >= 50
-        ? "partial"
-        : "shallow",
+    status,
+    profile: economicProfile.profile,
+    marginApplicability: economicProfile.marginApplicability,
+    marginApplicabilityReason: economicProfile.reason,
     components: {
       valuationScore: round(valuationScore, 0),
-      marginScore: round(marginScore, 0),
+      marginScore: marginScore === null ? "N/A" : round(marginScore, 0),
       profitabilityScore: round(profitabilityScore, 0),
       leverageScore: round(leverageScore, 0),
       dividendScore: round(dividendScore, 0),
-      hasMargin: marginChecks.hasMargin,
+      sectorSpecificScore:
+        sectorSpecificScore === null ? null : round(sectorSpecificScore, 0),
+      sectorSpecificStatus,
+      hasMargin,
+      financialCoreMetricsPresent: hasFinancialCoreMetrics(keyIndicators),
       checks: {
         valuation: Object.fromEntries(
           Object.entries(valuationChecks).map(([k, v]) => [k, v !== null && v !== undefined])
@@ -1189,6 +1319,15 @@ function computeIqdModule({
     warnings.push("FundamentalDepth corporativo marcado como N/A para este tipo de ativo.");
   }
 
+  if (
+    dimensions.fundamentalDepth?.profile === "financial_bank" ||
+    dimensions.fundamentalDepth?.profile === "financial_insurance"
+  ) {
+    warnings.push(
+      "IQD v2 setorial: margens industriais foram tratadas como não aplicáveis para banco/seguradora; avaliar métricas financeiras/setoriais próprias no Deep."
+    );
+  }
+
   if (dimensions.macroContext?.components?.riskFreeRateStatus === "fallback_zero") {
     warnings.push("Risk-free em fallback_zero: Sharpe/Sortino ficam menos confiáveis.");
   }
@@ -1200,11 +1339,11 @@ function computeIqdModule({
   return {
     ok: score !== null,
     module: "IQD",
-    version: "IQD_v1.0",
+    version: "IQD_v2.0_sectoral",
     score: round(score, 0),
     rating,
     meaning:
-      "IQD mede a qualidade, completude e confiabilidade do dado recebido. Não mede qualidade do ativo, valuation ou recomendação.",
+      "IQD mede a qualidade, completude e confiabilidade do dado recebido. No v2 setorial, diferencia dado faltante de métrica não aplicável ao modelo de negócio. Não mede qualidade do ativo, valuation ou recomendação.",
     dimensions,
     warnings,
     interpretationGuide: {
@@ -1222,7 +1361,7 @@ function computeIqdModule({
 
 function buildNexoMethodology(assetContext = {}) {
   return {
-    version: "2.5.0",
+    version: "2.5.1",
     purpose:
       "Bloco metodológico enviado junto com os dados para que a IA interprete corretamente os indicadores proprietários do NEXO, mesmo sem conhecimento prévio do método.",
     assetContext: {
@@ -1336,7 +1475,7 @@ function buildNexoMethodology(assetContext = {}) {
       ECS:
         "Usar indicadores de dívida, liquidez, caixa, netDebtToEbitda e dados de balanço/DFC quando disponíveis.",
       IQD:
-        "Usar nexoModules.IQD como score determinístico de qualidade/completude dos dados. A IA deve interpretar o número e seus componentes, não recalcular o IQD por conta própria.",
+        "Usar nexoModules.IQD como score determinístico de qualidade/completude dos dados. Na v2 setorial, diferenciar dado ausente de métrica não aplicável ao modelo de negócio, especialmente bancos e seguradoras. A IA deve interpretar o número e seus componentes, não recalcular o IQD por conta própria.",
       WACC:
         "O route apenas prepara insumos. O WACC deve ser calculado em motor separado usando taxa livre de risco, prêmio de risco, beta, custo da dívida e estrutura de capital.",
     },
@@ -2677,3 +2816,4 @@ export async function GET(request) {
     );
   }
 }
+
