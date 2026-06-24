@@ -5,14 +5,20 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * NEXO Data Core - Asset Route V2.4.5
+ * NEXO Data Core - Asset Route V2.4.6
  *
- * V2.4.5 (fio do risk-free fechado):
+ * V2.4.6 (margens BR + FCF blindado):
  * - Lê data/nexo_macro.csv (gerado pelo coletor offline, commitado no repo)
  * - Passa Selic vigente (BRL) / Fed Funds vigente (USD) ao computeMarketDerived
  *   no lugar do macro=null -> mata o fallback_zero do Sharpe/Sortino.
  * - Expoe nexoMacroRegime no payload (consciencia de ciclo p/ a Claude).
  * - Falha graciosa: sem CSV, volta ao fallback_zero honesto (nao quebra).
+ *
+ * V2.4.6:
+ * - Sobe margens BR do bloco fundamentals.margins para keyIndicators.
+ * - Adiciona computeFreeCashFlow(OCF, CAPEX) com blindagem de sinal e preservação de null.
+ * - Remove chaves duplicadas em derivedAdvanced.
+ * - Sincroniza nexoMethodology.version com a versão do route.
  *
  * Arquitetura atual:
  * - Ações BR: HG Brasil
@@ -717,10 +723,6 @@ function computeMarketDerived(candles, currentPrice, currency = "BRL", macro = n
     sortinoRatio: round(sortinoRatio, 2),
     cagrPercent: round(cagrPercent, 2),
     cagrMethod: smoothedCagr.method,
-    riskFreeRateUsedPercent: round(riskFreeRate.value, 2),
-    riskFreeRateSource: riskFreeRate.source,
-    riskFreeRateStatus: riskFreeRate.status,
-    cagrMethod: smoothedCagr.method,
     cagrStartAnchor: round(smoothedCagr.startAnchor, 4),
     cagrEndAnchor: round(smoothedCagr.endAnchor, 4),
     riskFreeRateUsedPercent: round(riskFreeRate.value, 2),
@@ -803,7 +805,7 @@ function classifyLiquidityByFinancialVolume(avgFinancialVolume, currency = "BRL"
 
 function buildNexoMethodology(assetContext = {}) {
   return {
-    version: "2.2",
+    version: "2.4.6",
     purpose:
       "Bloco metodológico enviado junto com os dados para que a IA interprete corretamente os indicadores proprietários do NEXO, mesmo sem conhecimento prévio do método.",
     assetContext: {
@@ -932,6 +934,27 @@ function computeGrowth(latest, previous, fields) {
     result[`${field}_growth_percent`] = round(pct(latest?.[field], previous?.[field]), 2);
   }
   return result;
+}
+
+
+function pickFirst(obj, keys) {
+  for (const key of keys || []) {
+    const value = toNumber(obj?.[key]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+function computeFreeCashFlow(ocf, capex) {
+  const o = toNumber(ocf);
+  const c = toNumber(capex);
+
+  // Não fabricar FCF quando CAPEX estiver ausente.
+  // Ex.: bancos/seguradoras podem retornar capex null.
+  if (o === null || c === null) return null;
+
+  // Robustez contra fontes que entregam CAPEX positivo ou negativo.
+  return o - Math.abs(c);
 }
 
 function safeDivide(a, b) {
@@ -1224,6 +1247,7 @@ function keyIndicatorsFromHg(asset, fundamentals) {
   const leverage = fundamentals?.leverage || {};
   const profitability = fundamentals?.profitability || {};
   const dividends = fundamentals?.dividends || {};
+  const margins = fundamentals?.margins || {};
 
   return {
     ok: true,
@@ -1249,6 +1273,34 @@ function keyIndicatorsFromHg(asset, fundamentals) {
     priceToFcf: valuation.price_to_free_cash_flow_ratio ?? null,
     eps: valuation.earnings_per_share ?? null,
     bookValuePerShare: valuation.book_value_per_share ?? null,
+    grossMarginPercent: pickFirst(margins, [
+      "gross_profit_margin",
+      "gross_margin",
+      "gross_margin_percent",
+      "grossMargin",
+      "margem_bruta",
+    ]),
+    ebitdaMarginPercent: pickFirst(margins, [
+      "ebitda_margin",
+      "ebitda_margin_percent",
+      "ebitdaMargin",
+      "margem_ebitda",
+    ]),
+    operatingMarginPercent: pickFirst(margins, [
+      "ebit_margin",
+      "operating_margin",
+      "operating_margin_percent",
+      "operatingMargin",
+      "margem_operacional",
+    ]),
+    netMarginPercent: pickFirst(margins, [
+      "net_profit_margin",
+      "net_margin",
+      "net_margin_percent",
+      "profit_margin",
+      "netMargin",
+      "margem_liquida",
+    ]),
     roe: profitability.return_on_equity ?? null,
     roa: profitability.return_on_assets ?? null,
     roic: profitability.return_on_invested_capital ?? null,
@@ -1398,13 +1450,10 @@ async function buildB3Asset(ticker, options) {
             capex:
               financialStatements.cashFlow.latestFY?.investing
                 ?.capital_expenditures ?? null,
-            freeCashFlow:
-              (financialStatements.cashFlow.latestFY?.operating?.total ?? null) !== null &&
-              (financialStatements.cashFlow.latestFY?.investing
-                ?.capital_expenditures ?? null) !== null
-                ? financialStatements.cashFlow.latestFY.operating.total +
-                  financialStatements.cashFlow.latestFY.investing.capital_expenditures
-                : null,
+            freeCashFlow: computeFreeCashFlow(
+              financialStatements.cashFlow.latestFY?.operating?.total,
+              financialStatements.cashFlow.latestFY?.investing?.capital_expenditures
+            ),
             dividendsPaid:
               financialStatements.cashFlow.latestFY?.financing?.dividends_paid ??
               null,
