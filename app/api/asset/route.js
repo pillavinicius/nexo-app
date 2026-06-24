@@ -5,9 +5,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * NEXO Data Core - Asset Route V2.4.6
+ * NEXO Data Core - Asset Route V2.5.0
  *
- * V2.4.6 (margens BR + FCF blindado):
+ * V2.5.0 (IQD determinístico):
  * - Lê data/nexo_macro.csv (gerado pelo coletor offline, commitado no repo)
  * - Passa Selic vigente (BRL) / Fed Funds vigente (USD) ao computeMarketDerived
  *   no lugar do macro=null -> mata o fallback_zero do Sharpe/Sortino.
@@ -19,6 +19,12 @@ import { join } from "node:path";
  * - Adiciona computeFreeCashFlow(OCF, CAPEX) com blindagem de sinal e preservação de null.
  * - Remove chaves duplicadas em derivedAdvanced.
  * - Sincroniza nexoMethodology.version com a versão do route.
+ *
+ * V2.5.0:
+ * - Materializa o IQD como score determinístico em nexoModules.IQD.
+ * - Mantém os módulos proprietários como números auditáveis, não apenas prompt.
+ * - IQD usa pesos explícitos e trata FIIs/ETFs com FundamentalDepth/StatementsDepth = N/A.
+ * - Inclui margens BR em hasMargin para ações brasileiras.
  *
  * Arquitetura atual:
  * - Ações BR: HG Brasil
@@ -803,9 +809,420 @@ function classifyLiquidityByFinancialVolume(avgFinancialVolume, currency = "BRL"
   return "baixa";
 }
 
+
+function clampScore(value) {
+  const n = toNumber(value);
+  if (n === null) return null;
+  return Math.max(0, Math.min(100, n));
+}
+
+function scoreByPresence(value, fullScore = 100, zeroScore = 0) {
+  return value !== null && value !== undefined ? fullScore : zeroScore;
+}
+
+function countPresent(values = []) {
+  return (values || []).filter((v) => v !== null && v !== undefined).length;
+}
+
+function weightedAverageDimensions(dimensions = {}) {
+  const active = Object.values(dimensions || {}).filter(
+    (d) => d && d.applicable !== false && toNumber(d.weight) !== null && toNumber(d.score) !== null
+  );
+
+  const totalWeight = active.reduce((sum, d) => sum + toNumber(d.weight), 0);
+  if (!active.length || !totalWeight) return null;
+
+  const weighted = active.reduce(
+    (sum, d) => sum + toNumber(d.score) * toNumber(d.weight),
+    0
+  );
+
+  return weighted / totalWeight;
+}
+
+function classifyIqdScore(score) {
+  const s = toNumber(score);
+  if (s === null) return "indefinido";
+  if (s >= 85) return "alta";
+  if (s >= 70) return "boa";
+  if (s >= 50) return "média";
+  return "baixa";
+}
+
+function historyDepthScore(candlesCount) {
+  const c = toNumber(candlesCount);
+  if (c === null || c <= 0) return 0;
+
+  // Esta escala mede profundidade de dados, não qualidade do ativo.
+  // 252 candles = leitura anual mínima. 504+ = leitura mais robusta.
+  if (c >= 1000) return 100;
+  if (c >= 756) return 95;
+  if (c >= 504) return 90;
+  if (c >= 351) return 85;
+  if (c >= 252) return 80;
+  if (c >= 126) return 60;
+  if (c >= 60) return 40;
+  return 20;
+}
+
+function computeQuoteIntegrityScore(asset = {}) {
+  const checks = {
+    price: asset?.price,
+    currency: asset?.currency,
+    assetType: asset?.assetType,
+    name: asset?.name || asset?.fullName,
+    volume: asset?.market?.volume,
+  };
+
+  const present = countPresent(Object.values(checks));
+  const score = (present / Object.keys(checks).length) * 100;
+
+  return {
+    applicable: true,
+    weight: 20,
+    score: round(score, 0),
+    status: present === Object.keys(checks).length ? "complete" : "partial",
+    components: Object.fromEntries(
+      Object.entries(checks).map(([k, v]) => [k, v !== null && v !== undefined])
+    ),
+  };
+}
+
+function computeHistoryDepthDimension(history = {}, derivedAdvanced = {}, nexoMetrics = {}) {
+  const candlesCount =
+    toNumber(history?.dailyCandlesCount) ??
+    toNumber(history?.candlesCount) ??
+    toNumber(derivedAdvanced?.candlesCount);
+
+  const depth = historyDepthScore(candlesCount);
+
+  const metricChecks = {
+    maxDrawdown: derivedAdvanced?.maxDrawdownPercent ?? nexoMetrics?.maxDrawdownPercent,
+    volatility: derivedAdvanced?.volatility90dAnnualizedPercent ?? nexoMetrics?.volatility90dAnnualizedPercent,
+    cagr: derivedAdvanced?.cagrPercent ?? nexoMetrics?.cagrPercent,
+    riskFree: derivedAdvanced?.riskFreeRateStatus,
+    liquidity: nexoMetrics?.averageFinancialVolume,
+  };
+
+  const present = countPresent(Object.values(metricChecks));
+  const metricScore = (present / Object.keys(metricChecks).length) * 100;
+
+  const score = depth * 0.7 + metricScore * 0.3;
+
+  return {
+    applicable: true,
+    weight: 25,
+    score: round(score, 0),
+    status:
+      candlesCount >= 504
+        ? "long"
+        : candlesCount >= 252
+        ? "annual_minimum"
+        : candlesCount > 0
+        ? "short_preliminary"
+        : "missing",
+    candlesCount,
+    components: {
+      historyDepthScore: round(depth, 0),
+      derivedMetricsScore: round(metricScore, 0),
+      checks: Object.fromEntries(
+        Object.entries(metricChecks).map(([k, v]) => [k, v !== null && v !== undefined])
+      ),
+    },
+  };
+}
+
+function hasAnyMargin(keyIndicators = {}, fundamentals = {}) {
+  const margins = fundamentals?.margins || {};
+  const values = [
+    keyIndicators?.grossMarginPercent,
+    keyIndicators?.ebitdaMarginPercent,
+    keyIndicators?.operatingMarginPercent,
+    keyIndicators?.netMarginPercent,
+    keyIndicators?.grossMargin,
+    keyIndicators?.operatingMargin,
+    keyIndicators?.profitMargin,
+    margins?.gross_profit_margin,
+    margins?.ebitda_margin,
+    margins?.ebit_margin,
+    margins?.net_profit_margin,
+  ];
+  return values.some((v) => toNumber(v) !== null);
+}
+
+function computeFundamentalDepthDimension(asset = {}, keyIndicators = {}, fundamentals = {}, route = "") {
+  const assetType = String(asset?.assetType || "").toLowerCase();
+  const routeName = String(route || "");
+
+  const isFundOrEtf =
+    assetType.includes("fii") ||
+    assetType.includes("fund") ||
+    assetType.includes("fundo") ||
+    assetType.includes("etf");
+
+  if (isFundOrEtf) {
+    return {
+      applicable: false,
+      weight: 0,
+      score: null,
+      status: "N/A",
+      reason:
+        "FundamentalDepth corporativo não é aplicável para FIIs/ETFs no modo econômico atual. O IQD redistribui o peso entre quote, histórico, macro e consistência.",
+      components: {
+        assetType,
+        fundamentalsOk: !!fundamentals?.ok,
+      },
+    };
+  }
+
+  const valuationChecks = {
+    pe: keyIndicators?.pe,
+    pb: keyIndicators?.pb,
+    evEbitda: keyIndicators?.evEbitda,
+    eps: keyIndicators?.eps,
+    bookValuePerShare: keyIndicators?.bookValuePerShare,
+  };
+
+  const marginChecks = {
+    hasMargin: hasAnyMargin(keyIndicators, fundamentals),
+  };
+
+  const profitabilityChecks = {
+    roe: keyIndicators?.roe,
+    roa: keyIndicators?.roa,
+    roic: keyIndicators?.roic,
+  };
+
+  const leverageChecks = {
+    currentRatio: keyIndicators?.currentRatio,
+    debtToEquity: keyIndicators?.debtToEquity,
+    netDebtToEbitda: keyIndicators?.netDebtToEbitda,
+  };
+
+  const dividendChecks = {
+    dividendYieldPercent: keyIndicators?.dividendYieldPercent,
+    dividends12mCash: keyIndicators?.dividends12mCash,
+  };
+
+  const valuationScore =
+    (countPresent(Object.values(valuationChecks)) / Object.keys(valuationChecks).length) * 100;
+  const marginScore = marginChecks.hasMargin ? 100 : 0;
+  const profitabilityScore =
+    (countPresent(Object.values(profitabilityChecks)) / Object.keys(profitabilityChecks).length) * 100;
+  const leverageScore =
+    (countPresent(Object.values(leverageChecks)) / Object.keys(leverageChecks).length) * 100;
+  const dividendScore =
+    (countPresent(Object.values(dividendChecks)) / Object.keys(dividendChecks).length) * 100;
+
+  const score =
+    valuationScore * 0.30 +
+    marginScore * 0.25 +
+    profitabilityScore * 0.20 +
+    leverageScore * 0.20 +
+    dividendScore * 0.05;
+
+  return {
+    applicable: true,
+    weight: 25,
+    score: round(score, 0),
+    status:
+      score >= 85
+        ? "deep"
+        : score >= 70
+        ? "good"
+        : score >= 50
+        ? "partial"
+        : "shallow",
+    components: {
+      valuationScore: round(valuationScore, 0),
+      marginScore: round(marginScore, 0),
+      profitabilityScore: round(profitabilityScore, 0),
+      leverageScore: round(leverageScore, 0),
+      dividendScore: round(dividendScore, 0),
+      hasMargin: marginChecks.hasMargin,
+      checks: {
+        valuation: Object.fromEntries(
+          Object.entries(valuationChecks).map(([k, v]) => [k, v !== null && v !== undefined])
+        ),
+        profitability: Object.fromEntries(
+          Object.entries(profitabilityChecks).map(([k, v]) => [k, v !== null && v !== undefined])
+        ),
+        leverage: Object.fromEntries(
+          Object.entries(leverageChecks).map(([k, v]) => [k, v !== null && v !== undefined])
+        ),
+      },
+    },
+  };
+}
+
+function computeStatementsDepthDimension(asset = {}, financialStatements = {}, route = "") {
+  const assetType = String(asset?.assetType || "").toLowerCase();
+  const isFundOrEtf =
+    assetType.includes("fii") ||
+    assetType.includes("fund") ||
+    assetType.includes("fundo") ||
+    assetType.includes("etf");
+
+  if (isFundOrEtf) {
+    return {
+      applicable: false,
+      weight: 0,
+      score: null,
+      status: "N/A",
+      reason:
+        "Statements corporativos não são exigidos para FIIs/ETFs neste route. Profundidade FII virá de Partnr/Biblioteca Viva.",
+      components: {
+        balanceSheet: !!financialStatements?.balanceSheet?.ok,
+        incomeStatement: !!financialStatements?.incomeStatement?.ok,
+        cashFlow: !!financialStatements?.cashFlow?.ok,
+      },
+    };
+  }
+
+  const checks = {
+    balanceSheet: !!financialStatements?.balanceSheet?.ok,
+    incomeStatement: !!financialStatements?.incomeStatement?.ok,
+    cashFlow: !!financialStatements?.cashFlow?.ok,
+  };
+
+  const score = (Object.values(checks).filter(Boolean).length / Object.keys(checks).length) * 100;
+
+  return {
+    applicable: true,
+    weight: 20,
+    score: round(score, 0),
+    status: score === 100 ? "complete" : score > 0 ? "partial" : "missing",
+    components: checks,
+  };
+}
+
+function computeMacroContextDimension(derivedAdvanced = {}, nexoMacroRegime = null) {
+  const riskFreeApplied = derivedAdvanced?.riskFreeRateStatus === "applied_from_macro";
+  const hasRiskFreeValue = toNumber(derivedAdvanced?.riskFreeRateUsedPercent) !== null;
+  const hasRegime = !!nexoMacroRegime?.br || !!nexoMacroRegime?.us;
+
+  const score =
+    (riskFreeApplied ? 50 : hasRiskFreeValue ? 25 : 0) +
+    (hasRegime ? 50 : 0);
+
+  return {
+    applicable: true,
+    weight: 10,
+    score: round(score, 0),
+    status: riskFreeApplied && hasRegime ? "complete" : score > 0 ? "partial" : "missing",
+    components: {
+      riskFreeApplied,
+      riskFreeRateUsedPercent: derivedAdvanced?.riskFreeRateUsedPercent ?? null,
+      riskFreeRateSource: derivedAdvanced?.riskFreeRateSource ?? null,
+      riskFreeRateStatus: derivedAdvanced?.riskFreeRateStatus ?? null,
+      hasMacroRegime: hasRegime,
+    },
+  };
+}
+
+function computeConsistencyDimension(errors = [], derivedPackage = {}, keyIndicators = {}) {
+  const errorCount = Array.isArray(errors) ? errors.length : 0;
+  const derivedOk = !!derivedPackage?.derived?.ok || !!derivedPackage?.ok;
+  const nexoMetricsOk = !!derivedPackage?.nexoMetrics?.ok;
+  const priceOk = toNumber(keyIndicators?.price) !== null;
+
+  let score = 100;
+  if (errorCount > 0) score -= Math.min(40, errorCount * 10);
+  if (!derivedOk) score -= 25;
+  if (!nexoMetricsOk) score -= 15;
+  if (!priceOk) score -= 20;
+
+  return {
+    applicable: true,
+    weight: 20,
+    score: round(clampScore(score), 0),
+    status: score >= 85 ? "clean" : score >= 70 ? "minor_warnings" : "attention",
+    components: {
+      errorCount,
+      derivedOk,
+      nexoMetricsOk,
+      priceOk,
+    },
+  };
+}
+
+function computeIqdModule({
+  route,
+  asset,
+  keyIndicators,
+  fundamentals,
+  financialStatements,
+  history,
+  derivedPackage,
+  nexoMacroRegime,
+  errors,
+} = {}) {
+  const derivedAdvanced =
+    derivedPackage?.derivedAdvanced ||
+    derivedPackage?.derived?.derivedAdvanced ||
+    null;
+
+  const nexoMetrics =
+    derivedPackage?.nexoMetrics ||
+    derivedPackage?.derived?.nexoMetrics ||
+    null;
+
+  const dimensions = {
+    quoteIntegrity: computeQuoteIntegrityScore(asset),
+    historyDepth: computeHistoryDepthDimension(history, derivedAdvanced, nexoMetrics),
+    fundamentalDepth: computeFundamentalDepthDimension(asset, keyIndicators, fundamentals, route),
+    statementsDepth: computeStatementsDepthDimension(asset, financialStatements, route),
+    macroContext: computeMacroContextDimension(derivedAdvanced, nexoMacroRegime),
+    consistency: computeConsistencyDimension(errors, derivedPackage, keyIndicators),
+  };
+
+  const score = weightedAverageDimensions(dimensions);
+  const rating = classifyIqdScore(score);
+
+  const warnings = [];
+
+  if (dimensions.historyDepth?.status === "short_preliminary") {
+    warnings.push("Histórico curto: métricas anualizadas devem ser interpretadas como preliminares.");
+  }
+
+  if (dimensions.fundamentalDepth?.applicable === false) {
+    warnings.push("FundamentalDepth corporativo marcado como N/A para este tipo de ativo.");
+  }
+
+  if (dimensions.macroContext?.components?.riskFreeRateStatus === "fallback_zero") {
+    warnings.push("Risk-free em fallback_zero: Sharpe/Sortino ficam menos confiáveis.");
+  }
+
+  if ((errors || []).length > 0) {
+    warnings.push("Há erros/limitações de fonte no payload; avaliar antes do veredito.");
+  }
+
+  return {
+    ok: score !== null,
+    module: "IQD",
+    version: "IQD_v1.0",
+    score: round(score, 0),
+    rating,
+    meaning:
+      "IQD mede a qualidade, completude e confiabilidade do dado recebido. Não mede qualidade do ativo, valuation ou recomendação.",
+    dimensions,
+    warnings,
+    interpretationGuide: {
+      alta:
+        "Dados amplos e suficientes para análise quantitativa inicial. Ainda exige julgamento da tese e do valuation.",
+      boa:
+        "Dados bons, mas com alguma limitação de profundidade, histórico ou fonte.",
+      média:
+        "Dados parciais. A IA deve usar linguagem cautelosa e evitar conclusões fortes.",
+      baixa:
+        "Dados insuficientes ou frágeis. A análise deve ser tratada como preliminar.",
+    },
+  };
+}
+
 function buildNexoMethodology(assetContext = {}) {
   return {
-    version: "2.4.6",
+    version: "2.5.0",
     purpose:
       "Bloco metodológico enviado junto com os dados para que a IA interprete corretamente os indicadores proprietários do NEXO, mesmo sem conhecimento prévio do método.",
     assetContext: {
@@ -919,7 +1336,7 @@ function buildNexoMethodology(assetContext = {}) {
       ECS:
         "Usar indicadores de dívida, liquidez, caixa, netDebtToEbitda e dados de balanço/DFC quando disponíveis.",
       IQD:
-        "Usar qualidade, completude e consistência dos dados. Penalizar análises quando dados essenciais estiverem ausentes.",
+        "Usar nexoModules.IQD como score determinístico de qualidade/completude dos dados. A IA deve interpretar o número e seus componentes, não recalcular o IQD por conta própria.",
       WACC:
         "O route apenas prepara insumos. O WACC deve ser calculado em motor separado usando taxa livre de risco, prêmio de risco, beta, custo da dívida e estrutura de capital.",
     },
@@ -1489,6 +1906,19 @@ async function buildB3Asset(ticker, options) {
     derivedAdvanced: derivedPackage.derivedAdvanced || null,
     nexoMetrics: derivedPackage.nexoMetrics || null,
     nexoFinancialDerived,
+    nexoModules: {
+      IQD: computeIqdModule({
+        route: "B3_HG_BRASIL",
+        asset,
+        keyIndicators,
+        fundamentals,
+        financialStatements,
+        history,
+        derivedPackage,
+        nexoMacroRegime: loadNexoMacro()?.regime || null,
+        errors,
+      }),
+    },
     nexoMethodology: buildNexoMethodology({
       ticker,
       assetType: asset.assetType,
@@ -2141,6 +2571,22 @@ async function buildInternationalAsset(ticker, options) {
     derivedAdvanced: derivedPackage.derivedAdvanced || null,
     nexoMetrics: derivedPackage.nexoMetrics || null,
     nexoFinancialDerived,
+    nexoModules: {
+      IQD: computeIqdModule({
+        route: "INTERNATIONAL_TWELVE_DATA",
+        asset,
+        keyIndicators,
+        fundamentals: statistics || null,
+        financialStatements: statements,
+        history: {
+          ok: candles.length > 0,
+          dailyCandlesCount: candles.length,
+        },
+        derivedPackage,
+        nexoMacroRegime: loadNexoMacro()?.regime || null,
+        errors,
+      }),
+    },
     nexoMethodology: buildNexoMethodology({
       ticker,
       assetType: asset.assetType,
