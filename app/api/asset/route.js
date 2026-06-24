@@ -5,9 +5,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * NEXO Data Core - Asset Route V2.5.1
+ * NEXO Data Core - Asset Route V2.5.2
  *
- * V2.5.1 (IQD v2 setorial):
+ * V2.5.2 (IQD history calibration fix):
  * - Lê data/nexo_macro.csv (gerado pelo coletor offline, commitado no repo)
  * - Passa Selic vigente (BRL) / Fed Funds vigente (USD) ao computeMarketDerived
  *   no lugar do macro=null -> mata o fallback_zero do Sharpe/Sortino.
@@ -32,6 +32,12 @@ import { join } from "node:path";
  * - Cria perfil econômico do ativo: corporate_industrial, financial_bank, financial_insurance, fund_or_etf.
  * - Para bancos/seguradoras, FundamentalDepth não exige margens industriais.
  * - Mantém FII/ETF com FundamentalDepth/StatementsDepth = N/A no modo econômico.
+ *
+ * V2.5.2:
+ * - Corrige a calibragem do historyDepth do IQD.
+ * - Histórico curto (~250–400 candles) volta a ser gargalo real.
+ * - Mantém IQD v2 setorial: bancos/seguradoras não exigem margem industrial.
+ * - Mantém regra: histórico longo nominal não ajustado por splits não deve alimentar métricas longas de trajetória.
  *
  * Arquitetura atual:
  * - Ações BR: HG Brasil
@@ -860,16 +866,18 @@ function historyDepthScore(candlesCount) {
   const c = toNumber(candlesCount);
   if (c === null || c <= 0) return 0;
 
-  // Esta escala mede profundidade de dados, não qualidade do ativo.
-  // 252 candles = leitura anual mínima. 504+ = leitura mais robusta.
-  if (c >= 1000) return 100;
-  if (c >= 756) return 95;
-  if (c >= 504) return 90;
-  if (c >= 351) return 85;
-  if (c >= 252) return 80;
-  if (c >= 126) return 60;
-  if (c >= 60) return 40;
-  return 20;
+  // Calibragem conservadora do IQD:
+  // O objetivo é medir profundidade real de histórico, não apenas presença de série.
+  // ~1 ano útil não deve receber nota quase máxima.
+  // A OkaneBox só deve elevar este score quando entregar histórico longo confiável.
+  if (c >= 2000) return 100; // ~8 anos úteis ou mais
+  if (c >= 1260) return 95;  // ~5 anos úteis
+  if (c >= 756) return 85;   // ~3 anos úteis
+  if (c >= 504) return 70;   // ~2 anos úteis
+  if (c >= 252) return 50;   // ~1 ano útil
+  if (c >= 126) return 35;   // ~6 meses
+  if (c >= 60) return 20;    // ~3 meses
+  return 10;
 }
 
 function computeQuoteIntegrityScore(asset = {}) {
@@ -914,17 +922,23 @@ function computeHistoryDepthDimension(history = {}, derivedAdvanced = {}, nexoMe
   const present = countPresent(Object.values(metricChecks));
   const metricScore = (present / Object.keys(metricChecks).length) * 100;
 
-  const score = depth * 0.7 + metricScore * 0.3;
+  // A disponibilidade de métricas derivadas não compensa falta de histórico.
+  // Métricas derivadas com poucos candles existem, mas têm menor força analítica.
+  const score = depth * 0.9 + metricScore * 0.1;
 
   return {
     applicable: true,
     weight: 25,
     score: round(score, 0),
     status:
-      candlesCount >= 504
+      candlesCount >= 2000
+        ? "long_deep"
+        : candlesCount >= 1260
         ? "long"
+        : candlesCount >= 504
+        ? "medium"
         : candlesCount >= 252
-        ? "annual_minimum"
+        ? "annual_minimum_but_limited"
         : candlesCount > 0
         ? "short_preliminary"
         : "missing",
@@ -1311,8 +1325,13 @@ function computeIqdModule({
 
   const warnings = [];
 
-  if (dimensions.historyDepth?.status === "short_preliminary") {
-    warnings.push("Histórico curto: métricas anualizadas devem ser interpretadas como preliminares.");
+  if (
+    dimensions.historyDepth?.status === "short_preliminary" ||
+    dimensions.historyDepth?.status === "annual_minimum_but_limited"
+  ) {
+    warnings.push(
+      "Histórico limitado: métricas anualizadas devem ser interpretadas com cautela; histórico longo ajustado por eventos societários é necessário para leitura robusta."
+    );
   }
 
   if (dimensions.fundamentalDepth?.applicable === false) {
@@ -1339,11 +1358,11 @@ function computeIqdModule({
   return {
     ok: score !== null,
     module: "IQD",
-    version: "IQD_v2.0_sectoral",
+    version: "IQD_v2.1_history_calibrated",
     score: round(score, 0),
     rating,
     meaning:
-      "IQD mede a qualidade, completude e confiabilidade do dado recebido. No v2 setorial, diferencia dado faltante de métrica não aplicável ao modelo de negócio. Não mede qualidade do ativo, valuation ou recomendação.",
+      "IQD mede a qualidade, completude e confiabilidade do dado recebido. No v2.1, histórico curto volta a ser gargalo real e o modelo diferencia dado faltante de métrica não aplicável ao negócio. Não mede qualidade do ativo, valuation ou recomendação.",
     dimensions,
     warnings,
     interpretationGuide: {
@@ -1361,7 +1380,7 @@ function computeIqdModule({
 
 function buildNexoMethodology(assetContext = {}) {
   return {
-    version: "2.5.1",
+    version: "2.5.2",
     purpose:
       "Bloco metodológico enviado junto com os dados para que a IA interprete corretamente os indicadores proprietários do NEXO, mesmo sem conhecimento prévio do método.",
     assetContext: {
@@ -1475,7 +1494,7 @@ function buildNexoMethodology(assetContext = {}) {
       ECS:
         "Usar indicadores de dívida, liquidez, caixa, netDebtToEbitda e dados de balanço/DFC quando disponíveis.",
       IQD:
-        "Usar nexoModules.IQD como score determinístico de qualidade/completude dos dados. Na v2 setorial, diferenciar dado ausente de métrica não aplicável ao modelo de negócio, especialmente bancos e seguradoras. A IA deve interpretar o número e seus componentes, não recalcular o IQD por conta própria.",
+        "Usar nexoModules.IQD como score determinístico de qualidade/completude dos dados. Na v2.1, histórico curto deve reduzir a confiança mesmo quando os demais dados estão completos; diferenciar dado ausente de métrica não aplicável ao modelo de negócio, especialmente bancos e seguradoras. A IA deve interpretar o número e seus componentes, não recalcular o IQD por conta própria.",
       WACC:
         "O route apenas prepara insumos. O WACC deve ser calculado em motor separado usando taxa livre de risco, prêmio de risco, beta, custo da dívida e estrutura de capital.",
     },
