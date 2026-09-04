@@ -22,6 +22,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias reproduziveis
+        run: npm ci
+
+      # GATE 0 - os dois caminhos legados ainda precisam representar o mesmo contrato.
+      # Em P1 o schema passa a ter uma unica fonte canonica.
+      - name: Conferir sincronia dos schemas NMI
+        run: |
+          cmp -s contracts/context.schema.json lib/nmi/context.schema.json || {
+            echo "Schemas NMI divergentes"
+            diff -u contracts/context.schema.json lib/nmi/context.schema.json || true
+            exit 1
+          }
 
       # GATE 1 — contrato do Context Package (NMI)
       - name: Self-test do contrato NMI
@@ -45,3 +59,7 @@ jobs:
         run: |
           test -s data/nexo_macro.csv || { echo "data/nexo_macro.csv ausente ou vazio"; exit 1; }
           echo "linhas no CSV: $(wc -l < data/nexo_macro.csv)"
+
+      # GATE 5 - evita deploy de codigo que passa nos contratos mas nao compila.
+      - name: Build de producao
+        run: npm run build

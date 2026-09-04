@@ -5,10 +5,15 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test:nmi": "NEXO_SELFTEST=1 node lib/nmi/nexo_context_validator.mjs",
+    "test:macro": "NEXO_SELFTEST=1 node scripts/nexo_macro_collector.mjs",
+    "validate:context": "node scripts/validate_context.mjs data/context/latest.json",
+    "test": "npm run test:nmi && npm run test:macro && npm run validate:context",
+    "ci": "npm test && npm run build"
   },
   "dependencies": {
-    "next": "14.2.5",
+    "next": "16.3.4",
     "react": "^18",
     "react-dom": "^18"
   }

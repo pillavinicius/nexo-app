@@ -50,6 +50,15 @@ O push dispara o redeploy na Vercel sozinho.
 `riskFreeRateStatus: "applied_from_macro"`. Se voltar `fallback_zero`,
 o CSV não foi empacotado — cheque `outputFileTracingIncludes` no `next.config.js`.
 
+Antes do teste com ticker, abra `/api/health`. O retorno deve ter:
+
+- `status: "ok"`;
+- `data.macro.available: true`;
+- `data.context.available: true`.
+
+`data.context.isSeedMode: true` é permitido enquanto a P1 não estiver concluída,
+mas o pacote seed não pode alimentar veredito.
+
 ---
 
 ## 2. Publicar um Context Package (NMI)
