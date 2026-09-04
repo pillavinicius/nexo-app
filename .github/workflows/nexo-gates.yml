@@ -1,0 +1,47 @@
+name: NEXO gates
+
+# Fecha o loop Vercel-safe: nenhum commit entra em main sem passar
+# nos self-tests deterministicos. O CI e a mesma lei que voce roda a mao
+# no Cloud Shell — so que automatica e sem esquecimento.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # GATE 1 — contrato do Context Package (NMI)
+      - name: Self-test do contrato NMI
+        run: NEXO_SELFTEST=1 node lib/nmi/nexo_context_validator.mjs
+
+      # GATE 2 — coletor macro (logica de calculo e classificacao)
+      - name: Self-test do coletor macro
+        run: NEXO_SELFTEST=1 node scripts/nexo_macro_collector.mjs
+
+      # GATE 3 — o pacote publicado obedece ao proprio contrato
+      - name: Validar Context Package publicado
+        run: |
+          if [ -f data/context/latest.json ]; then
+            node scripts/validate_context.mjs data/context/latest.json
+          else
+            echo "Nenhum pacote publicado ainda — gate pulado."
+          fi
+
+      # GATE 4 — o CSV macro existe e nao esta vazio
+      - name: Conferir presenca do CSV macro
+        run: |
+          test -s data/nexo_macro.csv || { echo "data/nexo_macro.csv ausente ou vazio"; exit 1; }
+          echo "linhas no CSV: $(wc -l < data/nexo_macro.csv)"

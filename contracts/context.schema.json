@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexo-app-sable.vercel.app/contracts/context.schema.json",
+  "title": "NEXO Context Package",
+  "description": "Contrato oficial do estado macro do NEXO, produzido pelo NMI e consumido por Scan, Deep, Daily/Weekly Intelligence, alertas e WhatsApp. v1.1 contem APENAS o que o NMI produz hoje com fontes gratuitas (BCB SGS, IBGE, Tesouro, B3 publico, CVM, agencias de rating). Campos novos entram por bump MINOR e sao SEMPRE opcionais. Tornar um campo obrigatorio, renomear, remover ou mudar unidade/significado de um campo e bump MAJOR. DELTA v1.0 -> v1.1: adicionado o status de watermark 'seed' (dado semente, nao coletado) e o flag booleano is_seed_mode. Ampliar enum e MINOR: consumidor antigo nunca RECEBE 'seed' de um produtor antigo.",
+  "type": "object",
+  "required": [
+    "contextSchemaVersion",
+    "context_id",
+    "as_of",
+    "market_close_date",
+    "run_type",
+    "version",
+    "source_watermarks",
+    "brazil",
+    "regime",
+    "quality"
+  ],
+  "properties": {
+    "contextSchemaVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "Versao do CONTRATO no formato MAJOR.MINOR. Nao confundir com 'version' (revisao da instancia do pacote)."
+    },
+    "context_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identificador unico e estavel do pacote, ex: ctx_2026-07-08_br_close_v1_t0."
+    },
+    "as_of": {
+      "type": "string",
+      "description": "Carimbo ISO-8601 de quando o pacote foi gerado."
+    },
+    "market_close_date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "Data de referencia do pregao (YYYY-MM-DD)."
+    },
+    "run_type": {
+      "type": "string",
+      "enum": ["t0_provisional", "t1_final", "t2_reconciled"],
+      "description": "Estado do ciclo de reconciliacao ancorado no calendario real da B3."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Revisao da instancia deste pacote (nao do contrato). Incrementa a cada reemissao do mesmo market_close_date."
+    },
+    "supersedes_context_id": {
+      "type": ["string", "null"],
+      "description": "context_id do pacote que este substitui na reconciliacao (T+0 -> T+1 -> T+2). null se nao substitui nada. LINEAGE: se version > 1, este campo NAO pode ser null."
+    },
+    "is_seed_mode": {
+      "type": "boolean",
+      "description": "v1.1. true quando QUALQUER watermark tem status 'seed'. Marca honesta de que o pacote contem dado semente e nao pode ser tratado como estado macro real. Consumidores devem sinalizar e rebaixar confianca."
+    },
+    "source_watermarks": {
+      "type": "object",
+      "description": "as_of + status por fonte. Chaves extras sao permitidas (forward-compat).",
+      "required": ["bcb_sgs", "ibge", "tesouro", "b3_trades", "b3_investor_flow", "ratings"],
+      "additionalProperties": {
+        "type": "object",
+        "required": ["as_of", "status"],
+        "properties": {
+          "as_of": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["official", "provisional", "licensed", "event_state", "seed"],
+            "description": "v1.1 adiciona 'seed': dado semente, nao coletado de fonte real. NUNCA use 'official' para semente."
+          }
+        }
+      }
+    },
+    "brazil": {
+      "type": "object",
+      "required": ["macro"],
+      "properties": {
+        "macro": {
+          "type": "object",
+          "required": [
+            "selic_target",
+            "focus_ipca_12m",
+            "ipca_12m",
+            "gross_debt_gdp",
+            "primary_balance_gdp"
+          ],
+          "properties": {
+            "selic_target": {
+              "type": "number", "minimum": 0, "maximum": 100,
+              "description": "Meta Selic a.a. em PERCENTUAL (ex: 14.25). Fonte: BCB SGS 432."
+            },
+            "real_rate_ex_12m": {
+              "type": ["number", "null"], "minimum": -50, "maximum": 100,
+              "description": "Juro real ex-ante 12m em PERCENTUAL. Derivado: Selic vs Focus IPCA 12m. null se insumo ausente."
+            },
+            "focus_ipca_12m": {
+              "type": "number",
+              "description": "Expectativa Focus de IPCA 12m em PERCENTUAL. Fonte: BCB Expectativas."
+            },
+            "ipca_12m": {
+              "type": "number",
+              "description": "IPCA realizado acumulado 12m em PERCENTUAL. Fonte: IBGE / BCB SGS 13522."
+            },
+            "gross_debt_gdp": {
+              "type": "number", "minimum": 0, "maximum": 5,
+              "description": "Divida bruta / PIB como FRACAO (ex: 0.80 = 80%). Fonte: BCB/Tesouro. ATENCAO: fracao, nao percentual."
+            },
+            "primary_balance_gdp": {
+              "type": "number", "minimum": -1, "maximum": 1,
+              "description": "Resultado primario / PIB 12m como FRACAO (ex: -0.0048). Fonte: Tesouro."
+            },
+            "structural_primary_balance_gdp": {
+              "type": ["number", "null"], "minimum": -1, "maximum": 1,
+              "description": "OPCIONAL. Primario estrutural / PIB como FRACAO. null enquanto o NMI nao tiver estimativa ciclica propria validada."
+            },
+            "unemployment": {
+              "type": ["number", "null"], "minimum": 0, "maximum": 1,
+              "description": "Taxa de desemprego PNAD como FRACAO (ex: 0.058 = 5.8%). Fonte: IBGE 24369."
+            }
+          }
+        },
+        "credit_system": {
+          "type": "object",
+          "description": "OPCIONAL em v1.x. Presente quando as series de credito estiverem no pacote.",
+          "properties": {
+            "credit_gdp": { "type": ["number", "null"], "minimum": 0, "maximum": 5,
+              "description": "Credito SFN / PIB como FRACAO. Fonte: BCB SGS 20622." },
+            "directed_credit_share": { "type": ["number", "null"], "minimum": 0, "maximum": 1,
+              "description": "Participacao do credito direcionado no saldo total como FRACAO. Fonte: BCB." },
+            "delinquency_90d_pf": { "type": ["number", "null"], "minimum": 0, "maximum": 1,
+              "description": "Inadimplencia PF >90d como FRACAO. Fonte: BCB." }
+          }
+        },
+        "equity": {
+          "type": "object",
+          "description": "OPCIONAL em v1.x. Fluxo estrangeiro so em T+2 (calendario B3).",
+          "properties": {
+            "turnover_total_brl": { "type": ["number", "null"], "minimum": 0,
+              "description": "Volume financeiro total do pregao em BRL. Disponivel D+1." },
+            "foreign_net_brl": { "type": ["number", "null"],
+              "description": "Fluxo liquido do estrangeiro em BRL. SO oficial em D+2; null em T+0/T+1." },
+            "foreign_net_status": { "type": "string",
+              "enum": ["t2_official", "t2_pending", "proxy"],
+              "description": "Procedencia do fluxo estrangeiro. t2_pending quando o dado oficial da B3 ainda nao saiu." }
+          }
+        },
+        "ratings": {
+          "type": "object",
+          "description": "OPCIONAL em v1.x. Estado soberano vigente por agencia (event-state, com outlook).",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["rating", "outlook"],
+            "properties": {
+              "rating": { "type": "string", "minLength": 1 },
+              "outlook": { "type": "string",
+                "enum": ["positive", "stable", "negative", "developing"] }
+            }
+          }
+        }
+      }
+    },
+    "regime": {
+      "type": "object",
+      "description": "Regime macro. Em v1.x SOMENTE rule-based deterministico. A camada de similaridade estatistica so entra quando passar em A/B cego contra este baseline (bump de contrato).",
+      "required": ["label", "method", "conviction_score"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1,
+          "description": "Rotulo do regime, ex: deterioracao_cronica_com_juros_altos." },
+        "method": { "type": "string", "const": "rule_based",
+          "description": "Trava de contrato: em v1.x o unico metodo aceito e rule_based. Similaridade estatistica exige bump e validacao A/B previa." },
+        "conviction_score": { "type": "number", "minimum": 0, "maximum": 1,
+          "description": "Conviccao rule-based no cenario [0,1]." },
+        "drivers": {
+          "type": "object",
+          "properties": {
+            "top_positive": { "type": "array", "items": { "type": "string" } },
+            "top_negative": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "country_risk": {
+      "type": "object",
+      "description": "OPCIONAL em v1.x. Usa proxy publico (EMBI+/risco-pais). CDS pago entra por bump quando/se houver feed licenciado.",
+      "properties": {
+        "embi_bps": { "type": ["number", "null"], "minimum": 0,
+          "description": "Risco-pais em bps (proxy EMBI+). null se indisponivel." }
+      }
+    },
+    "alerts": {
+      "type": "array",
+      "description": "OPCIONAL. Alertas ativos como state machine.",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "state"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1 },
+          "severity": { "type": "string", "enum": ["info", "warning", "critical"] },
+          "state": { "type": "string", "enum": ["active", "cleared"] }
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "required": ["freshness_score", "coverage_score", "overall_confidence"],
+      "properties": {
+        "freshness_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "coverage_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "provisional_penalty": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "seed_penalty": { "type": ["number", "null"], "minimum": 0, "maximum": 1,
+          "description": "v1.1. Penalidade aplicada por presenca de dado semente. Deve ser > 0 quando is_seed_mode e true." },
+        "overall_confidence": { "type": "number", "minimum": 0, "maximum": 1,
+          "description": "Confianca global do pacote. Deve CAIR quando campos opcionais esperados estiverem ausentes (ausencia ruidosa, nunca default silencioso). Em is_seed_mode, teto de 0.35." }
+      }
+    }
+  }
+}

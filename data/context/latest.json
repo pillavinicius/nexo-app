@@ -1,0 +1,57 @@
+{
+  "contextSchemaVersion": "1.1",
+  "context_id": "ctx_2026-09-04_br_close_v1_seed",
+  "as_of": "2026-09-04T12:31:37.234Z",
+  "market_close_date": "2026-09-04",
+  "run_type": "t0_provisional",
+  "version": 1,
+  "supersedes_context_id": null,
+  "is_seed_mode": true,
+  "source_watermarks": {
+    "bcb_sgs": {
+      "as_of": "2026-09-04T00:00:00-03:00",
+      "status": "seed"
+    },
+    "ibge": {
+      "as_of": "2026-09-04T00:00:00-03:00",
+      "status": "seed"
+    },
+    "tesouro": {
+      "as_of": "2026-09-04T00:00:00-03:00",
+      "status": "seed"
+    },
+    "b3_trades": {
+      "as_of": "2026-09-04T00:00:00-03:00",
+      "status": "seed"
+    },
+    "b3_investor_flow": {
+      "as_of": "2026-09-04T00:00:00-03:00",
+      "status": "seed"
+    },
+    "ratings": {
+      "as_of": "2026-09-04T00:00:00-03:00",
+      "status": "seed"
+    }
+  },
+  "brazil": {
+    "macro": {
+      "selic_target": 14.25,
+      "real_rate_ex_12m": null,
+      "focus_ipca_12m": 4.4,
+      "ipca_12m": 5.11,
+      "gross_debt_gdp": 0.8,
+      "primary_balance_gdp": -0.0048
+    }
+  },
+  "regime": {
+    "label": "seed_placeholder",
+    "method": "rule_based",
+    "conviction_score": 0.1
+  },
+  "quality": {
+    "freshness_score": 0.1,
+    "coverage_score": 0.3,
+    "seed_penalty": 0.6,
+    "overall_confidence": 0.15
+  }
+}
