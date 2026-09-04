@@ -1,57 +1,95 @@
 {
-  "contextSchemaVersion": "1.1",
-  "context_id": "ctx_2026-09-04_br_close_v1_seed",
-  "as_of": "2026-09-04T12:31:37.234Z",
+  "contextSchemaVersion": "1.2",
+  "context_id": "ctx_2026-09-04_br_close_v2_t0",
+  "as_of": "2026-09-04T16:03:56.871Z",
   "market_close_date": "2026-09-04",
   "run_type": "t0_provisional",
-  "version": 1,
-  "supersedes_context_id": null,
-  "is_seed_mode": true,
+  "version": 2,
+  "supersedes_context_id": "ctx_2026-09-04_br_close_v1_seed",
+  "is_seed_mode": false,
   "source_watermarks": {
     "bcb_sgs": {
-      "as_of": "2026-09-04T00:00:00-03:00",
-      "status": "seed"
+      "as_of": "2026-09-04",
+      "status": "official"
     },
     "ibge": {
-      "as_of": "2026-09-04T00:00:00-03:00",
-      "status": "seed"
+      "as_of": "2026-09-04T16:03:56.871Z",
+      "status": "unavailable"
     },
     "tesouro": {
-      "as_of": "2026-09-04T00:00:00-03:00",
-      "status": "seed"
+      "as_of": "2026-09-04T16:03:56.871Z",
+      "status": "unavailable"
     },
     "b3_trades": {
-      "as_of": "2026-09-04T00:00:00-03:00",
-      "status": "seed"
+      "as_of": "2026-09-04T16:03:56.871Z",
+      "status": "unavailable"
     },
     "b3_investor_flow": {
-      "as_of": "2026-09-04T00:00:00-03:00",
-      "status": "seed"
+      "as_of": "2026-09-04T16:03:56.871Z",
+      "status": "unavailable"
     },
     "ratings": {
-      "as_of": "2026-09-04T00:00:00-03:00",
-      "status": "seed"
+      "as_of": "2026-09-04T16:03:56.871Z",
+      "status": "unavailable"
+    }
+  },
+  "source_observations": {
+    "selic_target": {
+      "provider": "BCB_SGS",
+      "series_code": 432,
+      "status": "official",
+      "observed_at": "2026-09-04",
+      "value": 14,
+      "unit": "percent_per_year"
+    },
+    "ipca_12m": {
+      "provider": "BCB_SGS",
+      "series_code": 13522,
+      "status": "official",
+      "observed_at": "2026-07-01",
+      "value": 4.44,
+      "unit": "percent_12m"
+    },
+    "credit_gdp": {
+      "provider": "BCB_SGS",
+      "series_code": 20622,
+      "status": "official",
+      "observed_at": "2026-07-01",
+      "value": 0.5557,
+      "unit": "fraction_of_gdp"
     }
   },
   "brazil": {
     "macro": {
-      "selic_target": 14.25,
+      "selic_target": 14,
       "real_rate_ex_12m": null,
-      "focus_ipca_12m": 4.4,
-      "ipca_12m": 5.11,
-      "gross_debt_gdp": 0.8,
-      "primary_balance_gdp": -0.0048
+      "focus_ipca_12m": null,
+      "ipca_12m": 4.44,
+      "gross_debt_gdp": null,
+      "primary_balance_gdp": null
+    },
+    "credit_system": {
+      "credit_gdp": 0.5557
     }
   },
   "regime": {
-    "label": "seed_placeholder",
+    "label": "juros_altos_com_inflacao_proxima_da_banda",
     "method": "rule_based",
-    "conviction_score": 0.1
+    "conviction_score": 0.65,
+    "drivers": {
+      "top_positive": [
+        "inflacao_proxima_da_banda",
+        "credito_sfn_relevante"
+      ],
+      "top_negative": [
+        "juros_nominais_altos"
+      ]
+    }
   },
   "quality": {
-    "freshness_score": 0.1,
-    "coverage_score": 0.3,
-    "seed_penalty": 0.6,
-    "overall_confidence": 0.15
+    "freshness_score": 0.57,
+    "coverage_score": 0.43,
+    "provisional_penalty": 0.1,
+    "overall_confidence": 0.41
   }
 }

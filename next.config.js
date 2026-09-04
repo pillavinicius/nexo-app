@@ -8,6 +8,7 @@ const nextConfig = {
       "./data/nexo_macro.csv",
       "./data/context/latest.json",
     ],
+    "/api/nmi/context/latest": ["./data/context/latest.json"],
   },
   async headers() {
     return [

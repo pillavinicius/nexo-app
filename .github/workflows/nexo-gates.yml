@@ -27,19 +27,18 @@ jobs:
       - name: Instalar dependencias reproduziveis
         run: npm ci
 
-      # GATE 0 - os dois caminhos legados ainda precisam representar o mesmo contrato.
-      # Em P1 o schema passa a ter uma unica fonte canonica.
-      - name: Conferir sincronia dos schemas NMI
+      # GATE 0 - contrato NMI tem uma unica fonte canonica.
+      - name: Conferir schema canonico NMI
         run: |
-          cmp -s contracts/context.schema.json lib/nmi/context.schema.json || {
-            echo "Schemas NMI divergentes"
-            diff -u contracts/context.schema.json lib/nmi/context.schema.json || true
-            exit 1
-          }
+          test -s contracts/context.schema.json
+          test ! -e lib/nmi/context.schema.json || { echo "Schema legado duplicado"; exit 1; }
 
       # GATE 1 — contrato do Context Package (NMI)
       - name: Self-test do contrato NMI
         run: NEXO_SELFTEST=1 node lib/nmi/nexo_context_validator.mjs
+
+      - name: Self-test do produtor NMI BCB
+        run: NEXO_SELFTEST=1 node scripts/nmi_context_collector.mjs
 
       # GATE 2 — coletor macro (logica de calculo e classificacao)
       - name: Self-test do coletor macro

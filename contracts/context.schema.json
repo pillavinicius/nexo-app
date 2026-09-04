@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nexo-app-sable.vercel.app/contracts/context.schema.json",
   "title": "NEXO Context Package",
-  "description": "Contrato oficial do estado macro do NEXO, produzido pelo NMI e consumido por Scan, Deep, Daily/Weekly Intelligence, alertas e WhatsApp. v1.1 contem APENAS o que o NMI produz hoje com fontes gratuitas (BCB SGS, IBGE, Tesouro, B3 publico, CVM, agencias de rating). Campos novos entram por bump MINOR e sao SEMPRE opcionais. Tornar um campo obrigatorio, renomear, remover ou mudar unidade/significado de um campo e bump MAJOR. DELTA v1.0 -> v1.1: adicionado o status de watermark 'seed' (dado semente, nao coletado) e o flag booleano is_seed_mode. Ampliar enum e MINOR: consumidor antigo nunca RECEBE 'seed' de um produtor antigo.",
+  "description": "Contrato oficial do estado macro do NEXO. v1.2 diferencia dado seed de fonte indisponivel, permite null explicito nos campos ainda nao coletados e adiciona proveniencia por observacao. Nenhum null pode ser substituido por valor sintetico.",
   "type": "object",
   "required": [
     "contextSchemaVersion",
@@ -65,9 +65,25 @@
           "as_of": { "type": "string" },
           "status": {
             "type": "string",
-            "enum": ["official", "provisional", "licensed", "event_state", "seed"],
-            "description": "v1.1 adiciona 'seed': dado semente, nao coletado de fonte real. NUNCA use 'official' para semente."
+            "enum": ["official", "provisional", "licensed", "event_state", "seed", "unavailable"],
+            "description": "seed identifica valor sintetico legado; unavailable identifica fonte consultada ou ainda nao integrada, sem valor fabricado."
           }
+        }
+      }
+    },
+    "source_observations": {
+      "type": "object",
+      "description": "v1.2. Proveniencia mecanica por serie coletada.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["provider", "series_code", "status", "observed_at", "value", "unit"],
+        "properties": {
+          "provider": { "type": "string" },
+          "series_code": { "type": "integer", "minimum": 1 },
+          "status": { "type": "string", "enum": ["official", "unavailable"] },
+          "observed_at": { "type": ["string", "null"] },
+          "value": { "type": ["number", "null"] },
+          "unit": { "type": "string" }
         }
       }
     },
@@ -86,7 +102,7 @@
           ],
           "properties": {
             "selic_target": {
-              "type": "number", "minimum": 0, "maximum": 100,
+              "type": ["number", "null"], "minimum": 0, "maximum": 100,
               "description": "Meta Selic a.a. em PERCENTUAL (ex: 14.25). Fonte: BCB SGS 432."
             },
             "real_rate_ex_12m": {
@@ -94,19 +110,19 @@
               "description": "Juro real ex-ante 12m em PERCENTUAL. Derivado: Selic vs Focus IPCA 12m. null se insumo ausente."
             },
             "focus_ipca_12m": {
-              "type": "number",
+              "type": ["number", "null"],
               "description": "Expectativa Focus de IPCA 12m em PERCENTUAL. Fonte: BCB Expectativas."
             },
             "ipca_12m": {
-              "type": "number",
+              "type": ["number", "null"],
               "description": "IPCA realizado acumulado 12m em PERCENTUAL. Fonte: IBGE / BCB SGS 13522."
             },
             "gross_debt_gdp": {
-              "type": "number", "minimum": 0, "maximum": 5,
+              "type": ["number", "null"], "minimum": 0, "maximum": 5,
               "description": "Divida bruta / PIB como FRACAO (ex: 0.80 = 80%). Fonte: BCB/Tesouro. ATENCAO: fracao, nao percentual."
             },
             "primary_balance_gdp": {
-              "type": "number", "minimum": -1, "maximum": 1,
+              "type": ["number", "null"], "minimum": -1, "maximum": 1,
               "description": "Resultado primario / PIB 12m como FRACAO (ex: -0.0048). Fonte: Tesouro."
             },
             "structural_primary_balance_gdp": {
