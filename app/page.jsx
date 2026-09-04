@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  assetPrefill,
+  compactAssetContext,
+  displayMoney,
+  displayNumber,
+} from "../lib/ui/asset_market_adapter.mjs";
 
 function detectType(t) {
   const tk = (t || "").toUpperCase().trim();
@@ -43,6 +49,20 @@ function macroStatusText(item) {
   if (!item) return "Dado manual opcional";
   if (item.ok) return `Automático · ${item.source}${item.date ? " · " + item.date : ""}`;
   return "Dado automático indisponível · preencher manualmente";
+}
+
+function formattedMacroValue(label, item) {
+  if (!item?.ok) return "—";
+  const value = item.value;
+  if (label === "USD PTAX") return `${displayMoney(value, "BRL")} / USD`;
+  if (label === "Selic Meta" || label === "Fed Funds") {
+    return `${displayNumber(value)}% a.a.`;
+  }
+  if (label === "CDI diário" || label === "Selic diária") {
+    return `${displayNumber(value)}% a.d.`;
+  }
+  if (label === "IPCA mensal") return `${displayNumber(value)}% a.m.`;
+  return displayNumber(value);
 }
 
 function Badge({ text }) {
@@ -261,8 +281,13 @@ export default function NEXOApp() {
   const [plSp500, setPlSp500] = useState("");
   const [classicValuations, setClassicValuations] = useState("NAO");
 
+  const [assetData, setAssetData] = useState(null);
+  const [assetError, setAssetError] = useState("");
+  const [assetLoading, setAssetLoading] = useState(false);
+
   const [macroData, setMacroData] = useState(null);
   const [macroError, setMacroError] = useState("");
+  const [macroLoading, setMacroLoading] = useState(false);
   const [ibovManual, setIbovManual] = useState("");
   const [sp500Manual, setSp500Manual] = useState("");
   const [ifixManual, setIfixManual] = useState("");
@@ -278,14 +303,14 @@ export default function NEXOApp() {
   const [ended, setEnded] = useState(false);
 
   const abortRef = useRef(null);
+  const assetAbortRef = useRef(null);
+  const macroAbortRef = useRef(null);
 
   const hasScan = !!scanResult;
   const hasDeep = !!deepResult;
   const hasFinal = !!finalResult;
   const isVeto = scanResult?.veredito === "VETADO";
   const locked = loading || hasScan || hasDeep || hasFinal || ended;
-
-  const canMacro = !loading && !hasScan && !hasDeep && !hasFinal && !ended;
 
   const macro = macroData?.automatic || {};
   const coreMacroReady =
@@ -296,10 +321,6 @@ export default function NEXOApp() {
     !!macro?.usd_ptax?.ok &&
     !!macro?.fed_funds?.ok;
 
-  const ibovReady = !!macro?.ibovespa_pontos?.ok || ibovManual.trim().length > 0;
-  const sp500Ready = !!macro?.sp500_pontos?.ok || sp500Manual.trim().length > 0;
-  const ifixReady = !!macro?.ifix_pontos?.ok || ifixManual.trim().length > 0;
-
   const requiredInputsReady =
     ticker.trim().length >= 3 &&
     currentPrice.trim().length > 0 &&
@@ -309,25 +330,90 @@ export default function NEXOApp() {
     ? "Informe o ticker."
     : ticker.trim().length < 3
     ? "Ticker precisa ter pelo menos 3 caracteres."
+    : assetLoading
+    ? "Aguarde a busca automática da cotação e dos indicadores."
     : !currentPrice.trim()
-    ? "Informe o valor atual / cota atual."
+    ? "Cotação automática indisponível. Informe o valor atual manualmente."
+    : macroLoading
+    ? "Aguarde o carregamento automático dos dados macro."
     : !macroData
-    ? "Clique em Atualizar Macro antes de rodar o Scan."
+    ? "Dados macro ainda não foram carregados automaticamente."
     : !coreMacroReady
-    ? "Dados macro essenciais indisponíveis. Tente Atualizar Macro novamente."
-    : !ibovReady || !sp500Ready || !ifixReady
-    ? "Dados macro essenciais indisponíveis. Tente Atualizar Macro novamente."
+    ? "Dados macro essenciais indisponíveis. Recarregue a página para tentar novamente."
     : "";
 
-  const canScan = requiredInputsReady && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
+  const canScan = requiredInputsReady && !assetLoading && !macroLoading && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
   const canDeep = hasScan && !hasDeep && !isVeto && !loading && !hasFinal && !ended;
   const canFinalize = (hasScan || hasDeep) && !loading && !hasFinal && !ended;
   const canFollow = hasDeep && !loading && !hasFinal && !ended && (followQ.trim() || followUrl.trim());
+
+  useEffect(() => {
+    void loadMacro();
+    return () => macroAbortRef.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    const normalizedTicker = ticker.trim().toUpperCase();
+    assetAbortRef.current?.abort();
+    setAssetData(null);
+    setAssetError("");
+    setCurrentPrice("");
+    setHistMin("");
+    setHistMinDate("");
+    setHistMax("");
+    setHistMaxDate("");
+
+    if (normalizedTicker.length < 3) {
+      setAssetLoading(false);
+      return undefined;
+    }
+
+    setAssetLoading(true);
+    const timer = window.setTimeout(async () => {
+      const controller = new AbortController();
+      assetAbortRef.current = controller;
+      try {
+        const response = await fetch(
+          `/api/asset?ticker=${encodeURIComponent(normalizedTicker)}`,
+          { signal: controller.signal, cache: "no-store" }
+        );
+        const data = await response.json();
+        if (!response.ok || !data?.ok) {
+          throw new Error(data?.error || "Dados automáticos do ativo indisponíveis");
+        }
+
+        const prefill = assetPrefill(data);
+        setAssetData(data);
+        if (prefill.currentPrice) setCurrentPrice(prefill.currentPrice);
+        if (prefill.currency) setCurrency(prefill.currency);
+        if (prefill.histMin) setHistMin(prefill.histMin);
+        if (prefill.histMinDate) setHistMinDate(prefill.histMinDate);
+        if (prefill.histMax) setHistMax(prefill.histMax);
+        if (prefill.histMaxDate) setHistMaxDate(prefill.histMaxDate);
+      } catch (fetchError) {
+        if (fetchError?.name !== "AbortError") {
+          setAssetError(fetchError?.message || "Erro ao buscar dados do ativo");
+        }
+      } finally {
+        if (assetAbortRef.current === controller) {
+          setAssetLoading(false);
+          assetAbortRef.current = null;
+        }
+      }
+    }, 650);
+
+    return () => {
+      window.clearTimeout(timer);
+      assetAbortRef.current?.abort();
+    };
+  }, [ticker]);
 
   function buildManualContext() {
     const ibovAuto = macro?.ibovespa_pontos;
     const sp500Auto = macro?.sp500_pontos;
     const ifixAuto = macro?.ifix_pontos;
+
+    const automaticAssetContext = compactAssetContext(assetData);
 
     return (
       "Dados manuais e macro fornecidos pelo usuário para refinar a análise:\n" +
@@ -350,6 +436,8 @@ export default function NEXOApp() {
       "- S&P 500 pontos: " + (sp500Manual || (sp500Auto?.ok ? macroValue(sp500Auto) : "não informado")) + "\n" +
       "- IFIX pontos: " + (ifixManual || (ifixAuto?.ok ? macroValue(ifixAuto) : "não informado")) + "\n" +
       "- Juros futuro Brasil: " + (jurosFuturoManual || "não informado") + "\n" +
+      "- Dados automáticos do ativo (HG Brasil/Twelve Data): " +
+      (automaticAssetContext ? JSON.stringify(automaticAssetContext) : "indisponíveis; usar fallback manual") + "\n" +
       "Regra de prioridade: se houver valor manual informado pelo usuário, usar o manual. Se manual vazio, usar o automático. Se automático indisponível, marcar como não informado.\n" +
       "Observação: os valuations Buffett moderno, Peter Lynch, Graham e Bazin, quando solicitados, devem ser usados apenas como referência complementar, nunca como decisão principal.\n"
     );
@@ -375,17 +463,14 @@ export default function NEXOApp() {
     setEnded(false);
   }
 
-  async function handleMacro() {
-    if (!canMacro) return;
-
-    setLoading(true);
-    setLoadingKind("macro");
+  async function loadMacro() {
+    setMacroLoading(true);
     setMacroError("");
-    setError("");
+    const controller = new AbortController();
 
     try {
-      const controller = new AbortController();
-      abortRef.current = controller;
+      macroAbortRef.current?.abort();
+      macroAbortRef.current = controller;
 
       const res = await fetch("/api/macro?v=" + Date.now(), {
         method: "GET",
@@ -401,9 +486,10 @@ export default function NEXOApp() {
     } catch (e) {
       if (e?.name !== "AbortError") setMacroError(e?.message || "Erro ao atualizar macro");
     } finally {
-      setLoading(false);
-      setLoadingKind("");
-      abortRef.current = null;
+      if (macroAbortRef.current === controller) {
+        setMacroLoading(false);
+        macroAbortRef.current = null;
+      }
     }
   }
 
@@ -691,9 +777,9 @@ export default function NEXOApp() {
         <div className="help-box">
           <div className="help-title">Como usar o NEXO App</div>
           <div className="help-text">
-            1) Informe o ticker. 2) Clique em Atualizar Macro para buscar Selic, CDI, IPCA, USD e Fed. 
-            3) Informe o valor atual da cota/ação. 4) Se Ibovespa, S&P 500 ou IFIX não vierem automaticamente, preencha manualmente. 
-            Os campos históricos e de P/L são opcionais, mas ajudam a refinar o Scan, o Deep e a Reclassificação Final.
+            1) Informe o ticker. 2) O NEXO busca automaticamente cotação, histórico, indicadores e dados macro.
+            3) Revise os valores preenchidos. Os campos permanecem editáveis para fallback manual.
+            4) Execute o Scan. Dados históricos e indicadores disponíveis alimentam também o Deep e a Reclassificação Final.
           </div>
         </div>
 
@@ -702,14 +788,39 @@ export default function NEXOApp() {
           <input className="finp" disabled={locked} value={ticker} maxLength={12} placeholder="Ex: KNSC11, VALE3, VWCE, NVDA" onChange={(e) => setTicker(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") handleScan(); }} />
         </div>
 
-        <Sec title="Dados Macro NEXO">
-          <div className="actions">
-            <button className="btn-end" onClick={handleMacro} disabled={!canMacro}>
-              {loadingKind === "macro" ? "Atualizando..." : "Atualizar Macro"}
-            </button>
+        {assetLoading && <div className="scan-hint">BUSCANDO COTAÇÃO E INDICADORES AUTOMATICAMENTE...</div>}
+        {assetError && (
+          <div className="err-box">
+            Dados automáticos do ativo: {assetError}. Os campos manuais continuam disponíveis como fallback.
           </div>
+        )}
 
-          {macroError && <div className="err-box">Erro Macro: {macroError}</div>}
+        {assetData?.ok && (
+          <Sec title={`Dados automáticos · ${assetData?.asset?.name || ticker}`}>
+            <div className="grid3">
+              {[
+                ["Cotação atual", displayMoney(assetData?.asset?.price, assetData?.asset?.currency), "preço da API"],
+                ["Variação", assetData?.asset?.changePercent == null ? "—" : `${displayNumber(assetData.asset.changePercent, 2)}%`, "sessão atual"],
+                ["P/L", assetData?.keyIndicators?.pe == null ? "—" : `${displayNumber(assetData.keyIndicators.pe)}x`, "indicador do ativo"],
+                ["P/VP", assetData?.keyIndicators?.pb == null ? "—" : `${displayNumber(assetData.keyIndicators.pb)}x`, "indicador do ativo"],
+                ["Dividend Yield", assetData?.keyIndicators?.dividendYieldPercent == null ? "—" : `${displayNumber(assetData.keyIndicators.dividendYieldPercent, 2)}%`, "12 meses"],
+                ["Liquidez média", displayMoney(assetData?.derived?.averageFinancialVolume, assetData?.asset?.currency) || "—", "volume financeiro diário"],
+              ].map((item) => (
+                <div className="macro-card" key={item[0]}>
+                  <div className="macro-title">{item[0]}</div>
+                  <div className="macro-value">{item[1] || "—"}</div>
+                  <div className="macro-note">{item[2] || ""}</div>
+                </div>
+              ))}
+            </div>
+            <div className="macro-note" style={{ marginTop: 8 }}>
+              Fonte: {assetData?.asset?.source || assetData?.asset?.dataProvider || assetData?.route} · {assetData?.asset?.updatedAt || assetData?.updatedAt || ""}
+            </div>
+          </Sec>
+        )}
+
+        <Sec title="Dados Macro NEXO">
+          {macroError && <div className="err-box">Erro Macro: {macroError}. Recarregue a página para tentar novamente.</div>}
 
           <div className="grid3">
             {[
@@ -722,8 +833,8 @@ export default function NEXOApp() {
             ].map((m) => (
               <div className="macro-card" key={m[0]}>
                 <div className="macro-title">{m[0]}</div>
-                <div className="macro-value">{m[1]?.ok ? asText(m[1]?.value) : "—"}</div>
-                <div className="macro-note">{m[1]?.ok ? `${m[1]?.source} · ${m[1]?.date || ""}` : "Atualize Macro"}</div>
+                <div className="macro-value">{formattedMacroValue(m[0], m[1])}</div>
+                <div className="macro-note">{m[1]?.ok ? `${m[1]?.source} · ${m[1]?.date || ""}` : macroLoading ? "Carregando automaticamente" : "Indisponível · recarregue a página"}</div>
               </div>
             ))}
           </div>
@@ -733,7 +844,7 @@ export default function NEXOApp() {
           <div className="field">
             <div className="flbl">Valor atual / cota atual *</div>
             <input className="finp-sm" disabled={locked} value={currentPrice} placeholder="Ex: 35,80" onChange={(e) => setCurrentPrice(e.target.value)} />
-            <div className="macro-note">Campo obrigatório para habilitar o Scan</div>
+            <div className="macro-note">{assetData?.ok ? `Automático · ${assetData?.asset?.dataProvider || assetData?.route} · editável` : "Fallback manual · obrigatório para habilitar o Scan"}</div>
           </div>
           <div className="field">
             <div className="flbl">Moeda</div>
@@ -749,7 +860,7 @@ export default function NEXOApp() {
           <div className="field">
             <div className="flbl">Mínimo histórico</div>
             <input className="finp-sm" disabled={locked} value={histMin} placeholder="Ex: 18,40" onChange={(e) => setHistMin(e.target.value)} />
-            <div className="macro-note">Dado manual opcional</div>
+            <div className="macro-note">{assetData?.derived?.minPrice != null ? "Automático · histórico disponível · editável" : "Dado manual opcional"}</div>
           </div>
           <div className="field">
             <div className="flbl">Data do mínimo</div>
@@ -762,7 +873,7 @@ export default function NEXOApp() {
           <div className="field">
             <div className="flbl">Máximo histórico</div>
             <input className="finp-sm" disabled={locked} value={histMax} placeholder="Ex: 42,77" onChange={(e) => setHistMax(e.target.value)} />
-            <div className="macro-note">Dado manual opcional</div>
+            <div className="macro-note">{assetData?.derived?.maxPrice != null ? "Automático · histórico disponível · editável" : "Dado manual opcional"}</div>
           </div>
           <div className="field">
             <div className="flbl">Data do máximo</div>
