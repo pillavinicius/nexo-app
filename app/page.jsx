@@ -7,6 +7,10 @@ import {
   displayMoney,
   displayNumber,
 } from "../lib/ui/asset_market_adapter.mjs";
+import {
+  mergeMacroData,
+  nmiContextToMacroData,
+} from "../lib/ui/nmi_macro_adapter.mjs";
 
 function detectType(t) {
   const tk = (t || "").toUpperCase().trim();
@@ -62,6 +66,8 @@ function formattedMacroValue(label, item) {
     return `${displayNumber(value)}% a.d.`;
   }
   if (label === "IPCA mensal") return `${displayNumber(value)}% a.m.`;
+  if (label === "IPCA 12m") return `${displayNumber(value)}% em 12 meses`;
+  if (label === "Crédito/PIB") return `${displayNumber(value)}% do PIB`;
   return displayNumber(value);
 }
 
@@ -313,18 +319,9 @@ export default function NEXOApp() {
   const locked = loading || hasScan || hasDeep || hasFinal || ended;
 
   const macro = macroData?.automatic || {};
-  const coreMacroReady =
-    !!macroData &&
-    !!macro?.selic_meta?.ok &&
-    !!macro?.cdi_diario?.ok &&
-    !!macro?.ipca_mensal?.ok &&
-    !!macro?.usd_ptax?.ok &&
-    !!macro?.fed_funds?.ok;
-
   const requiredInputsReady =
     ticker.trim().length >= 3 &&
-    currentPrice.trim().length > 0 &&
-    coreMacroReady;
+    currentPrice.trim().length > 0;
 
   const scanBlockReason = !ticker.trim()
     ? "Informe o ticker."
@@ -334,15 +331,9 @@ export default function NEXOApp() {
     ? "Aguarde a busca automática da cotação e dos indicadores."
     : !currentPrice.trim()
     ? "Cotação automática indisponível. Informe o valor atual manualmente."
-    : macroLoading
-    ? "Aguarde o carregamento automático dos dados macro."
-    : !macroData
-    ? "Dados macro ainda não foram carregados automaticamente."
-    : !coreMacroReady
-    ? "Dados macro essenciais indisponíveis. Recarregue a página para tentar novamente."
     : "";
 
-  const canScan = requiredInputsReady && !assetLoading && !macroLoading && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
+  const canScan = requiredInputsReady && !assetLoading && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
   const canDeep = hasScan && !hasDeep && !isVeto && !loading && !hasFinal && !ended;
   const canFinalize = (hasScan || hasDeep) && !loading && !hasFinal && !ended;
   const canFollow = hasDeep && !loading && !hasFinal && !ended && (followQ.trim() || followUrl.trim());
@@ -430,6 +421,8 @@ export default function NEXOApp() {
       "- Selic diária: " + macroLabel(macro?.selic_diaria) + "\n" +
       "- CDI diário: " + macroLabel(macro?.cdi_diario) + "\n" +
       "- IPCA mensal: " + macroLabel(macro?.ipca_mensal) + "\n" +
+      "- IPCA 12 meses (NMI): " + macroLabel(macro?.ipca_12m) + "\n" +
+      "- Crédito/PIB (NMI): " + macroLabel(macro?.credit_gdp) + "\n" +
       "- USD PTAX: " + macroLabel(macro?.usd_ptax) + "\n" +
       "- Fed Funds: " + macroLabel(macro?.fed_funds) + "\n" +
       "- Ibovespa pontos: " + (ibovManual || (ibovAuto?.ok ? macroValue(ibovAuto) : "não informado")) + "\n" +
@@ -468,23 +461,74 @@ export default function NEXOApp() {
     setMacroError("");
     const controller = new AbortController();
 
+    let nmiData = null;
+    let supplementalData = null;
+
     try {
       macroAbortRef.current?.abort();
       macroAbortRef.current = controller;
 
-      const res = await fetch("/api/macro?v=" + Date.now(), {
-        method: "GET",
-        signal: controller.signal,
-        cache: "no-store",
-      });
+      try {
+        const nmiResponse = await fetch("/api/nmi/context/latest", {
+          method: "GET",
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        const nmiText = await nmiResponse.text();
+        let nmiPackage = null;
 
-      const data = await res.json();
+        try {
+          nmiPackage = JSON.parse(nmiText);
+        } catch {
+          nmiPackage = null;
+        }
 
-      if (!data?.ok) throw new Error(data?.error || "Falha ao buscar dados macro");
+        if (nmiResponse.ok && nmiPackage?.context_id) {
+          nmiData = nmiContextToMacroData(nmiPackage);
+          setMacroData(nmiData);
+        }
+      } catch (nmiError) {
+        if (nmiError?.name === "AbortError") throw nmiError;
+      }
 
-      setMacroData(data);
+      try {
+        const res = await fetch("/api/macro", {
+          method: "GET",
+          signal: controller.signal,
+          cache: "no-store",
+        });
+
+        const responseText = await res.text();
+        let data = null;
+
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          throw new Error("Resposta macro complementar inválida");
+        }
+
+        if (!res.ok || !data?.ok) {
+          throw new Error(data?.error || "Falha ao buscar dados macro complementares");
+        }
+
+        supplementalData = data;
+      } catch (supplementalError) {
+        if (supplementalError?.name === "AbortError") throw supplementalError;
+      }
+
+      if (nmiData || supplementalData) {
+        setMacroData(mergeMacroData(nmiData, supplementalData));
+      }
+
+      if (!supplementalData) {
+        setMacroError(
+          nmiData
+            ? "Dados complementares temporariamente indisponíveis. O Context Package NMI validado continua ativo e o Scan permanece liberado."
+            : "A exibição dos dados macro está temporariamente indisponível. A análise usa o Context Package NMI validado diretamente no servidor e o Scan permanece liberado."
+        );
+      }
     } catch (e) {
-      if (e?.name !== "AbortError") setMacroError(e?.message || "Erro ao atualizar macro");
+      if (e?.name !== "AbortError") setMacroError("Falha inesperada na exibição macro. O Scan permanece liberado.");
     } finally {
       if (macroAbortRef.current === controller) {
         setMacroLoading(false);
@@ -712,6 +756,7 @@ export default function NEXOApp() {
     .help-title{font-family:'JetBrains Mono',monospace;font-size:9px;color:#C9A84C;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
     .help-text{font-size:11px;color:#8A7A58;line-height:1.6}
     .scan-hint{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);background:rgba(210,160,60,.06);padding:9px 12px;margin-bottom:10px;letter-spacing:.8px}
+    .warn-box{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);border-left:2px solid #D2A03C;background:rgba(210,160,60,.06);padding:9px 12px;margin:8px 0;line-height:1.5}
     .macro-card{border:1px solid #2A2318;padding:8px 10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#A89060}
     .macro-title{font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
     .macro-value{font-size:13px;color:#E8D5A3;font-weight:700}
@@ -820,13 +865,20 @@ export default function NEXOApp() {
         )}
 
         <Sec title="Dados Macro NEXO">
-          {macroError && <div className="err-box">Erro Macro: {macroError}. Recarregue a página para tentar novamente.</div>}
+          {macroData?.nmi?.available && (
+            <div className="scan-hint">
+              CONTEXT PACKAGE NMI ATIVO · {macroData.nmi.contextId} · CONFIANÇA {displayNumber((macroData.nmi.overallConfidence || 0) * 100)}%
+            </div>
+          )}
+          {macroError && <div className="warn-box">{macroError}</div>}
 
           <div className="grid3">
             {[
               ["Selic Meta", macro?.selic_meta],
               ["CDI diário", macro?.cdi_diario],
               ["IPCA mensal", macro?.ipca_mensal],
+              ["IPCA 12m", macro?.ipca_12m],
+              ["Crédito/PIB", macro?.credit_gdp],
               ["USD PTAX", macro?.usd_ptax],
               ["Fed Funds", macro?.fed_funds],
               ["Selic diária", macro?.selic_diaria],
@@ -834,7 +886,7 @@ export default function NEXOApp() {
               <div className="macro-card" key={m[0]}>
                 <div className="macro-title">{m[0]}</div>
                 <div className="macro-value">{formattedMacroValue(m[0], m[1])}</div>
-                <div className="macro-note">{m[1]?.ok ? `${m[1]?.source} · ${m[1]?.date || ""}` : macroLoading ? "Carregando automaticamente" : "Indisponível · recarregue a página"}</div>
+                <div className="macro-note">{m[1]?.ok ? `${m[1]?.source} · ${m[1]?.date || ""}` : macroLoading ? "Carregando automaticamente" : "Complemento indisponível"}</div>
               </div>
             ))}
           </div>
