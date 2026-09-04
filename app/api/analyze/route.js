@@ -1,6 +1,11 @@
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
+import {
+  buildNmiPromptContext,
+  getLatestContext,
+} from "../../../lib/nmi/get_latest_context.mjs";
+
 const SCAN_S =
   '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
 
@@ -280,7 +285,10 @@ function trimContextForFinal(extraCtx) {
   );
 }
 
-function buildUserMessage({ phase, ticker, scanSummary, extraCtx }) {
+function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext }) {
+  const validatedNmiBlock =
+    "\n\n--- CONTEXTO MACRO TRANSVERSAL ---\n" + nmiContext;
+
   if (phase === "final") {
     return (
       "Reclassifique o ativo após o ciclo completo NEXO.\n" +
@@ -288,6 +296,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx }) {
       ticker +
       "\n\nHistórico completo da análise:\n" +
       trimContextForFinal(extraCtx || "") +
+      validatedNmiBlock +
       "\n\nTarefa:\n" +
       "1. Consolide o Scan, o Deep e os aprofundamentos disponíveis.\n" +
       "2. Identifique riscos novos e agravados.\n" +
@@ -306,6 +315,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx }) {
       (scanSummary ? "\nScan context: " + scanSummary : "") +
       "\nContexto do usuário e dados manuais/macro:\n" +
       trimContextForDeep(extraCtx || "") +
+      validatedNmiBlock +
       "\n\nIMPORTANT: Return ONLY valid JSON. Keep the JSON concise. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
     );
   }
@@ -315,6 +325,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx }) {
     ticker +
     (scanSummary ? "\nScan context: " + scanSummary : "") +
     (extraCtx ? "\nFocus: " + extraCtx : "") +
+    validatedNmiBlock +
     "\n\nIMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
   );
 }
@@ -348,12 +359,15 @@ export async function POST(req) {
     }
 
     const systemPrompt = getSystemPrompt(phase, assetType);
+    const nmiResult = getLatestContext();
+    const nmiContext = buildNmiPromptContext(nmiResult);
 
     const userMsg = buildUserMessage({
       phase,
       ticker,
       scanSummary,
       extraCtx,
+      nmiContext,
     });
 
     const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
