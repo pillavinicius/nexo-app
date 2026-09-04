@@ -9,6 +9,11 @@ import {
   displayNumber,
   monthYear,
 } from "../lib/ui/asset_market_adapter.mjs";
+import {
+  buildComplementaryMacroContext,
+  mergeMacroData,
+  nmiContextToMacroData,
+} from "../lib/ui/nmi_macro_adapter.mjs";
 
 const sample = {
   ok: true,
@@ -61,4 +66,65 @@ assert.equal(compact.indicators.pe, 8.87);
 assert.equal(compact.risk.sharpeRatio, -0.58);
 assert.equal(compactAssetContext({ ok: false }), null);
 
-console.log("PASS asset market adapter: 15 assercoes");
+const nmiMacro = nmiContextToMacroData({
+  contextSchemaVersion: "1.2",
+  context_id: "ctx_test",
+  as_of: "2026-09-04T18:00:00Z",
+  market_close_date: "2026-09-04",
+  is_seed_mode: false,
+  regime: { label: "juros_altos", conviction_score: 0.65 },
+  source_observations: {
+    selic_target: { provider: "BCB_SGS", series_code: 432, status: "official", observed_at: "2026-09-04", value: 14, unit: "percent_per_year" },
+    ipca_12m: { provider: "BCB_SGS", series_code: 13522, status: "official", observed_at: "2026-07-01", value: 4.44, unit: "percent_12m" },
+    credit_gdp: { provider: "BCB_SGS", series_code: 20622, status: "official", observed_at: "2026-07-01", value: 0.5557, unit: "fraction_of_gdp" },
+  },
+  quality: { overall_confidence: 0.41 },
+});
+
+assert.equal(nmiMacro.nmi.contextId, "ctx_test");
+assert.equal(nmiMacro.automatic.selic_meta.value, 14);
+assert.equal(nmiMacro.automatic.ipca_12m.value, 4.44);
+assert.equal(nmiMacro.automatic.credit_gdp.value, 55.57);
+assert.equal(nmiMacro.nmi.regimeLabel, "juros_altos");
+assert.equal(nmiMacro.nmi.regimeConviction, 0.65);
+
+const mergedMacro = mergeMacroData(nmiMacro, {
+  ok: true,
+  automatic: {
+    selic_meta: { ok: true, value: 14.25, source: "snapshot antigo" },
+    usd_ptax: { ok: true, value: 5.12, source: "BCB PTAX" },
+  },
+});
+assert.equal(mergedMacro.automatic.selic_meta.value, 14);
+assert.equal(mergedMacro.automatic.usd_ptax.value, 5.12);
+
+const seedMacro = nmiContextToMacroData({
+  ...{
+    context_id: "ctx_seed",
+    is_seed_mode: true,
+    source_observations: {
+      selic_target: { provider: "seed", series_code: 432, status: "official", observed_at: "2026-09-04", value: 14 },
+    },
+  },
+});
+assert.equal(seedMacro.nmi.status, "seed");
+assert.equal(seedMacro.automatic.selic_meta.ok, false);
+
+const complementsDisabled = buildComplementaryMacroContext({
+  enabled: false,
+  manual: { plIbov: "SENTINELA_NAO_ENVIAR" },
+});
+assert.match(complementsDisabled, /habilitados: NÃO/);
+assert.doesNotMatch(complementsDisabled, /SENTINELA_NAO_ENVIAR/);
+
+const complementsEnabled = buildComplementaryMacroContext({
+  enabled: true,
+  automatic: mergedMacro.automatic,
+  manual: { ibov: "150000", plIbov: "9,25", jurosFuturo: "DI Jan\/29 12,50%" },
+});
+assert.match(complementsEnabled, /habilitados: SIM/);
+assert.match(complementsEnabled, /Ibovespa pontos: 150000/);
+assert.match(complementsEnabled, /P\/L atual Ibovespa: 9,25/);
+assert.match(complementsEnabled, /DI Jan\/29 12,50%/);
+
+console.log("PASS asset + NMI macro adapters: 31 assercoes");
