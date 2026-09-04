@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   assetPrefill,
   compactAssetContext,
+  displayMoney,
   displayNumber,
 } from "../lib/ui/asset_market_adapter.mjs";
 
@@ -48,6 +49,20 @@ function macroStatusText(item) {
   if (!item) return "Dado manual opcional";
   if (item.ok) return `Automático · ${item.source}${item.date ? " · " + item.date : ""}`;
   return "Dado automático indisponível · preencher manualmente";
+}
+
+function formattedMacroValue(label, item) {
+  if (!item?.ok) return "—";
+  const value = item.value;
+  if (label === "USD PTAX") return `${displayMoney(value, "BRL")} / USD`;
+  if (label === "Selic Meta" || label === "Fed Funds") {
+    return `${displayNumber(value)}% a.a.`;
+  }
+  if (label === "CDI diário" || label === "Selic diária") {
+    return `${displayNumber(value)}% a.d.`;
+  }
+  if (label === "IPCA mensal") return `${displayNumber(value)}% a.m.`;
+  return displayNumber(value);
 }
 
 function Badge({ text }) {
@@ -297,8 +312,6 @@ export default function NEXOApp() {
   const isVeto = scanResult?.veredito === "VETADO";
   const locked = loading || hasScan || hasDeep || hasFinal || ended;
 
-  const canMacro = !loading && !macroLoading && !hasScan && !hasDeep && !hasFinal && !ended;
-
   const macro = macroData?.automatic || {};
   const coreMacroReady =
     !!macroData &&
@@ -307,10 +320,6 @@ export default function NEXOApp() {
     !!macro?.ipca_mensal?.ok &&
     !!macro?.usd_ptax?.ok &&
     !!macro?.fed_funds?.ok;
-
-  const ibovReady = !!macro?.ibovespa_pontos?.ok || ibovManual.trim().length > 0;
-  const sp500Ready = !!macro?.sp500_pontos?.ok || sp500Manual.trim().length > 0;
-  const ifixReady = !!macro?.ifix_pontos?.ok || ifixManual.trim().length > 0;
 
   const requiredInputsReady =
     ticker.trim().length >= 3 &&
@@ -330,7 +339,7 @@ export default function NEXOApp() {
     : !macroData
     ? "Dados macro ainda não foram carregados automaticamente."
     : !coreMacroReady
-    ? "Dados macro essenciais indisponíveis. Use Atualizar Macro para tentar novamente."
+    ? "Dados macro essenciais indisponíveis. Recarregue a página para tentar novamente."
     : "";
 
   const canScan = requiredInputsReady && !assetLoading && !macroLoading && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
@@ -339,7 +348,7 @@ export default function NEXOApp() {
   const canFollow = hasDeep && !loading && !hasFinal && !ended && (followQ.trim() || followUrl.trim());
 
   useEffect(() => {
-    void handleMacro({ automatic: true });
+    void loadMacro();
     return () => macroAbortRef.current?.abort();
   }, []);
 
@@ -454,12 +463,9 @@ export default function NEXOApp() {
     setEnded(false);
   }
 
-  async function handleMacro({ automatic = false } = {}) {
-    if (!automatic && !canMacro) return;
-
+  async function loadMacro() {
     setMacroLoading(true);
     setMacroError("");
-    if (!automatic) setError("");
     const controller = new AbortController();
 
     try {
@@ -793,12 +799,12 @@ export default function NEXOApp() {
           <Sec title={`Dados automáticos · ${assetData?.asset?.name || ticker}`}>
             <div className="grid3">
               {[
-                ["Cotação atual", displayNumber(assetData?.asset?.price), assetData?.asset?.currency],
+                ["Cotação atual", displayMoney(assetData?.asset?.price, assetData?.asset?.currency), "preço da API"],
                 ["Variação", assetData?.asset?.changePercent == null ? "—" : `${displayNumber(assetData.asset.changePercent, 2)}%`, "sessão atual"],
-                ["P/L", displayNumber(assetData?.keyIndicators?.pe, 2) || "—", "indicador do ativo"],
-                ["P/VP", displayNumber(assetData?.keyIndicators?.pb, 2) || "—", "indicador do ativo"],
+                ["P/L", assetData?.keyIndicators?.pe == null ? "—" : `${displayNumber(assetData.keyIndicators.pe)}x`, "indicador do ativo"],
+                ["P/VP", assetData?.keyIndicators?.pb == null ? "—" : `${displayNumber(assetData.keyIndicators.pb)}x`, "indicador do ativo"],
                 ["Dividend Yield", assetData?.keyIndicators?.dividendYieldPercent == null ? "—" : `${displayNumber(assetData.keyIndicators.dividendYieldPercent, 2)}%`, "12 meses"],
-                ["Liquidez média", displayNumber(assetData?.derived?.averageFinancialVolume, 0) || "—", assetData?.asset?.currency],
+                ["Liquidez média", displayMoney(assetData?.derived?.averageFinancialVolume, assetData?.asset?.currency) || "—", "volume financeiro diário"],
               ].map((item) => (
                 <div className="macro-card" key={item[0]}>
                   <div className="macro-title">{item[0]}</div>
@@ -814,13 +820,7 @@ export default function NEXOApp() {
         )}
 
         <Sec title="Dados Macro NEXO">
-          <div className="actions">
-            <button className="btn-end" onClick={handleMacro} disabled={!canMacro}>
-              {macroLoading ? "Atualizando..." : "Atualizar Macro"}
-            </button>
-          </div>
-
-          {macroError && <div className="err-box">Erro Macro: {macroError}</div>}
+          {macroError && <div className="err-box">Erro Macro: {macroError}. Recarregue a página para tentar novamente.</div>}
 
           <div className="grid3">
             {[
@@ -833,8 +833,8 @@ export default function NEXOApp() {
             ].map((m) => (
               <div className="macro-card" key={m[0]}>
                 <div className="macro-title">{m[0]}</div>
-                <div className="macro-value">{m[1]?.ok ? asText(m[1]?.value) : "—"}</div>
-                <div className="macro-note">{m[1]?.ok ? `${m[1]?.source} · ${m[1]?.date || ""}` : macroLoading ? "Carregando automaticamente" : "Atualização manual disponível"}</div>
+                <div className="macro-value">{formattedMacroValue(m[0], m[1])}</div>
+                <div className="macro-note">{m[1]?.ok ? `${m[1]?.source} · ${m[1]?.date || ""}` : macroLoading ? "Carregando automaticamente" : "Indisponível · recarregue a página"}</div>
               </div>
             ))}
           </div>

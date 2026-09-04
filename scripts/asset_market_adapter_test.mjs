@@ -3,6 +3,8 @@
 import assert from "node:assert/strict";
 import {
   assetPrefill,
+  displayInputNumber,
+  displayMoney,
   compactAssetContext,
   displayNumber,
   monthYear,
@@ -36,7 +38,11 @@ const sample = {
 };
 
 assert.equal(displayNumber(42.12), "42,12");
+assert.equal(displayNumber(42.129), "42,13");
 assert.equal(displayNumber(null), "");
+assert.equal(displayInputNumber(42.129, "USD"), "42.13");
+assert.equal(displayMoney(42.129, "BRL"), "R$ 42,13");
+assert.equal(displayMoney(42.129, "USD"), "USD 42.13");
 assert.equal(monthYear("2025-08-21"), "08/25");
 assert.deepEqual(assetPrefill(sample), {
   currentPrice: "42,12",
@@ -55,4 +61,4 @@ assert.equal(compact.indicators.pe, 8.87);
 assert.equal(compact.risk.sharpeRatio, -0.58);
 assert.equal(compactAssetContext({ ok: false }), null);
 
-console.log("PASS asset market adapter: 11 assercoes");
+console.log("PASS asset market adapter: 15 assercoes");
