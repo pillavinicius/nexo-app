@@ -12,6 +12,44 @@ import {
   mergeMacroData,
   nmiContextToMacroData,
 } from "../lib/ui/nmi_macro_adapter.mjs";
+import {
+  computeEDG,
+  EDGE_INSUMOS,
+} from "../lib/nexo/edg/edg_engine.mjs";
+
+const EDGE_TYPE_LABELS = Object.freeze({
+  nenhum: "Nenhum edge declarado",
+  informacional: "Informacional",
+  analitico: "Analítico",
+  estrutural: "Estrutural",
+  temporal: "Temporal",
+});
+
+const EDGE_STATUS_LABELS = Object.freeze({
+  ativo: "Ativo",
+  expirado: "Expirado",
+  nao_declarado: "Não declarado",
+});
+
+const EDG_ERROR_LABELS = Object.freeze({
+  edge_type_required: "Selecione o tipo de edge.",
+  edge_type_invalid: "O tipo de edge não pertence ao contrato EDG.",
+  edge_status_must_be_nao_declarado: "Sem edge, o status precisa ser não declarado.",
+  edge_evidence_not_verifiable: "Descreva uma evidência verificável com pelo menos 12 caracteres.",
+  edge_insumo_required: "Selecione o insumo NEXO que sustenta a evidência.",
+  edge_insumo_unknown: "O insumo selecionado não pertence ao catálogo NEXO.",
+  edge_expiry_condition_required: "Defina a condição observável de expiração.",
+  edge_expiry_condition_not_observable: "A condição de expiração está vaga: use métrica, limite e janela, ou um evento objetivo.",
+  edge_declared_at_invalid: "Informe uma data de declaração válida.",
+  edge_status_required: "Informe se o edge está ativo ou expirado.",
+  edge_status_invalid: "O status informado não é válido para um edge declarado.",
+});
+
+function localIsoDate() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
 
 function detectType(t) {
   const tk = (t || "").toUpperCase().trim();
@@ -170,6 +208,42 @@ function Note({ children, col }) {
   return <div style={{ fontSize: 11, color: col || "#8A7A58", marginTop: 3, lineHeight: 1.5 }}>{children}</div>;
 }
 
+function EdgAudit({ result }) {
+  const edg = result?.nexoModules?.EDG;
+  const governance = result?.edg_governance;
+
+  if (!edg) return null;
+
+  const changes = asArray(governance?.changes);
+  const signal = edg.exit_signal === "edge_expired" ? "Edge expirado" : "Nenhum";
+  const ceiling = edg.max_allowed_classification === "posicao" ? "Posição" : "Watchlist";
+
+  return (
+    <Sec title="EDG · Governança de Edge">
+      <div className="grid3">
+        <MetricCard title="Tipo" value={EDGE_TYPE_LABELS[edg.edge_type] || edg.edge_type} note={EDGE_STATUS_LABELS[edg.edge_status] || edg.edge_status} />
+        <MetricCard title="Teto permitido" value={ceiling} note={edg.has_declared_edge ? "Edge válido no contrato" : "Regra D2 ativa"} />
+        <MetricCard title="Sinal de saída" value={signal} note={edg.exit_signal === "edge_expired" ? "Regra D3 ativa" : "Sem gatilho D3"} />
+      </div>
+
+      {governance?.applied && (
+        <div className="edg-rule-box">
+          <strong>REGRA {governance.rule} APLICADA</strong>
+          {changes.map((change, index) => (
+            <div key={`${change?.field || "campo"}-${index}`}>
+              {asText(change?.field)}: {asText(change?.before)} → {asText(change?.after)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!governance?.applied && (
+        <div className="edg-audit-note">EDG auditado · nenhuma classificação precisou ser alterada nesta etapa.</div>
+      )}
+    </Sec>
+  );
+}
+
 function ScanReport({ r }) {
   const filtros = asArray(r?.filtros);
   const governanca = asArray(r?.governanca);
@@ -204,6 +278,7 @@ function ScanReport({ r }) {
       {catalisadores.length > 0 && <Sec title="Catalisadores">{catalisadores.map((c, i) => <DetailBlock key={i} title={c?.descricao} value={c?.impacto} note={c?.prazo} />)}</Sec>}
       {riscos.length > 0 && <Sec title="Riscos">{riscos.map((risco, i) => <Row key={i} label={risco?.descricao} right={<Badge text={risco?.severidade} />}><Note>{asText(risco?.probabilidade)}</Note></Row>)}</Sec>}
       {lacunas.length > 0 && <Sec title="Lacunas para o Deep">{lacunas.map((l, i) => <DetailBlock key={i} title={"Lacuna " + (i + 1)} value={l} />)}</Sec>}
+      <EdgAudit result={r} />
     </div>
   );
 }
@@ -232,6 +307,7 @@ function DeepReport({ r }) {
       {cats.length > 0 && <Sec title="Catalisadores">{cats.map((c, i) => <DetailBlock key={i} title={c?.d || c?.descricao} value={c?.impacto} note={c?.p || c?.prazo} />)}</Sec>}
       {risks.length > 0 && <Sec title="Riscos">{risks.map((risco, i) => <DetailBlock key={i} title={risco?.d || risco?.descricao} value={"Severidade: " + asText(risco?.sev || risco?.severidade || "MEDIO")} note={risco?.g || risco?.gatilho ? "Gatilho: " + asText(risco?.g || risco?.gatilho) : ""} />)}</Sec>}
       {steps.length > 0 && <Sec title="Próximos Passos">{steps.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
+      <EdgAudit result={r} />
     </div>
   );
 }
@@ -275,6 +351,7 @@ function FinalReport({ r }) {
 
       {r?.conclusao && <Sec title="Conclusão"><DetailBlock title="Conclusão NEXO" value={r.conclusao} /></Sec>}
       {passos.length > 0 && <Sec title="Próximos Passos">{passos.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
+      <EdgAudit result={r} />
     </div>
   );
 }
@@ -299,6 +376,12 @@ export default function NEXOApp() {
   const [plIbov, setPlIbov] = useState("");
   const [plSp500, setPlSp500] = useState("");
   const [classicValuations, setClassicValuations] = useState("NAO");
+  const [edgeType, setEdgeType] = useState("nenhum");
+  const [edgeEvidence, setEdgeEvidence] = useState("");
+  const [edgeInsumo, setEdgeInsumo] = useState("");
+  const [edgeExpiryCondition, setEdgeExpiryCondition] = useState("");
+  const [edgeDeclaredAt, setEdgeDeclaredAt] = useState("");
+  const [edgeStatus, setEdgeStatus] = useState("nao_declarado");
 
   const [assetData, setAssetData] = useState(null);
   const [assetError, setAssetError] = useState("");
@@ -338,6 +421,15 @@ export default function NEXOApp() {
 
   const macro = macroData?.automatic || {};
   const priceUnit = currency === "USD" ? "USD" : "R$";
+  const edgeLedger = {
+    edge_type: edgeType,
+    edge_evidence: edgeEvidence,
+    edge_insumo: edgeInsumo,
+    edge_expiry_condition: edgeExpiryCondition,
+    edge_declared_at: edgeDeclaredAt,
+    edge_status: edgeStatus,
+  };
+  const edgPreview = computeEDG(edgeLedger);
   const requiredInputsReady =
     ticker.trim().length >= 3 &&
     currentPrice.trim().length > 0;
@@ -568,6 +660,23 @@ export default function NEXOApp() {
     if (value === "SIM") void loadSupplementalMacro();
   }
 
+  function handleEdgeType(value) {
+    setEdgeType(value);
+
+    if (value === "nenhum") {
+      setEdgeEvidence("");
+      setEdgeInsumo("");
+      setEdgeExpiryCondition("");
+      setEdgeDeclaredAt("");
+      setEdgeStatus("nao_declarado");
+      return;
+    }
+
+    if (!edgeInsumo) setEdgeInsumo("IQD");
+    if (!edgeDeclaredAt) setEdgeDeclaredAt(localIsoDate());
+    setEdgeStatus("ativo");
+  }
+
   async function callAPI(ph, overrideCtx = "") {
     const controller = new AbortController();
     abortRef.current = controller;
@@ -600,6 +709,7 @@ export default function NEXOApp() {
         ticker: t,
         scanSummary: summary,
         extraCtx: mergedCtx,
+        edgeLedger,
       }),
     });
 
@@ -790,6 +900,10 @@ export default function NEXOApp() {
     .help-text{font-size:11px;color:#8A7A58;line-height:1.6}
     .scan-hint{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);background:rgba(210,160,60,.06);padding:9px 12px;margin-bottom:10px;letter-spacing:.8px}
     .warn-box{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);border-left:2px solid #D2A03C;background:rgba(210,160,60,.06);padding:9px 12px;margin:8px 0;line-height:1.5}
+    .edg-ok-box{font-family:'JetBrains Mono',monospace;font-size:9px;color:#6DB46D;border:1px solid rgba(109,180,109,.25);border-left:2px solid #6DB46D;background:rgba(109,180,109,.05);padding:9px 12px;margin:8px 0;line-height:1.5}
+    .edg-rule-box{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);border-left:2px solid #D2A03C;background:rgba(210,160,60,.06);padding:9px 12px;margin-top:10px;line-height:1.7;overflow-wrap:anywhere}
+    .edg-rule-box strong{display:block;letter-spacing:1px;margin-bottom:3px}
+    .edg-audit-note{font-family:'JetBrains Mono',monospace;font-size:8px;color:#4A3E28;margin-top:8px;line-height:1.5}
     .reserved-box{min-height:72px;border:1px dashed #2A2318;display:flex;align-items:center;justify-content:center;text-align:center;padding:14px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#4A3E28;letter-spacing:1px;line-height:1.5}
     .section-meta{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8A7A58;line-height:1.5}
     .subsection-label{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin:14px 0 7px}
@@ -860,7 +974,8 @@ export default function NEXOApp() {
           <div className="help-text">
             1) Informe o ticker. 2) Revise os dados do ativo preenchidos automaticamente.
             3) O Macro Fundamental NMI permanece ativo. Habilite dados complementares somente quando forem úteis para a tese.
-            4) Execute o Scan. O contexto validado alimenta também o Deep e a Reclassificação Final.
+            4) Declare um edge verificável no EDG ou mantenha “nenhum” para aplicar o teto de Watchlist.
+            5) Execute o Scan. O contexto validado alimenta também o Deep e a Reclassificação Final.
           </div>
         </div>
 
@@ -1043,6 +1158,91 @@ export default function NEXOApp() {
           </select>
           <div className="macro-note">Referência auxiliar, não decisória · escolha independente dos dados complementares</div>
         </div>
+
+        <Sec title="EDG · Declaração e governança do edge">
+          <div className="field">
+            <div className="flbl">Tipo de edge</div>
+            <select className="select-sm metric-input" disabled={locked} value={edgeType} onChange={(e) => handleEdgeType(e.target.value)}>
+              <option value="nenhum">Nenhum edge declarado</option>
+              <option value="informacional">Informacional</option>
+              <option value="analitico">Analítico</option>
+              <option value="estrutural">Estrutural</option>
+              <option value="temporal">Temporal</option>
+            </select>
+            <div className="macro-note">O EDG não cria um veredito favorável; ele valida e limita a classificação dos demais módulos</div>
+          </div>
+
+          {edgeType === "nenhum" ? (
+            <div className="warn-box">
+              REGRA D2 · Sem edge declarado e verificável, o Scan fica limitado a WATCHLIST e o Deep/Final não pode emitir COMPRAR.
+            </div>
+          ) : (
+            <>
+              <div className="field">
+                <div className="flbl">Evidência verificável</div>
+                <textarea className="ftxt" disabled={locked} rows={3} value={edgeEvidence} placeholder="Descreva a evidência, a fonte e o dado que diferenciam a tese..." onChange={(e) => setEdgeEvidence(e.target.value)} />
+              </div>
+
+              <div className="grid3">
+                <div className="field">
+                  <div className="flbl">Insumo NEXO</div>
+                  <select className="select-sm metric-input" disabled={locked} value={edgeInsumo} onChange={(e) => setEdgeInsumo(e.target.value)}>
+                    <option value="">Selecione</option>
+                    {EDGE_INSUMOS.map((insumo) => <option key={insumo} value={insumo}>{insumo}</option>)}
+                  </select>
+                  <div className="macro-note">Módulo que sustenta a evidência</div>
+                </div>
+
+                <div className="field">
+                  <div className="flbl">Declarado em</div>
+                  <input className="finp-sm metric-input" type="date" disabled={locked} value={edgeDeclaredAt} onChange={(e) => setEdgeDeclaredAt(e.target.value)} />
+                  <div className="macro-note">Data registrada no ledger</div>
+                </div>
+
+                <div className="field">
+                  <div className="flbl">Status do edge</div>
+                  <select className="select-sm metric-input" disabled={locked} value={edgeStatus} onChange={(e) => setEdgeStatus(e.target.value)}>
+                    <option value="ativo">Ativo</option>
+                    <option value="expirado">Expirado</option>
+                  </select>
+                  <div className="macro-note">Expirado aciona a precedência D3</div>
+                </div>
+              </div>
+
+              <div className="field">
+                <div className="flbl">Condição observável de expiração</div>
+                <textarea className="ftxt" disabled={locked} rows={3} value={edgeExpiryCondition} placeholder="Ex.: margem bruta abaixo de 17% por dois trimestres consecutivos" onChange={(e) => setEdgeExpiryCondition(e.target.value)} />
+                <div className="macro-note">Use métrica + limite + janela, ou um evento objetivo. Condições vagas são rejeitadas.</div>
+              </div>
+            </>
+          )}
+
+          <div className="subsection-label">Prévia determinística do contrato</div>
+          <div className="grid3">
+            <MetricCard title="Contrato" value={edgPreview.validation.valid ? "Válido" : "Incompleto"} note={edgPreview.version} />
+            <MetricCard title="Completude" value={`${displayNumber(edgPreview.ledger_completeness * 100)}%`} note="6 campos canônicos" />
+            <MetricCard title="Teto permitido" value={edgPreview.max_allowed_classification === "posicao" ? "Posição" : "Watchlist"} note={edgPreview.has_declared_edge ? "Edge verificável" : "Regra D2"} />
+            <MetricCard title="Sinal de saída" value={edgPreview.exit_signal === "edge_expired" ? "Edge expirado" : "Nenhum"} note={edgPreview.exit_signal === "edge_expired" ? "Regra D3" : "Sem gatilho"} />
+          </div>
+
+          {edgeType !== "nenhum" && edgPreview.validation.valid && edgPreview.exit_signal === "none" && (
+            <div className="edg-ok-box">CONTRATO EDG VÁLIDO · A evidência e a condição de expiração serão enviadas ao Scan, Deep e Final.</div>
+          )}
+
+          {edgPreview.exit_signal === "edge_expired" && (
+            <div className="edg-rule-box"><strong>REGRA D3 ATIVA</strong>O sinal de edge expirado precede uma leitura favorável de preço.</div>
+          )}
+
+          {edgeType !== "nenhum" && !edgPreview.validation.valid && (
+            <div className="warn-box">
+              <strong>CONTRATO EDG INCOMPLETO</strong>
+              {edgPreview.validation.errors.map((code) => (
+                <div key={code}>· {EDG_ERROR_LABELS[code] || code}</div>
+              ))}
+              <div style={{ marginTop: 4 }}>Enquanto estiver incompleto, a regra D2 limita a classificação.</div>
+            </div>
+          )}
+        </Sec>
 
         <div className="field">
           <div className="flbl">Link RI / Dados Oficiais</div>

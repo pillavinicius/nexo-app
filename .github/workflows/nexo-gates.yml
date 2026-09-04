@@ -40,11 +40,21 @@ jobs:
       - name: Self-test do produtor NMI BCB
         run: NEXO_SELFTEST=1 node scripts/nmi_context_collector.mjs
 
-      # GATE 2 — coletor macro (logica de calculo e classificacao)
+      # GATE 2 - EDG traduz a tese e aplica as politicas D2/D3 ratificadas.
+      - name: Conferir contrato canonico EDG
+        run: test -s contracts/edge-ledger.schema.json
+
+      - name: Self-test do engine EDG
+        run: NEXO_SELFTEST=1 node lib/nexo/edg/edg_engine.mjs
+
+      - name: Integracao EDG no Scan Deep e Final
+        run: node scripts/edg_api_integration_test.mjs
+
+      # GATE 3 — coletor macro (logica de calculo e classificacao)
       - name: Self-test do coletor macro
         run: NEXO_SELFTEST=1 node scripts/nexo_macro_collector.mjs
 
-      # GATE 3 — o pacote publicado obedece ao proprio contrato
+      # GATE 4 — o pacote publicado obedece ao proprio contrato
       - name: Validar Context Package publicado
         run: |
           if [ -f data/context/latest.json ]; then
@@ -53,12 +63,12 @@ jobs:
             echo "Nenhum pacote publicado ainda — gate pulado."
           fi
 
-      # GATE 4 — o CSV macro existe e nao esta vazio
+      # GATE 5 — o CSV macro existe e nao esta vazio
       - name: Conferir presenca do CSV macro
         run: |
           test -s data/nexo_macro.csv || { echo "data/nexo_macro.csv ausente ou vazio"; exit 1; }
           echo "linhas no CSV: $(wc -l < data/nexo_macro.csv)"
 
-      # GATE 5 - evita deploy de codigo que passa nos contratos mas nao compila.
+      # GATE 6 - evita deploy de codigo que passa nos contratos mas nao compila.
       - name: Build de producao
         run: npm run build

@@ -5,6 +5,11 @@ import {
   buildNmiPromptContext,
   getLatestContext,
 } from "../../../lib/nmi/get_latest_context.mjs";
+import {
+  applyEdgGuardrails,
+  buildEdgPromptContext,
+  computeEDG,
+} from "../../../lib/nexo/edg/edg_engine.mjs";
 
 const SCAN_S =
   '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
@@ -285,9 +290,11 @@ function trimContextForFinal(extraCtx) {
   );
 }
 
-function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext }) {
+function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, edgContext }) {
   const validatedNmiBlock =
     "\n\n--- CONTEXTO MACRO TRANSVERSAL ---\n" + nmiContext;
+  const validatedEdgBlock =
+    "\n\n--- GOVERNANÇA DE EDGE ---\n" + edgContext;
 
   if (phase === "final") {
     return (
@@ -297,6 +304,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext }) 
       "\n\nHistórico completo da análise:\n" +
       trimContextForFinal(extraCtx || "") +
       validatedNmiBlock +
+      validatedEdgBlock +
       "\n\nTarefa:\n" +
       "1. Consolide o Scan, o Deep e os aprofundamentos disponíveis.\n" +
       "2. Identifique riscos novos e agravados.\n" +
@@ -316,6 +324,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext }) 
       "\nContexto do usuário e dados manuais/macro:\n" +
       trimContextForDeep(extraCtx || "") +
       validatedNmiBlock +
+      validatedEdgBlock +
       "\n\nIMPORTANT: Return ONLY valid JSON. Keep the JSON concise. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
     );
   }
@@ -326,14 +335,19 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext }) 
     (scanSummary ? "\nScan context: " + scanSummary : "") +
     (extraCtx ? "\nFocus: " + extraCtx : "") +
     validatedNmiBlock +
+    validatedEdgBlock +
     "\n\nIMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
   );
+}
+
+function responseWithEdg(phase, data, edg) {
+  return Response.json(applyEdgGuardrails({ phase, result: data, edg }));
 }
 
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { phase, assetType, ticker, scanSummary, extraCtx } = body;
+    const { phase, assetType, ticker, scanSummary, extraCtx, edgeLedger } = body;
 
     if (!phase || !assetType) {
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -361,6 +375,8 @@ export async function POST(req) {
     const systemPrompt = getSystemPrompt(phase, assetType);
     const nmiResult = getLatestContext();
     const nmiContext = buildNmiPromptContext(nmiResult);
+    const edg = computeEDG(edgeLedger);
+    const edgContext = buildEdgPromptContext(edg, edgeLedger);
 
     const userMsg = buildUserMessage({
       phase,
@@ -368,6 +384,7 @@ export async function POST(req) {
       scanSummary,
       extraCtx,
       nmiContext,
+      edgContext,
     });
 
     const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -398,22 +415,26 @@ export async function POST(req) {
       apiData = JSON.parse(apiText);
     } catch {
       if (phase === "deep") {
-        return Response.json(
+        return responseWithEdg(
+          phase,
           fallbackDeepJSON({
             ticker,
             rawText: apiText,
             parseError: "Anthropic retornou resposta HTTP não-JSON.",
-          })
+          }),
+          edg
         );
       }
 
       if (phase === "final") {
-        return Response.json(
+        return responseWithEdg(
+          phase,
           fallbackFinalJSON({
             ticker,
             rawText: apiText,
             parseError: "Anthropic retornou resposta HTTP não-JSON.",
-          })
+          }),
+          edg
         );
       }
 
@@ -440,22 +461,26 @@ export async function POST(req) {
 
     if (!rawText) {
       if (phase === "deep") {
-        return Response.json(
+        return responseWithEdg(
+          phase,
           fallbackDeepJSON({
             ticker,
             rawText: "",
             parseError: "Modelo retornou resposta vazia.",
-          })
+          }),
+          edg
         );
       }
 
       if (phase === "final") {
-        return Response.json(
+        return responseWithEdg(
+          phase,
           fallbackFinalJSON({
             ticker,
             rawText: "",
             parseError: "Modelo retornou resposta vazia.",
-          })
+          }),
+          edg
         );
       }
 
@@ -466,22 +491,26 @@ export async function POST(req) {
 
     if (!result.ok) {
       if (phase === "deep") {
-        return Response.json(
+        return responseWithEdg(
+          phase,
           fallbackDeepJSON({
             ticker,
             rawText,
             parseError: result.error,
-          })
+          }),
+          edg
         );
       }
 
       if (phase === "final") {
-        return Response.json(
+        return responseWithEdg(
+          phase,
           fallbackFinalJSON({
             ticker,
             rawText,
             parseError: result.error,
-          })
+          }),
+          edg
         );
       }
 
@@ -493,7 +522,7 @@ export async function POST(req) {
       );
     }
 
-    return Response.json(result.data);
+    return responseWithEdg(phase, result.data, edg);
   } catch (err) {
     return safeError("Erro servidor: " + err.message);
   }
