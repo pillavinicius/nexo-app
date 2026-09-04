@@ -8,6 +8,7 @@ import {
   displayNumber,
 } from "../lib/ui/asset_market_adapter.mjs";
 import {
+  buildComplementaryMacroContext,
   mergeMacroData,
   nmiContextToMacroData,
 } from "../lib/ui/nmi_macro_adapter.mjs";
@@ -42,13 +43,6 @@ function macroValue(item) {
   return String(item.value);
 }
 
-function macroLabel(item) {
-  if (!item) return "não informado";
-  if (item.ok) return `${item.value} (${item.source}${item.date ? " · " + item.date : ""})`;
-  return `não informado (${item.mode || "manual"})`;
-}
-
-
 function macroStatusText(item) {
   if (!item) return "Dado manual opcional";
   if (item.ok) return `Automático · ${item.source}${item.date ? " · " + item.date : ""}`;
@@ -68,7 +62,16 @@ function formattedMacroValue(label, item) {
   if (label === "IPCA mensal") return `${displayNumber(value)}% a.m.`;
   if (label === "IPCA 12m") return `${displayNumber(value)}% em 12 meses`;
   if (label === "Crédito/PIB") return `${displayNumber(value)}% do PIB`;
+  if (label === "Ibovespa" || label === "IFIX") {
+    return `${displayNumber(value, 2, "pt-BR", true)} pts`;
+  }
   return displayNumber(value);
+}
+
+function readableRegime(value) {
+  if (!value) return "—";
+  const text = String(value).replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function Badge({ text }) {
@@ -294,6 +297,10 @@ export default function NEXOApp() {
   const [macroData, setMacroData] = useState(null);
   const [macroError, setMacroError] = useState("");
   const [macroLoading, setMacroLoading] = useState(false);
+  const [useComplementaryData, setUseComplementaryData] = useState("NAO");
+  const [supplementalLoading, setSupplementalLoading] = useState(false);
+  const [supplementalLoaded, setSupplementalLoaded] = useState(false);
+  const [supplementalError, setSupplementalError] = useState("");
   const [ibovManual, setIbovManual] = useState("");
   const [sp500Manual, setSp500Manual] = useState("");
   const [ifixManual, setIfixManual] = useState("");
@@ -311,6 +318,7 @@ export default function NEXOApp() {
   const abortRef = useRef(null);
   const assetAbortRef = useRef(null);
   const macroAbortRef = useRef(null);
+  const supplementalAbortRef = useRef(null);
 
   const hasScan = !!scanResult;
   const hasDeep = !!deepResult;
@@ -319,9 +327,12 @@ export default function NEXOApp() {
   const locked = loading || hasScan || hasDeep || hasFinal || ended;
 
   const macro = macroData?.automatic || {};
+  const priceUnit = currency === "USD" ? "USD" : "R$";
   const requiredInputsReady =
     ticker.trim().length >= 3 &&
     currentPrice.trim().length > 0;
+  const complementaryPending =
+    useComplementaryData === "SIM" && supplementalLoading;
 
   const scanBlockReason = !ticker.trim()
     ? "Informe o ticker."
@@ -331,16 +342,21 @@ export default function NEXOApp() {
     ? "Aguarde a busca automática da cotação e dos indicadores."
     : !currentPrice.trim()
     ? "Cotação automática indisponível. Informe o valor atual manualmente."
+    : complementaryPending
+    ? "Aguarde o carregamento dos dados complementares selecionados."
     : "";
 
-  const canScan = requiredInputsReady && !assetLoading && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
+  const canScan = requiredInputsReady && !assetLoading && !complementaryPending && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
   const canDeep = hasScan && !hasDeep && !isVeto && !loading && !hasFinal && !ended;
   const canFinalize = (hasScan || hasDeep) && !loading && !hasFinal && !ended;
   const canFollow = hasDeep && !loading && !hasFinal && !ended && (followQ.trim() || followUrl.trim());
 
   useEffect(() => {
     void loadMacro();
-    return () => macroAbortRef.current?.abort();
+    return () => {
+      macroAbortRef.current?.abort();
+      supplementalAbortRef.current?.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -400,35 +416,31 @@ export default function NEXOApp() {
   }, [ticker]);
 
   function buildManualContext() {
-    const ibovAuto = macro?.ibovespa_pontos;
-    const sp500Auto = macro?.sp500_pontos;
-    const ifixAuto = macro?.ifix_pontos;
-
     const automaticAssetContext = compactAssetContext(assetData);
+    const complementaryContext = buildComplementaryMacroContext({
+      enabled: useComplementaryData === "SIM",
+      automatic: macro,
+      manual: {
+        ibov: ibovManual,
+        sp500: sp500Manual,
+        ifix: ifixManual,
+        plIbov,
+        plSp500,
+        jurosFuturo: jurosFuturoManual,
+      },
+    });
 
     return (
-      "Dados manuais e macro fornecidos pelo usuário para refinar a análise:\n" +
+      "Dados do ativo e parâmetros fornecidos para refinar a análise:\n" +
       "- Moeda selecionada: " + currency + "\n" +
       "- Valor atual/cota atual: " + (currentPrice || "não informado") + "\n" +
       "- Mínimo histórico: " + (histMin || "não informado") + "\n" +
       "- Data do mínimo histórico: " + (histMinDate || "não informada") + "\n" +
       "- Máximo histórico: " + (histMax || "não informado") + "\n" +
       "- Data do máximo histórico: " + (histMaxDate || "não informada") + "\n" +
-      "- P/L atual Ibovespa: " + (plIbov || "não informado") + "\n" +
-      "- P/L atual S&P 500: " + (plSp500 || "não informado") + "\n" +
       "- Calcular valuations clássicos como referência auxiliar na análise final? " + classicValuations + "\n" +
-      "- Selic Meta: " + macroLabel(macro?.selic_meta) + "\n" +
-      "- Selic diária: " + macroLabel(macro?.selic_diaria) + "\n" +
-      "- CDI diário: " + macroLabel(macro?.cdi_diario) + "\n" +
-      "- IPCA mensal: " + macroLabel(macro?.ipca_mensal) + "\n" +
-      "- IPCA 12 meses (NMI): " + macroLabel(macro?.ipca_12m) + "\n" +
-      "- Crédito/PIB (NMI): " + macroLabel(macro?.credit_gdp) + "\n" +
-      "- USD PTAX: " + macroLabel(macro?.usd_ptax) + "\n" +
-      "- Fed Funds: " + macroLabel(macro?.fed_funds) + "\n" +
-      "- Ibovespa pontos: " + (ibovManual || (ibovAuto?.ok ? macroValue(ibovAuto) : "não informado")) + "\n" +
-      "- S&P 500 pontos: " + (sp500Manual || (sp500Auto?.ok ? macroValue(sp500Auto) : "não informado")) + "\n" +
-      "- IFIX pontos: " + (ifixManual || (ifixAuto?.ok ? macroValue(ifixAuto) : "não informado")) + "\n" +
-      "- Juros futuro Brasil: " + (jurosFuturoManual || "não informado") + "\n" +
+      "- Macro fundamental: usar o Context Package NMI validado e injetado pelo servidor; não duplicar nem sobrescrever com dados do ativo.\n" +
+      complementaryContext +
       "- Dados automáticos do ativo (HG Brasil/Twelve Data): " +
       (automaticAssetContext ? JSON.stringify(automaticAssetContext) : "indisponíveis; usar fallback manual") + "\n" +
       "Regra de prioridade: se houver valor manual informado pelo usuário, usar o manual. Se manual vazio, usar o automático. Se automático indisponível, marcar como não informado.\n" +
@@ -461,80 +473,89 @@ export default function NEXOApp() {
     setMacroError("");
     const controller = new AbortController();
 
-    let nmiData = null;
-    let supplementalData = null;
-
     try {
       macroAbortRef.current?.abort();
       macroAbortRef.current = controller;
 
-      try {
-        const nmiResponse = await fetch("/api/nmi/context/latest", {
-          method: "GET",
-          signal: controller.signal,
-          cache: "no-store",
-        });
-        const nmiText = await nmiResponse.text();
-        let nmiPackage = null;
-
-        try {
-          nmiPackage = JSON.parse(nmiText);
-        } catch {
-          nmiPackage = null;
-        }
-
-        if (nmiResponse.ok && nmiPackage?.context_id) {
-          nmiData = nmiContextToMacroData(nmiPackage);
-          setMacroData(nmiData);
-        }
-      } catch (nmiError) {
-        if (nmiError?.name === "AbortError") throw nmiError;
-      }
+      const nmiResponse = await fetch("/api/nmi/context/latest", {
+        method: "GET",
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      const nmiText = await nmiResponse.text();
+      let nmiPackage = null;
 
       try {
-        const res = await fetch("/api/macro", {
-          method: "GET",
-          signal: controller.signal,
-          cache: "no-store",
-        });
-
-        const responseText = await res.text();
-        let data = null;
-
-        try {
-          data = JSON.parse(responseText);
-        } catch {
-          throw new Error("Resposta macro complementar inválida");
-        }
-
-        if (!res.ok || !data?.ok) {
-          throw new Error(data?.error || "Falha ao buscar dados macro complementares");
-        }
-
-        supplementalData = data;
-      } catch (supplementalError) {
-        if (supplementalError?.name === "AbortError") throw supplementalError;
+        nmiPackage = JSON.parse(nmiText);
+      } catch {
+        nmiPackage = null;
       }
 
-      if (nmiData || supplementalData) {
-        setMacroData(mergeMacroData(nmiData, supplementalData));
+      if (!nmiResponse.ok || !nmiPackage?.context_id) {
+        throw new Error("Context Package NMI indisponível na interface");
       }
 
-      if (!supplementalData) {
-        setMacroError(
-          nmiData
-            ? "Dados complementares temporariamente indisponíveis. O Context Package NMI validado continua ativo e o Scan permanece liberado."
-            : "A exibição dos dados macro está temporariamente indisponível. A análise usa o Context Package NMI validado diretamente no servidor e o Scan permanece liberado."
-        );
-      }
+      const nmiData = nmiContextToMacroData(nmiPackage);
+      setMacroData((current) => mergeMacroData(nmiData, current));
     } catch (e) {
-      if (e?.name !== "AbortError") setMacroError("Falha inesperada na exibição macro. O Scan permanece liberado.");
+      if (e?.name !== "AbortError") {
+        setMacroError("A exibição do NMI está temporariamente indisponível. O servidor ainda valida o contexto antes de cada análise e o Scan permanece liberado.");
+      }
     } finally {
       if (macroAbortRef.current === controller) {
         setMacroLoading(false);
         macroAbortRef.current = null;
       }
     }
+  }
+
+  async function loadSupplementalMacro() {
+    if (supplementalLoading || supplementalLoaded) return;
+
+    setSupplementalLoading(true);
+    setSupplementalError("");
+    const controller = new AbortController();
+
+    try {
+      supplementalAbortRef.current?.abort();
+      supplementalAbortRef.current = controller;
+
+      const response = await fetch("/api/macro", {
+        method: "GET",
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      const text = await response.text();
+      let data = null;
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("Resposta complementar inválida");
+      }
+
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error || "Dados complementares indisponíveis");
+      }
+
+      setMacroData((current) => mergeMacroData(current, data));
+      setSupplementalLoaded(true);
+    } catch (e) {
+      if (e?.name !== "AbortError") {
+        setSupplementalError("Não foi possível carregar os complementos agora. Você ainda pode preencher somente os campos relevantes ou selecionar NÃO.");
+      }
+    } finally {
+      if (supplementalAbortRef.current === controller) {
+        setSupplementalLoading(false);
+        supplementalAbortRef.current = null;
+      }
+    }
+  }
+
+  function handleComplementaryMode(value) {
+    setUseComplementaryData(value);
+    setSupplementalError("");
+    if (value === "SIM") void loadSupplementalMacro();
   }
 
   async function callAPI(ph, overrideCtx = "") {
@@ -757,6 +778,9 @@ export default function NEXOApp() {
     .help-text{font-size:11px;color:#8A7A58;line-height:1.6}
     .scan-hint{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);background:rgba(210,160,60,.06);padding:9px 12px;margin-bottom:10px;letter-spacing:.8px}
     .warn-box{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);border-left:2px solid #D2A03C;background:rgba(210,160,60,.06);padding:9px 12px;margin:8px 0;line-height:1.5}
+    .reserved-box{min-height:72px;border:1px dashed #2A2318;display:flex;align-items:center;justify-content:center;text-align:center;padding:14px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#4A3E28;letter-spacing:1px;line-height:1.5}
+    .section-meta{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8A7A58;line-height:1.5}
+    .subsection-label{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin:14px 0 7px}
     .macro-card{border:1px solid #2A2318;padding:8px 10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#A89060}
     .macro-title{font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
     .macro-value{font-size:13px;color:#E8D5A3;font-weight:700}
@@ -822,9 +846,9 @@ export default function NEXOApp() {
         <div className="help-box">
           <div className="help-title">Como usar o NEXO App</div>
           <div className="help-text">
-            1) Informe o ticker. 2) O NEXO busca automaticamente cotação, histórico, indicadores e dados macro.
-            3) Revise os valores preenchidos. Os campos permanecem editáveis para fallback manual.
-            4) Execute o Scan. Dados históricos e indicadores disponíveis alimentam também o Deep e a Reclassificação Final.
+            1) Informe o ticker. 2) Revise os dados do ativo preenchidos automaticamente.
+            3) O Macro Fundamental NMI permanece ativo. Habilite dados complementares somente quando forem úteis para a tese.
+            4) Execute o Scan. O contexto validado alimenta também o Deep e a Reclassificação Final.
           </div>
         </div>
 
@@ -833,152 +857,198 @@ export default function NEXOApp() {
           <input className="finp" disabled={locked} value={ticker} maxLength={12} placeholder="Ex: KNSC11, VALE3, VWCE, NVDA" onChange={(e) => setTicker(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") handleScan(); }} />
         </div>
 
-        {assetLoading && <div className="scan-hint">BUSCANDO COTAÇÃO E INDICADORES AUTOMATICAMENTE...</div>}
-        {assetError && (
-          <div className="err-box">
-            Dados automáticos do ativo: {assetError}. Os campos manuais continuam disponíveis como fallback.
-          </div>
-        )}
+        <Sec title="Dados do ativo / ticker">
+          {!ticker.trim() ? (
+            <div className="reserved-box">AGUARDANDO TICKER · COTAÇÃO, HISTÓRICO E INDICADORES SERÃO EXIBIDOS NESTE BLOCO</div>
+          ) : (
+            <>
+              <div className="section-meta">
+                <span>{assetData?.asset?.name || ticker.trim().toUpperCase()}</span>
+                <span>{assetLoading ? "CARREGANDO..." : assetData?.ok ? "DADOS RECEBIDOS" : "FALLBACK MANUAL"}</span>
+              </div>
 
-        {assetData?.ok && (
-          <Sec title={`Dados automáticos · ${assetData?.asset?.name || ticker}`}>
-            <div className="grid3">
-              {[
-                ["Cotação atual", displayMoney(assetData?.asset?.price, assetData?.asset?.currency), "preço da API"],
-                ["Variação", assetData?.asset?.changePercent == null ? "—" : `${displayNumber(assetData.asset.changePercent, 2)}%`, "sessão atual"],
-                ["P/L", assetData?.keyIndicators?.pe == null ? "—" : `${displayNumber(assetData.keyIndicators.pe)}x`, "indicador do ativo"],
-                ["P/VP", assetData?.keyIndicators?.pb == null ? "—" : `${displayNumber(assetData.keyIndicators.pb)}x`, "indicador do ativo"],
-                ["Dividend Yield", assetData?.keyIndicators?.dividendYieldPercent == null ? "—" : `${displayNumber(assetData.keyIndicators.dividendYieldPercent, 2)}%`, "12 meses"],
-                ["Liquidez média", displayMoney(assetData?.derived?.averageFinancialVolume, assetData?.asset?.currency) || "—", "volume financeiro diário"],
-              ].map((item) => (
-                <div className="macro-card" key={item[0]}>
-                  <div className="macro-title">{item[0]}</div>
-                  <div className="macro-value">{item[1] || "—"}</div>
-                  <div className="macro-note">{item[2] || ""}</div>
+              {assetError && (
+                <div className="warn-box">Dados automáticos do ativo indisponíveis: {assetError}. Preencha a cotação manualmente para prosseguir.</div>
+              )}
+
+              <div className="grid2">
+                <div className="field">
+                  <div className="flbl">Valor atual / cota atual ({priceUnit}) *</div>
+                  <input className="finp-sm" disabled={locked} value={currentPrice} placeholder="Ex: 35,80" onChange={(e) => setCurrentPrice(e.target.value)} />
+                  <div className="macro-note">{assetData?.ok ? `Automático · ${assetData?.asset?.dataProvider || assetData?.route} · editável` : "Fallback manual · obrigatório para habilitar o Scan"}</div>
                 </div>
-              ))}
-            </div>
-            <div className="macro-note" style={{ marginTop: 8 }}>
-              Fonte: {assetData?.asset?.source || assetData?.asset?.dataProvider || assetData?.route} · {assetData?.asset?.updatedAt || assetData?.updatedAt || ""}
-            </div>
-          </Sec>
-        )}
+                <div className="field">
+                  <div className="flbl">Moeda</div>
+                  <select className="select-sm" disabled={locked} value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                    <option value="BRL">BRL</option>
+                    <option value="USD">USD</option>
+                  </select>
+                  <div className="macro-note">Unidade dos campos de preço</div>
+                </div>
+                <div className="field">
+                  <div className="flbl">Mínimo histórico ({priceUnit})</div>
+                  <input className="finp-sm" disabled={locked} value={histMin} placeholder="Ex: 18,40" onChange={(e) => setHistMin(e.target.value)} />
+                  <div className="macro-note">{assetData?.derived?.minPrice != null ? "Automático · editável" : "Manual opcional"}</div>
+                </div>
+                <div className="field">
+                  <div className="flbl">Data do mínimo</div>
+                  <input className="finp-sm" disabled={locked} value={histMinDate} maxLength={5} placeholder="Ex: 02/21" onChange={(e) => setHistMinDate(e.target.value)} />
+                  <div className="macro-note">MM/AA · automático quando disponível</div>
+                </div>
+                <div className="field">
+                  <div className="flbl">Máximo histórico ({priceUnit})</div>
+                  <input className="finp-sm" disabled={locked} value={histMax} placeholder="Ex: 42,77" onChange={(e) => setHistMax(e.target.value)} />
+                  <div className="macro-note">{assetData?.derived?.maxPrice != null ? "Automático · editável" : "Manual opcional"}</div>
+                </div>
+                <div className="field">
+                  <div className="flbl">Data do máximo</div>
+                  <input className="finp-sm" disabled={locked} value={histMaxDate} maxLength={5} placeholder="Ex: 11/25" onChange={(e) => setHistMaxDate(e.target.value)} />
+                  <div className="macro-note">MM/AA · automático quando disponível</div>
+                </div>
+              </div>
 
-        <Sec title="Dados Macro NEXO">
+              {assetData?.ok && (
+                <>
+                  <div className="subsection-label">Indicadores automáticos do ativo</div>
+                  <div className="grid3">
+                    {[
+                      ["Variação", assetData?.asset?.changePercent == null ? "—" : `${displayNumber(assetData.asset.changePercent)}%`, "sessão atual"],
+                      ["P/L", assetData?.keyIndicators?.pe == null ? "—" : `${displayNumber(assetData.keyIndicators.pe)}x`, "indicador do ativo"],
+                      ["P/VP", assetData?.keyIndicators?.pb == null ? "—" : `${displayNumber(assetData.keyIndicators.pb)}x`, "indicador do ativo"],
+                      ["Dividend Yield", assetData?.keyIndicators?.dividendYieldPercent == null ? "—" : `${displayNumber(assetData.keyIndicators.dividendYieldPercent)}%`, "12 meses"],
+                      ["Liquidez média", displayMoney(assetData?.derived?.averageFinancialVolume, assetData?.asset?.currency) || "—", "volume financeiro diário"],
+                    ].map((item) => (
+                      <div className="macro-card" key={item[0]}>
+                        <div className="macro-title">{item[0]}</div>
+                        <div className="macro-value">{item[1]}</div>
+                        <div className="macro-note">{item[2]}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="macro-note" style={{ marginTop: 8 }}>
+                    Fonte: {assetData?.asset?.source || assetData?.asset?.dataProvider || assetData?.route} · {assetData?.asset?.updatedAt || assetData?.updatedAt || ""}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </Sec>
+
+        <Sec title="Macro fundamental NMI">
+          {macroLoading && !macroData?.nmi && <div className="reserved-box">CARREGANDO CONTEXT PACKAGE NMI VALIDADO...</div>}
           {macroData?.nmi?.available && (
             <div className="scan-hint">
-              CONTEXT PACKAGE NMI ATIVO · {macroData.nmi.contextId} · CONFIANÇA {displayNumber((macroData.nmi.overallConfidence || 0) * 100)}%
+              NMI ATIVO · {macroData.nmi.contextId} · CONFIANÇA {displayNumber((macroData.nmi.overallConfidence || 0) * 100)}%
             </div>
           )}
           {macroError && <div className="warn-box">{macroError}</div>}
 
-          <div className="grid3">
-            {[
-              ["Selic Meta", macro?.selic_meta],
-              ["CDI diário", macro?.cdi_diario],
-              ["IPCA mensal", macro?.ipca_mensal],
-              ["IPCA 12m", macro?.ipca_12m],
-              ["Crédito/PIB", macro?.credit_gdp],
-              ["USD PTAX", macro?.usd_ptax],
-              ["Fed Funds", macro?.fed_funds],
-              ["Selic diária", macro?.selic_diaria],
-            ].map((m) => (
-              <div className="macro-card" key={m[0]}>
-                <div className="macro-title">{m[0]}</div>
-                <div className="macro-value">{formattedMacroValue(m[0], m[1])}</div>
-                <div className="macro-note">{m[1]?.ok ? `${m[1]?.source} · ${m[1]?.date || ""}` : macroLoading ? "Carregando automaticamente" : "Complemento indisponível"}</div>
+          {!macroLoading && !macroData?.nmi && (
+            <div className="reserved-box">NMI INDISPONÍVEL NA INTERFACE · A VALIDAÇÃO DO SERVIDOR CONTINUA OBRIGATÓRIA NO SCAN</div>
+          )}
+
+          {macroData?.nmi && (
+            <div className="grid2">
+              <div className="macro-card">
+                <div className="macro-title">Regime macro</div>
+                <div className="macro-value">{readableRegime(macroData.nmi.regimeLabel)}</div>
+                <div className="macro-note">Regra NMI · convicção {displayNumber((macroData.nmi.regimeConviction || 0) * 100)}%</div>
               </div>
-            ))}
-          </div>
+              {[
+                ["Selic Meta", macro?.selic_meta],
+                ["IPCA 12m", macro?.ipca_12m],
+                ["Crédito/PIB", macro?.credit_gdp],
+              ].map((m) => (
+                <div className="macro-card" key={m[0]}>
+                  <div className="macro-title">{m[0]}</div>
+                  <div className="macro-value">{formattedMacroValue(m[0], m[1])}</div>
+                  <div className="macro-note">{m[1]?.ok ? `${m[1]?.source} · ${m[1]?.date || ""}` : "Indisponível no pacote"}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </Sec>
 
-        <div className="grid2">
+        <Sec title="Dados complementares opcionais">
           <div className="field">
-            <div className="flbl">Valor atual / cota atual *</div>
-            <input className="finp-sm" disabled={locked} value={currentPrice} placeholder="Ex: 35,80" onChange={(e) => setCurrentPrice(e.target.value)} />
-            <div className="macro-note">{assetData?.ok ? `Automático · ${assetData?.asset?.dataProvider || assetData?.route} · editável` : "Fallback manual · obrigatório para habilitar o Scan"}</div>
-          </div>
-          <div className="field">
-            <div className="flbl">Moeda</div>
-            <select className="select-sm" disabled={locked} value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              <option value="BRL">BRL</option>
-              <option value="USD">USD</option>
-            </select>
-            <div className="macro-note">Unidade usada nos campos de preço</div>
-          </div>
-        </div>
-
-        <div className="grid2">
-          <div className="field">
-            <div className="flbl">Mínimo histórico</div>
-            <input className="finp-sm" disabled={locked} value={histMin} placeholder="Ex: 18,40" onChange={(e) => setHistMin(e.target.value)} />
-            <div className="macro-note">{assetData?.derived?.minPrice != null ? "Automático · histórico disponível · editável" : "Dado manual opcional"}</div>
-          </div>
-          <div className="field">
-            <div className="flbl">Data do mínimo</div>
-            <input className="finp-sm" disabled={locked} value={histMinDate} maxLength={5} placeholder="Ex: 02/21" onChange={(e) => setHistMinDate(e.target.value)} />
-            <div className="macro-note">Formato MM/AA · dado manual opcional</div>
-          </div>
-        </div>
-
-        <div className="grid2">
-          <div className="field">
-            <div className="flbl">Máximo histórico</div>
-            <input className="finp-sm" disabled={locked} value={histMax} placeholder="Ex: 42,77" onChange={(e) => setHistMax(e.target.value)} />
-            <div className="macro-note">{assetData?.derived?.maxPrice != null ? "Automático · histórico disponível · editável" : "Dado manual opcional"}</div>
-          </div>
-          <div className="field">
-            <div className="flbl">Data do máximo</div>
-            <input className="finp-sm" disabled={locked} value={histMaxDate} maxLength={5} placeholder="Ex: 11/25" onChange={(e) => setHistMaxDate(e.target.value)} />
-            <div className="macro-note">Formato MM/AA · dado manual opcional</div>
-          </div>
-        </div>
-
-        <div className="grid3">
-          <div className="field">
-            <div className="flbl">P/L Ibovespa</div>
-            <input className="finp-sm" disabled={locked} value={plIbov} placeholder="Ex: 8,5" onChange={(e) => setPlIbov(e.target.value)} />
-            <div className="macro-note">Dado manual opcional</div>
-          </div>
-          <div className="field">
-            <div className="flbl">P/L S&P 500</div>
-            <input className="finp-sm" disabled={locked} value={plSp500} placeholder="Ex: 22,0" onChange={(e) => setPlSp500(e.target.value)} />
-            <div className="macro-note">Dado manual opcional</div>
-          </div>
-          <div className="field">
-            <div className="flbl">Valuations clássicos?</div>
-            <select className="select-sm" disabled={locked} value={classicValuations} onChange={(e) => setClassicValuations(e.target.value)}>
+            <div className="flbl">Usar dados complementares na análise?</div>
+            <select className="select-sm" disabled={locked} value={useComplementaryData} onChange={(e) => handleComplementaryMode(e.target.value)}>
               <option value="NAO">NÃO</option>
               <option value="SIM">SIM</option>
             </select>
-            <div className="macro-note">Referência auxiliar, não decisória</div>
+            <div className="macro-note">Padrão NÃO · habilite apenas quando o contexto de mercado agregar à tese</div>
           </div>
-        </div>
 
-        <div className="grid2">
-          <div className="field">
-            <div className="flbl">Ibovespa pontos *</div>
-            <input className="finp-sm" disabled={locked} value={ibovManual} placeholder={macro?.ibovespa_pontos?.ok ? macroValue(macro.ibovespa_pontos) : "Ex: 145000"} onChange={(e) => setIbovManual(e.target.value)} />
-            <div className="macro-note">{macroStatusText(macro?.ibovespa_pontos)}</div>
-          </div>
-          <div className="field">
-            <div className="flbl">S&P 500 pontos *</div>
-            <input className="finp-sm" disabled={locked} value={sp500Manual} placeholder={macro?.sp500_pontos?.ok ? macroValue(macro.sp500_pontos) : "Ex: 6100"} onChange={(e) => setSp500Manual(e.target.value)} />
-            <div className="macro-note">{macroStatusText(macro?.sp500_pontos)}</div>
-          </div>
-        </div>
+          {useComplementaryData === "NAO" ? (
+            <div className="reserved-box">COMPLEMENTOS DESATIVADOS · NÃO SERÃO ENVIADOS À ANÁLISE</div>
+          ) : (
+            <>
+              {supplementalLoading && <div className="scan-hint">CARREGANDO DADOS COMPLEMENTARES...</div>}
+              {supplementalError && <div className="warn-box">{supplementalError}</div>}
 
-        <div className="grid2">
-          <div className="field">
-            <div className="flbl">IFIX pontos *</div>
-            <input className="finp-sm" disabled={locked} value={ifixManual} placeholder={macro?.ifix_pontos?.ok ? macroValue(macro.ifix_pontos) : "Ex: 3400"} onChange={(e) => setIfixManual(e.target.value)} />
-            <div className="macro-note">{macroStatusText(macro?.ifix_pontos)}</div>
-          </div>
-          <div className="field">
-            <div className="flbl">Juros futuro Brasil</div>
-            <input className="finp-sm" disabled={locked} value={jurosFuturoManual} placeholder="Ex: DI Jan/29 13,20%" onChange={(e) => setJurosFuturoManual(e.target.value)} />
-            <div className="macro-note">Dado manual opcional</div>
-          </div>
+              <div className="subsection-label">Dados automáticos disponíveis</div>
+              <div className="grid3">
+                {[
+                  ["CDI diário", macro?.cdi_diario],
+                  ["Selic diária", macro?.selic_diaria],
+                  ["IPCA mensal", macro?.ipca_mensal],
+                  ["USD PTAX", macro?.usd_ptax],
+                  ["Fed Funds", macro?.fed_funds],
+                  ["Ibovespa", macro?.ibovespa_pontos],
+                  ["IFIX", macro?.ifix_pontos],
+                ].map((m) => (
+                  <div className="macro-card" key={m[0]}>
+                    <div className="macro-title">{m[0]}</div>
+                    <div className="macro-value">{formattedMacroValue(m[0], m[1])}</div>
+                    <div className="macro-note">{m[1]?.ok ? `${m[1]?.source} · ${m[1]?.date || ""}` : supplementalLoading ? "Carregando..." : "Automação indisponível"}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="subsection-label">Ajustes manuais complementares</div>
+              <div className="grid2">
+                <div className="field">
+                  <div className="flbl">P/L Ibovespa</div>
+                  <input className="finp-sm" disabled={locked} value={plIbov} placeholder="Ex: 8,5" onChange={(e) => setPlIbov(e.target.value)} />
+                  <div className="macro-note">Manual · sem fonte pública oficial estável</div>
+                </div>
+                <div className="field">
+                  <div className="flbl">P/L S&P 500</div>
+                  <input className="finp-sm" disabled={locked} value={plSp500} placeholder="Ex: 22,0" onChange={(e) => setPlSp500(e.target.value)} />
+                  <div className="macro-note">Manual · sem fonte pública oficial estável</div>
+                </div>
+                <div className="field">
+                  <div className="flbl">Ibovespa pontos</div>
+                  <input className="finp-sm" disabled={locked} value={ibovManual} placeholder={macro?.ibovespa_pontos?.ok ? macroValue(macro.ibovespa_pontos) : "Ex: 145000"} onChange={(e) => setIbovManual(e.target.value)} />
+                  <div className="macro-note">{macroStatusText(macro?.ibovespa_pontos)} · manual sobrescreve</div>
+                </div>
+                <div className="field">
+                  <div className="flbl">S&P 500 pontos</div>
+                  <input className="finp-sm" disabled={locked} value={sp500Manual} placeholder={macro?.sp500_pontos?.ok ? macroValue(macro.sp500_pontos) : "Ex: 6100"} onChange={(e) => setSp500Manual(e.target.value)} />
+                  <div className="macro-note">Manual até integrar fonte licenciada/confiável</div>
+                </div>
+                <div className="field">
+                  <div className="flbl">IFIX pontos</div>
+                  <input className="finp-sm" disabled={locked} value={ifixManual} placeholder={macro?.ifix_pontos?.ok ? macroValue(macro.ifix_pontos) : "Ex: 3400"} onChange={(e) => setIfixManual(e.target.value)} />
+                  <div className="macro-note">{macroStatusText(macro?.ifix_pontos)} · manual sobrescreve</div>
+                </div>
+                <div className="field">
+                  <div className="flbl">Juros futuro Brasil</div>
+                  <input className="finp-sm" disabled={locked} value={jurosFuturoManual} placeholder="Ex: DI Jan/29 13,20%" onChange={(e) => setJurosFuturoManual(e.target.value)} />
+                  <div className="macro-note">Manual nesta fase · automação B3 exige coletor dedicado</div>
+                </div>
+              </div>
+            </>
+          )}
+        </Sec>
+
+        <div className="field">
+          <div className="flbl">Usar valuations clássicos?</div>
+          <select className="select-sm" disabled={locked} value={classicValuations} onChange={(e) => setClassicValuations(e.target.value)}>
+            <option value="NAO">NÃO</option>
+            <option value="SIM">SIM</option>
+          </select>
+          <div className="macro-note">Referência auxiliar, não decisória · escolha independente dos dados complementares</div>
         </div>
 
         <div className="field">

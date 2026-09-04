@@ -10,6 +10,7 @@ import {
   monthYear,
 } from "../lib/ui/asset_market_adapter.mjs";
 import {
+  buildComplementaryMacroContext,
   mergeMacroData,
   nmiContextToMacroData,
 } from "../lib/ui/nmi_macro_adapter.mjs";
@@ -71,6 +72,7 @@ const nmiMacro = nmiContextToMacroData({
   as_of: "2026-09-04T18:00:00Z",
   market_close_date: "2026-09-04",
   is_seed_mode: false,
+  regime: { label: "juros_altos", conviction_score: 0.65 },
   source_observations: {
     selic_target: { provider: "BCB_SGS", series_code: 432, status: "official", observed_at: "2026-09-04", value: 14, unit: "percent_per_year" },
     ipca_12m: { provider: "BCB_SGS", series_code: 13522, status: "official", observed_at: "2026-07-01", value: 4.44, unit: "percent_12m" },
@@ -83,6 +85,8 @@ assert.equal(nmiMacro.nmi.contextId, "ctx_test");
 assert.equal(nmiMacro.automatic.selic_meta.value, 14);
 assert.equal(nmiMacro.automatic.ipca_12m.value, 4.44);
 assert.equal(nmiMacro.automatic.credit_gdp.value, 55.57);
+assert.equal(nmiMacro.nmi.regimeLabel, "juros_altos");
+assert.equal(nmiMacro.nmi.regimeConviction, 0.65);
 
 const mergedMacro = mergeMacroData(nmiMacro, {
   ok: true,
@@ -106,4 +110,21 @@ const seedMacro = nmiContextToMacroData({
 assert.equal(seedMacro.nmi.status, "seed");
 assert.equal(seedMacro.automatic.selic_meta.ok, false);
 
-console.log("PASS asset + NMI macro adapters: 23 assercoes");
+const complementsDisabled = buildComplementaryMacroContext({
+  enabled: false,
+  manual: { plIbov: "SENTINELA_NAO_ENVIAR" },
+});
+assert.match(complementsDisabled, /habilitados: NÃO/);
+assert.doesNotMatch(complementsDisabled, /SENTINELA_NAO_ENVIAR/);
+
+const complementsEnabled = buildComplementaryMacroContext({
+  enabled: true,
+  automatic: mergedMacro.automatic,
+  manual: { ibov: "150000", plIbov: "9,25", jurosFuturo: "DI Jan\/29 12,50%" },
+});
+assert.match(complementsEnabled, /habilitados: SIM/);
+assert.match(complementsEnabled, /Ibovespa pontos: 150000/);
+assert.match(complementsEnabled, /P\/L atual Ibovespa: 9,25/);
+assert.match(complementsEnabled, /DI Jan\/29 12,50%/);
+
+console.log("PASS asset + NMI macro adapters: 31 assercoes");
