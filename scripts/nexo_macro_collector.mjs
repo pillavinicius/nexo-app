@@ -17,6 +17,7 @@
 // ============================================================================
 
 import { writeFileSync, readFileSync } from "node:fs";
+import { fetchSgsSeries } from "../lib/bcb/sgs_client.mjs";
 
 // ----------------------------------------------------------------------------
 // 0. GUARDAS DE AMBIENTE
@@ -96,7 +97,6 @@ const DATA_REAL = "1994-07-01"; // marco do Plano Real
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
-function parseBRDate(s) { const [d, m, y] = s.split("/"); return new Date(`${y}-${m}-${d}`); }
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 function round(n, d = 2) { return n == null ? null : Math.round(n * 10 ** d) / 10 ** d; }
 
@@ -188,18 +188,12 @@ async function fetchJSON(url, label, opts = {}) {
 // BCB SGS — sem chave. Desde 26/03/2025 o filtro de data é OBRIGATÓRIO.
 // Puxa em blocos de 8 anos p/ respeitar o limite de volume.
 async function fetchBCB(code, startYear) {
-  const out = [];
-  const endYear = new Date().getFullYear();
-  for (let y = startYear; y <= endYear; y += 8) {
-    const di = `01/01/${y}`, df = `31/12/${Math.min(y + 7, endYear)}`;
-    const url = `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${code}/dados?formato=json&dataInicial=${di}&dataFinal=${df}`;
-    const data = await fetchJSON(url, `BCB ${code} ${y}`, { quiet404: true });
-    if (Array.isArray(data)) {
-      for (const r of data) out.push({ ts: parseBRDate(r.data).getTime(), value: num(r.valor) });
-    }
-    await sleep(150);
-  }
-  return out.sort((a, b) => a.ts - b.ts);
+  const rows = await fetchSgsSeries(code, {
+    startDate: `${startYear}-01-01`,
+    endDate: todayISO(),
+    chunkYears: 8,
+  });
+  return rows.map(({ ts, value }) => ({ ts, value }));
 }
 
 // FRED — precisa de chave. units: "lin" (nível) ou "pc1" (% a/a).

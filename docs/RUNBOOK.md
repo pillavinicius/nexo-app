@@ -84,7 +84,37 @@ git push origin main
 
 ---
 
-## 3. Sair do seed mode
+## 3. Atualizar o NMI pelo BCB SGS
+
+O produtor NMI coleta somente fora da Vercel e publica o pacote com escrita
+atômica. Não exige chave de API.
+
+```bash
+cd ~/nexo-app
+npm run test:nmi:collector
+npm run collect:nmi -- --as-of AAAA-MM-DD
+node scripts/validate_context.mjs data/context/latest.json
+git diff data/context/latest.json
+```
+
+O coletor oficial cobre:
+
+| Série | Campo | Unidade no pacote |
+|---|---|---|
+| 432 | `brazil.macro.selic_target` | percentual a.a. |
+| 13522 | `brazil.macro.ipca_12m` | percentual em 12 meses |
+| 20622 | `brazil.credit_system.credit_gdp` | fração do PIB |
+
+Antes de escrever, o produtor bloqueia recuo de data, perda de uma observação
+oficial e pacote inválido. Se as observações não mudaram, não cria nova versão.
+
+Depois da primeira coleta real, o pacote usa contrato 1.2. Fontes ainda não
+integradas ficam `unavailable` e seus campos ficam `null`; nunca recebem número
+sintético.
+
+---
+
+## 4. Regras do seed mode
 
 Enquanto qualquer watermark tiver `status: "seed"`, o pacote:
 
@@ -103,22 +133,23 @@ Para sair do seed é preciso o primeiro coletor real do BCB SGS:
 | 13522 | IPCA acumulado 12m | `brazil.macro.ipca_12m` |
 | 20622 | Crédito SFN / PIB | `brazil.credit_system.credit_gdp` |
 
-Quando o coletor real preencher esses campos, troque o `status` dos watermarks
-correspondentes de `seed` para `official`. O `is_seed_mode` cai para `false`
-automaticamente na próxima validação, e o teto de confiança sai junto.
+O produtor faz a transição automaticamente: BCB vira `official`, as demais
+fontes ainda não integradas viram `unavailable`, e `is_seed_mode` passa a
+`false`. `unavailable` não é dado real e reduz cobertura e confiança.
 
 Padrão obrigatório do coletor novo, igual ao macro:
 **self-test offline → CSV/JSON versionado → engine determinística → gate no CI.**
 
 ---
 
-## 4. Ordem de execução dos gates
+## 5. Ordem de execução dos gates
 
 Antes de qualquer push que toque código:
 
 ```bash
 NEXO_SELFTEST=1 node scripts/nexo_macro_collector.mjs
 NEXO_SELFTEST=1 node lib/nmi/nexo_context_validator.mjs
+NEXO_SELFTEST=1 node scripts/nmi_context_collector.mjs
 node scripts/validate_context.mjs data/context/latest.json
 ```
 
@@ -127,7 +158,7 @@ Rodar à mão antes economiza um ciclo de deploy quebrado.
 
 ---
 
-## 5. Fluxo Git — referência rápida
+## 6. Fluxo Git — referência rápida
 
 ```bash
 git pull origin main          # trazer o que mudou
@@ -142,7 +173,7 @@ em `~/.config/gh/hosts.yml` — não exponha em captura de tela).
 
 ---
 
-## 6. Pendências de segurança em aberto
+## 7. Pendências de segurança em aberto
 
 - Regenerar a chave da API Anthropic (`sk-ant-...`) — apareceu em prints
 - Regenerar a chave do FRED — apareceu em prints

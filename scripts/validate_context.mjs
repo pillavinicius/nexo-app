@@ -4,7 +4,7 @@
 // GATE L1: nenhum Context Package e persistido sem passar pelo contrato.
 //
 // Uso:
-//   node scripts/validate_context.mjs [caminho.json] [--expects 1.1]
+//   node scripts/validate_context.mjs [caminho.json] [--expects 1.2]
 //
 // Sem argumento, valida data/context/latest.json.
 // Sai com codigo 1 se o pacote violar o contrato -> quebra o CI e o build.

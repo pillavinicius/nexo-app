@@ -7,9 +7,11 @@
     "build": "next build",
     "start": "next start",
     "test:nmi": "NEXO_SELFTEST=1 node lib/nmi/nexo_context_validator.mjs",
+    "test:nmi:collector": "NEXO_SELFTEST=1 node scripts/nmi_context_collector.mjs",
     "test:macro": "NEXO_SELFTEST=1 node scripts/nexo_macro_collector.mjs",
     "validate:context": "node scripts/validate_context.mjs data/context/latest.json",
-    "test": "npm run test:nmi && npm run test:macro && npm run validate:context",
+    "collect:nmi": "node scripts/nmi_context_collector.mjs",
+    "test": "npm run test:nmi && npm run test:nmi:collector && npm run test:macro && npm run validate:context",
     "ci": "npm test && npm run build"
   },
   "dependencies": {
