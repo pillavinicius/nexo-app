@@ -61,6 +61,8 @@ jobs:
           node scripts/edge_ui_contract_test.mjs
           node scripts/ui_reset_contract_test.mjs
           node scripts/verdict_transition_test.mjs
+          node scripts/reclassification_integrity_test.mjs
+          node scripts/reclassification_api_integration_test.mjs
 
       - name: Contrato de validacao do ticker
         run: node scripts/asset_lookup_contract_test.mjs

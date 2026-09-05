@@ -13,12 +13,19 @@ import {
   computeEDG,
 } from "../../../lib/nexo/edg/edg_engine.mjs";
 import { reconcileFinalVerdictChange } from "../../../lib/nexo/analysis/verdict_transition.mjs";
+import {
+  buildDeterministicFinal,
+  reconcileDeepIntegrity,
+} from "../../../lib/nexo/analysis/reclassification_integrity.mjs";
 
 const SCAN_S =
   '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
 
 const DEEP_S =
-  '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","lacunas":[{"q":"","r":""}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"valuations_classicos":[{"modelo":"Graham|Peter Lynch|Buffett moderno|Bazin","valor_justo":"","metodologia":"","premissas":""}],"zona":"","besst":"","desconto":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
+  '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":""}],"lacunas":[{"q":"","r":""}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"valuations_classicos":[{"modelo":"Graham|Peter Lynch|Buffett moderno|Bazin","valor_justo":"","metodologia":"","premissas":""}],"zona":"","besst":"","desconto":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
+
+const DEEP_INTEGRITY_RULES =
+  " Score original must reproduce the previous stage score. Only include ajustes_score for NEW evidence found in this Deep; never penalize a risk already counted in the previous stage. Each adjustment must use a 0-5 dimension score and explain the new evidence. The server will ignore your arithmetic and calculate the total from the adjustments. BESST must be 15-25% below the convergence zone.";
 
 const FINAL_S =
   '{"ticker":"","classificacao_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR|VETADO","veredito_anterior":"","veredito_reclassificado":"","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","mudanca_veredito":"MANTEVE|MELHOROU|PIOROU","riscos_incorporados":[{"descricao":"","impacto_score":"","severidade":"ALTO|MEDIO|BAIXO"}],"ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":""}],"tese_final":"","preco_final":{"zona_convergencia":"","besst":"","margem_seguranca":"","observacao":""},"conclusao":"","proximos_passos":[""]}';
@@ -59,21 +66,25 @@ const DEEPS = {
   "fii":
     "You are a NEXO FII deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     DEEP_S +
+    DEEP_INTEGRITY_RULES +
     " Keep the response concise. C1=P/VP, C2=yield vs NTN-B spread, C3=location moat. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro scenarios. 2 catalisadores. 2 riscos. 2 passos. If classical valuations were not requested, return valuations_classicos=[]. All text in Portuguese.",
 
   "acao-br":
     "You are a NEXO Brazilian stock deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     DEEP_S +
+    DEEP_INTEGRITY_RULES +
     " Keep the response concise. Use segment-appropriate pricing model C1/C2/C3. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro. 2 catalisadores. 2 riscos. 2 passos. If classical valuations were not requested, return valuations_classicos=[]. All text in Portuguese.",
 
   "etf-ext":
     "You are a NEXO ETF deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     DEEP_S +
+    DEEP_INTEGRITY_RULES +
     " Keep the response concise. C1=cost efficiency, C2=concentration risk, C3=Markowitz fit. 2 macro. 2 catalisadores. 2 riscos. 2 passos. If classical valuations were not requested, return valuations_classicos=[]. All text in Portuguese.",
 
   "stock-ext":
     "You are a NEXO international stock deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     DEEP_S +
+    DEEP_INTEGRITY_RULES +
     " Keep the response concise. Theme-appropriate pricing model. Answer 2 lacunas. 2 macro. 2 catalisadores. 2 riscos. 2 passos. If classical valuations were not requested, return valuations_classicos=[]. All text in Portuguese.",
 };
 
@@ -302,7 +313,7 @@ function trimContextForFinal(extraCtx) {
   );
 }
 
-function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, edgContext }) {
+function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, edgContext, analysisHistory = {} }) {
   const validatedNmiBlock =
     "\n\n--- CONTEXTO MACRO TRANSVERSAL ---\n" + nmiContext;
   const validatedEdgBlock =
@@ -329,12 +340,19 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
   }
 
   if (phase === "deep") {
+    const analyticalBaseline =
+      (Array.isArray(analysisHistory.deepAdds) && analysisHistory.deepAdds.at(-1)) ||
+      analysisHistory.deep ||
+      analysisHistory.scan ||
+      null;
     return (
       "Analyze ticker: " +
       ticker +
       (scanSummary ? "\nScan context: " + scanSummary : "") +
       "\nContexto do usuário e dados manuais/macro:\n" +
       trimContextForDeep(extraCtx || "") +
+      "\n\n--- BASE ANALÍTICA ANTERIOR (PRESERVAR SCORE E NÃO DUPLICAR RISCOS) ---\n" +
+      JSON.stringify(analyticalBaseline || {}, null, 2) +
       validatedNmiBlock +
       validatedEdgBlock +
       "\n\nIMPORTANT: Return ONLY valid JSON. Keep the JSON concise. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
@@ -352,8 +370,11 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
   );
 }
 
-function responseWithEdg(phase, data, edg) {
-  const governed = applyEdgGuardrails({ phase, result: data, edg });
+function responseWithEdg(phase, data, edg, analysisHistory = {}) {
+  const integrityChecked = phase === "deep"
+    ? reconcileDeepIntegrity(data, analysisHistory)
+    : data;
+  const governed = applyEdgGuardrails({ phase, result: integrityChecked, edg });
   return Response.json(reconcileFinalVerdictChange(phase, governed));
 }
 
@@ -416,7 +437,7 @@ async function requestStructuredAnalysis({ phase, systemPrompt, userMsg }) {
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { phase, assetType, ticker, scanSummary, extraCtx, edgeLedger } = body;
+    const { phase, assetType, ticker, scanSummary, extraCtx, edgeLedger, analysisHistory = {} } = body;
 
     if (!phase || !assetType) {
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -447,6 +468,11 @@ export async function POST(req) {
     const edg = computeEDG(edgeLedger);
     const edgContext = buildEdgAnalysisContext(edg, edgeLedger);
 
+    if (phase === "final" && analysisHistory?.scan) {
+      const deterministicFinal = buildDeterministicFinal({ ticker, history: analysisHistory });
+      return responseWithEdg(phase, deterministicFinal, edg, analysisHistory);
+    }
+
     const userMsg = buildUserMessage({
       phase,
       ticker,
@@ -454,6 +480,7 @@ export async function POST(req) {
       extraCtx,
       nmiContext,
       edgContext,
+      analysisHistory,
     });
 
     let modelResult = await requestStructuredAnalysis({ phase, systemPrompt, userMsg });
@@ -468,7 +495,8 @@ export async function POST(req) {
             rawText: modelResult.rawText,
             parseError: modelResult.error,
           }),
-          edg
+          edg,
+          analysisHistory
         );
       }
 
@@ -480,7 +508,8 @@ export async function POST(req) {
             rawText: modelResult.rawText,
             parseError: modelResult.error,
           }),
-          edg
+          edg,
+          analysisHistory
         );
       }
 
@@ -514,7 +543,8 @@ export async function POST(req) {
             rawText,
             parseError: result.error,
           }),
-          edg
+          edg,
+          analysisHistory
         );
       }
 
@@ -526,7 +556,8 @@ export async function POST(req) {
             rawText,
             parseError: result.error,
           }),
-          edg
+          edg,
+          analysisHistory
         );
       }
 
@@ -535,7 +566,7 @@ export async function POST(req) {
       );
     }
 
-    return responseWithEdg(phase, result.data, edg);
+    return responseWithEdg(phase, result.data, edg, analysisHistory);
   } catch (err) {
     return safeError("Erro servidor: " + err.message);
   }
