@@ -35,6 +35,7 @@ import {
   resolveAssetLookupState,
 } from "../lib/nexo/data/asset_lookup_contract.mjs";
 import { splitPriceModels } from "../lib/ui/valuation_adapter.mjs";
+import { readApiJsonResponse } from "../lib/ui/api_response_adapter.mjs";
 
 const EDGE_TYPE_LABELS = Object.freeze({
   nenhum: "Nenhum edge declarado",
@@ -845,19 +846,7 @@ export default function NEXOApp() {
       }),
     });
 
-    const txt = await res.text();
-    if (!txt || txt.trim() === "") throw new Error("Sem resposta do servidor");
-
-    let data;
-
-    try {
-      data = JSON.parse(txt);
-    } catch {
-      const s = txt.indexOf("{");
-      const e = txt.lastIndexOf("}");
-      if (s === -1 || e === -1) throw new Error("Resposta inválida da API");
-      data = JSON.parse(txt.slice(s, e + 1));
-    }
+    const data = await readApiJsonResponse(res);
 
     if (data?.error) throw new Error(asText(data.error.message || data.error));
     return data;

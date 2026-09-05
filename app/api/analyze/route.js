@@ -1,5 +1,7 @@
-export const maxDuration = 60;
+export const maxDuration = 120;
 export const dynamic = "force-dynamic";
+
+import { jsonrepair } from "jsonrepair";
 
 import {
   buildNmiPromptContext,
@@ -10,7 +12,6 @@ import {
   buildEdgPromptContext,
   computeEDG,
 } from "../../../lib/nexo/edg/edg_engine.mjs";
-import { outputConfigForPhase } from "../../../lib/nexo/analysis/analysis_output_schemas.mjs";
 
 const SCAN_S =
   '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
@@ -105,7 +106,7 @@ function safeError(message) {
   });
 }
 
-function parseModelJSON(text) {
+export function parseModelJSON(text) {
   if (!text) {
     return {
       ok: false,
@@ -137,13 +138,22 @@ function parseModelJSON(text) {
     return {
       ok: true,
       data: JSON.parse(raw),
+      repaired: false,
     };
   } catch (err) {
-    return {
-      ok: false,
-      error: err.message,
-      raw,
-    };
+    try {
+      return {
+        ok: true,
+        data: JSON.parse(jsonrepair(raw)),
+        repaired: true,
+      };
+    } catch {
+      return {
+        ok: false,
+        error: err.message,
+        raw,
+      };
+    }
   }
 }
 
@@ -358,7 +368,6 @@ async function requestStructuredAnalysis({ phase, systemPrompt, userMsg }) {
       max_tokens: phase === "final" ? 5000 : phase === "deep" ? 4000 : 3500,
       system: systemPrompt,
       messages: [{ role: "user", content: userMsg }],
-      output_config: outputConfigForPhase(phase),
     }),
   });
 

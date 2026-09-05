@@ -17,14 +17,15 @@
     "test:valuation": "node scripts/valuation_adapter_test.mjs",
     "test:pdf": "node scripts/pdf_report_test.mjs",
     "test:pdf:route": "node scripts/pdf_route_contract_test.mjs",
-    "test:analysis:structured": "node scripts/analysis_structured_output_test.mjs",
+    "test:analysis:resilience": "node scripts/analysis_response_resilience_test.mjs",
     "test:macro": "NEXO_SELFTEST=1 node scripts/nexo_macro_collector.mjs",
     "validate:context": "node scripts/validate_context.mjs data/context/latest.json",
     "collect:nmi": "node scripts/nmi_context_collector.mjs",
-    "test": "npm run test:nmi && npm run test:nmi:collector && npm run test:nmi:consumer && npm run test:edg && npm run test:edg:form && npm run test:edg:integration && npm run test:analysis:structured && npm run test:asset:lookup && npm run test:macro && npm run test:ui-asset && npm run test:valuation && npm run test:pdf && npm run test:pdf:route && npm run validate:context",
+    "test": "npm run test:nmi && npm run test:nmi:collector && npm run test:nmi:consumer && npm run test:edg && npm run test:edg:form && npm run test:edg:integration && npm run test:analysis:resilience && npm run test:asset:lookup && npm run test:macro && npm run test:ui-asset && npm run test:valuation && npm run test:pdf && npm run test:pdf:route && npm run validate:context",
     "ci": "npm test && npm run build"
   },
   "dependencies": {
+    "jsonrepair": "^3.15.0",
     "next": "16.3.4",
     "pdfkit": "^0.20.2",
     "react": "^18",

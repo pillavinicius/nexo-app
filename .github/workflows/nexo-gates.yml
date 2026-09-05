@@ -53,8 +53,8 @@ jobs:
       - name: Integracao EDG no Scan Deep e Final
         run: node scripts/edg_api_integration_test.mjs
 
-      - name: Saida estruturada e recuperacao automatica da Estacao 3
-        run: node scripts/analysis_structured_output_test.mjs
+      - name: Resiliencia HTTP e reparo da resposta da Estacao 3
+        run: node scripts/analysis_response_resilience_test.mjs
 
       - name: Contrato de validacao do ticker
         run: node scripts/asset_lookup_contract_test.mjs
