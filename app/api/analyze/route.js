@@ -10,12 +10,13 @@ import {
   buildEdgPromptContext,
   computeEDG,
 } from "../../../lib/nexo/edg/edg_engine.mjs";
+import { outputConfigForPhase } from "../../../lib/nexo/analysis/analysis_output_schemas.mjs";
 
 const SCAN_S =
   '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
 
 const DEEP_S =
-  '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","lacunas":[{"q":"","r":""}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"zona":"","besst":"","desconto":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
+  '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","lacunas":[{"q":"","r":""}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"valuations_classicos":[{"modelo":"Graham|Peter Lynch|Buffett moderno|Bazin","valor_justo":"","metodologia":"","premissas":""}],"zona":"","besst":"","desconto":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
 
 const FINAL_S =
   '{"ticker":"","classificacao_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR|VETADO","veredito_anterior":"","veredito_reclassificado":"","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","mudanca_veredito":"MANTEVE|MELHOROU|PIOROU","riscos_incorporados":[{"descricao":"","impacto_score":"","severidade":"ALTO|MEDIO|BAIXO"}],"ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":""}],"tese_final":"","preco_final":{"zona_convergencia":"","besst":"","margem_seguranca":"","observacao":""},"conclusao":"","proximos_passos":[""]}';
@@ -56,22 +57,22 @@ const DEEPS = {
   "fii":
     "You are a NEXO FII deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     DEEP_S +
-    " Keep the response concise. C1=P/VP, C2=yield vs NTN-B spread, C3=location moat. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro scenarios. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
+    " Keep the response concise. C1=P/VP, C2=yield vs NTN-B spread, C3=location moat. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro scenarios. 2 catalisadores. 2 riscos. 2 passos. If classical valuations were not requested, return valuations_classicos=[]. All text in Portuguese.",
 
   "acao-br":
     "You are a NEXO Brazilian stock deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     DEEP_S +
-    " Keep the response concise. Use segment-appropriate pricing model C1/C2/C3. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
+    " Keep the response concise. Use segment-appropriate pricing model C1/C2/C3. BESST=15-25% below convergence zone. Answer 2 lacunas concisely. 2 macro. 2 catalisadores. 2 riscos. 2 passos. If classical valuations were not requested, return valuations_classicos=[]. All text in Portuguese.",
 
   "etf-ext":
     "You are a NEXO ETF deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     DEEP_S +
-    " Keep the response concise. C1=cost efficiency, C2=concentration risk, C3=Markowitz fit. 2 macro. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
+    " Keep the response concise. C1=cost efficiency, C2=concentration risk, C3=Markowitz fit. 2 macro. 2 catalisadores. 2 riscos. 2 passos. If classical valuations were not requested, return valuations_classicos=[]. All text in Portuguese.",
 
   "stock-ext":
     "You are a NEXO international stock deep analyst. Respond with ONLY a valid JSON object. No markdown. No code fences. Schema: " +
     DEEP_S +
-    " Keep the response concise. Theme-appropriate pricing model. Answer 2 lacunas. 2 macro. 2 catalisadores. 2 riscos. 2 passos. All text in Portuguese.",
+    " Keep the response concise. Theme-appropriate pricing model. Answer 2 lacunas. 2 macro. 2 catalisadores. 2 riscos. 2 passos. If classical valuations were not requested, return valuations_classicos=[]. All text in Portuguese.",
 };
 
 const FINALS = {
@@ -344,6 +345,63 @@ function responseWithEdg(phase, data, edg) {
   return Response.json(applyEdgGuardrails({ phase, result: data, edg }));
 }
 
+async function requestStructuredAnalysis({ phase, systemPrompt, userMsg }) {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: phase === "final" ? 5000 : phase === "deep" ? 4000 : 3500,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMsg }],
+      output_config: outputConfigForPhase(phase),
+    }),
+  });
+
+  const responseText = await response.text();
+  let data;
+
+  try {
+    data = JSON.parse(responseText);
+  } catch {
+    return {
+      ok: false,
+      kind: "transport",
+      error: "Anthropic retornou resposta HTTP não-JSON.",
+      rawText: responseText,
+    };
+  }
+
+  if (!response.ok || data?.error) {
+    return {
+      ok: false,
+      kind: "api",
+      error:
+        "Anthropic HTTP " +
+        response.status +
+        ": " +
+        (data?.error?.message || "erro desconhecido"),
+      rawText: responseText,
+    };
+  }
+
+  const rawText = data?.content?.find((block) => block?.type === "text")?.text || data?.content?.[0]?.text || "";
+  if (!rawText) {
+    return {
+      ok: false,
+      kind: "empty",
+      error: "Modelo retornou resposta vazia.",
+      rawText: "",
+    };
+  }
+
+  return { ok: true, rawText };
+}
+
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -387,40 +445,17 @@ export async function POST(req) {
       edgContext,
     });
 
-    const apiResp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: phase === "final" ? 5000 : phase === "deep" ? 3500 : 3000,
-        system: systemPrompt,
-        messages: [
-          {
-            role: "user",
-            content: userMsg,
-          },
-        ],
-      }),
-    });
+    let modelResult = await requestStructuredAnalysis({ phase, systemPrompt, userMsg });
 
-    const apiText = await apiResp.text();
-
-    let apiData;
-
-    try {
-      apiData = JSON.parse(apiText);
-    } catch {
+    if (!modelResult.ok) {
+      if (modelResult.kind === "api") return safeError(modelResult.error);
       if (phase === "deep") {
         return responseWithEdg(
           phase,
           fallbackDeepJSON({
             ticker,
-            rawText: apiText,
-            parseError: "Anthropic retornou resposta HTTP não-JSON.",
+            rawText: modelResult.rawText,
+            parseError: modelResult.error,
           }),
           edg
         );
@@ -431,63 +466,33 @@ export async function POST(req) {
           phase,
           fallbackFinalJSON({
             ticker,
-            rawText: apiText,
-            parseError: "Anthropic retornou resposta HTTP não-JSON.",
+            rawText: modelResult.rawText,
+            parseError: modelResult.error,
           }),
           edg
         );
       }
 
-      return safeError(
-        "Anthropic retornou resposta não-JSON: " +
-          apiText.slice(0, 500).replace(/\n/g, " ")
-      );
+      return safeError(modelResult.error);
     }
 
-    if (!apiResp.ok) {
-      return safeError(
-        "Anthropic HTTP " +
-          apiResp.status +
-          ": " +
-          (apiData?.error?.message || "erro desconhecido")
-      );
-    }
+    let rawText = modelResult.rawText;
+    let result = parseModelJSON(rawText);
 
-    if (apiData.error) {
-      return safeError("API: " + apiData.error.message);
-    }
+    if (!result.ok) {
+      modelResult = await requestStructuredAnalysis({
+        phase,
+        systemPrompt,
+        userMsg:
+          userMsg +
+          "\n\nA tentativa anterior apresentou JSON inválido. Gere novamente do zero, mais conciso, obedecendo integralmente ao schema estruturado.",
+      });
 
-    const rawText = apiData?.content?.[0]?.text || "";
-
-    if (!rawText) {
-      if (phase === "deep") {
-        return responseWithEdg(
-          phase,
-          fallbackDeepJSON({
-            ticker,
-            rawText: "",
-            parseError: "Modelo retornou resposta vazia.",
-          }),
-          edg
-        );
+      if (modelResult.ok) {
+        rawText = modelResult.rawText;
+        result = parseModelJSON(rawText);
       }
-
-      if (phase === "final") {
-        return responseWithEdg(
-          phase,
-          fallbackFinalJSON({
-            ticker,
-            rawText: "",
-            parseError: "Modelo retornou resposta vazia.",
-          }),
-          edg
-        );
-      }
-
-      return safeError("Modelo retornou resposta vazia");
     }
-
-    const result = parseModelJSON(rawText);
 
     if (!result.ok) {
       if (phase === "deep") {
@@ -515,10 +520,7 @@ export async function POST(req) {
       }
 
       return safeError(
-        "Parse falhou: " +
-          result.error +
-          ". Modelo retornou: " +
-          result.raw.slice(0, 500).replace(/\n/g, " ")
+        "Não foi possível estruturar o Scan. O sistema tentou corrigir a resposta automaticamente; execute novamente."
       );
     }
 
