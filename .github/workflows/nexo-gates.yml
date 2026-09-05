@@ -56,6 +56,11 @@ jobs:
       - name: Resiliencia HTTP e reparo da resposta da Estacao 3
         run: node scripts/analysis_response_resilience_test.mjs
 
+      - name: Bloqueio do EDG comparacao de vereditos e reset da interface
+        run: |
+          node scripts/edge_ui_contract_test.mjs
+          node scripts/ui_reset_contract_test.mjs
+
       - name: Contrato de validacao do ticker
         run: node scripts/asset_lookup_contract_test.mjs
 

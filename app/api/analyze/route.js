@@ -9,7 +9,7 @@ import {
 } from "../../../lib/nmi/get_latest_context.mjs";
 import {
   applyEdgGuardrails,
-  buildEdgPromptContext,
+  buildEdgAnalysisContext,
   computeEDG,
 } from "../../../lib/nexo/edg/edg_engine.mjs";
 
@@ -443,7 +443,7 @@ export async function POST(req) {
     const nmiResult = getLatestContext();
     const nmiContext = buildNmiPromptContext(nmiResult);
     const edg = computeEDG(edgeLedger);
-    const edgContext = buildEdgPromptContext(edg, edgeLedger);
+    const edgContext = buildEdgAnalysisContext(edg, edgeLedger);
 
     const userMsg = buildUserMessage({
       phase,

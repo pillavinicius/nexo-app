@@ -95,10 +95,11 @@ try {
   equal(capturedRequests.length, 3, "três fases chamaram a Estação 3");
   const prompts = capturedRequests.map((request) => request.messages[0].content);
   check(prompts.every((prompt) => prompt.includes("--- GOVERNANÇA DE EDGE ---")), "todas as fases recebem bloco EDG");
-  check(prompts[0].includes("REGRA D2 RATIFICADA"), "Scan recebe regra D2");
+  check(prompts.every((prompt) => prompt.includes("veredito analítico bruto")), "todas as fases pedem saída anterior à governança");
+  check(prompts.every((prompt) => !prompt.includes("REGRA D2 RATIFICADA")), "modelo não antecipa a aplicação D2");
   check(prompts[1].includes(activeEdge.edge_evidence), "Deep recebe evidência declarada");
   check(prompts[1].includes(activeEdge.edge_expiry_condition), "Deep recebe condição observável");
-  check(prompts[2].includes("REGRA D3 RATIFICADA"), "Final recebe regra D3");
+  check(!prompts[2].includes("REGRA D3 RATIFICADA"), "modelo não antecipa a aplicação D3");
 } finally {
   globalThis.fetch = originalFetch;
 }

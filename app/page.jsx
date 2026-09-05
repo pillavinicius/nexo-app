@@ -36,6 +36,7 @@ import {
 } from "../lib/nexo/data/asset_lookup_contract.mjs";
 import { splitPriceModels } from "../lib/ui/valuation_adapter.mjs";
 import { readApiJsonResponse } from "../lib/ui/api_response_adapter.mjs";
+import { resolveEdgeScanGate } from "../lib/ui/edge_scan_gate.mjs";
 
 const EDGE_TYPE_LABELS = Object.freeze({
   nenhum: "Nenhum edge declarado",
@@ -235,6 +236,7 @@ function EdgAudit({ result }) {
   if (!edg) return null;
 
   const changes = asArray(governance?.changes);
+  const comparison = governance?.comparison;
   const signal = edg.exit_signal === "edge_expired" ? "Edge expirado" : "Nenhum";
   const ceiling = edg.max_allowed_classification === "posicao" ? "Posição" : "Watchlist";
 
@@ -245,6 +247,13 @@ function EdgAudit({ result }) {
         <MetricCard title="Teto permitido" value={ceiling} note={edg.has_declared_edge ? "Edge válido no contrato" : "Regra D2 ativa"} />
         <MetricCard title="Sinal de saída" value={signal} note={edg.exit_signal === "edge_expired" ? "Regra D3 ativa" : "Sem gatilho D3"} />
       </div>
+
+      {comparison && (
+        <div className="grid2" style={{ marginTop: 8 }}>
+          <MetricCard title="Veredito sem governança EDG" value={comparison.without_edg || "—"} note="Saída analítica bruta do motor" />
+          <MetricCard title="Veredito com governança EDG" value={comparison.with_edg || "—"} note="Resultado após aplicação determinística de D2/D3" />
+        </div>
+      )}
 
       {governance?.applied && (
         <div className="edg-rule-box">
@@ -514,6 +523,14 @@ export default function NEXOApp() {
     edge_declared_at: edgeDeclaredAt,
     edge_status: edgeStatus,
   };
+  const availableEdgeModules = EDGE_INSUMOS.filter(
+    (insumo) => EDGE_INSUMO_METADATA[insumo]?.available !== false
+  );
+  const edgeGate = resolveEdgeScanGate({
+    record: edgeLedger,
+    availableModules: availableEdgeModules,
+    errorLabels: EDG_ERROR_LABELS,
+  });
   const scannedEdg = scanResult?.nexoModules?.EDG || null;
   const requiredInputsReady =
     ticker.trim().length >= 3 &&
@@ -535,11 +552,13 @@ export default function NEXOApp() {
     ? assetLookupStatus === ASSET_LOOKUP_STATUS.MANUAL_FALLBACK
       ? "Ticker confirmado. Informe o valor atual manualmente."
       : "Aguarde a validação do ticker e da cotação."
+    : !edgeGate.ready
+    ? "EDG incompleto ou incoerente: " + edgeGate.reason
     : complementaryPending
     ? "Aguarde o carregamento dos dados complementares selecionados."
     : "";
 
-  const canScan = requiredInputsReady && !assetLoading && !complementaryPending && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
+  const canScan = requiredInputsReady && edgeGate.ready && !assetLoading && !complementaryPending && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
   const canDeep = hasScan && !hasDeep && !isVeto && !loading && !hasFinal && !ended;
   const canFinalize = (hasScan || hasDeep) && !loading && !hasFinal && !ended;
   const canFollow = hasDeep && !loading && !hasFinal && !ended && (followQ.trim() || followUrl.trim());
@@ -662,26 +681,68 @@ export default function NEXOApp() {
     );
   }
 
-  function reset() {
-    if (loading && abortRef.current) {
-      abortRef.current.abort();
-      setLoading(false);
-      setLoadingKind("");
-      setError("Análise cancelada pelo usuário.");
-      return;
-    }
-
+  function resetToInitial() {
+    abortRef.current?.abort();
+    assetAbortRef.current?.abort();
+    supplementalAbortRef.current?.abort();
     setScanResult(null);
     setDeepResult(null);
     setDeepAdds([]);
     setFinalResult(null);
+    setTicker("");
+    setRiUrl("");
+    setExtraCtx("");
+    setCurrency("BRL");
+    setCurrentPrice("");
+    setHistMin("");
+    setHistMinDate("");
+    setHistMax("");
+    setHistMaxDate("");
+    setPlIbov("");
+    setPlSp500("");
+    setClassicValuations("NAO");
+    setEdgeType("nenhum");
+    setEdgeInsumo("");
+    setEdgeEvidenceTemplate("");
+    setEdgeEvidenceBasis("");
+    setEdgeEvidenceWindow("");
+    setEdgeEvidenceCustom("");
+    setEdgeExpiryTemplate("");
+    setEdgeExpiryMetric("");
+    setEdgeExpiryThreshold("");
+    setEdgeExpiryUnit("percent");
+    setEdgeExpiryPersistence("2");
+    setEdgeExpiryPeriod("quarter");
+    setEdgeExpiryEvent("");
+    setEdgeDeadlineObject("");
+    setEdgeDeadlineDate("");
+    setEdgeExpiryCustom("");
+    setEdgeDeclaredAt("");
+    setEdgeStatus("nao_declarado");
+    setAssetData(null);
+    setAssetError("");
+    setAssetLoading(false);
+    setAssetLookupStatus(ASSET_LOOKUP_STATUS.IDLE);
+    setUseComplementaryData("NAO");
+    setSupplementalLoading(false);
+    setSupplementalLoaded(false);
+    setSupplementalError("");
+    setIbovManual("");
+    setSp500Manual("");
+    setIfixManual("");
+    setJurosFuturoManual("");
     setPhase("initial");
+    setLoading(false);
+    setLoadingKind("");
     setError("");
     setPdfError("");
     setPdfLoading(false);
     setFollowQ("");
     setFollowUrl("");
     setEnded(false);
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
   }
 
   async function loadMacro() {
@@ -1549,6 +1610,19 @@ export default function NEXOApp() {
             </>
           )}
 
+          {!scannedEdg && edgeType !== "nenhum" && !edgeGate.ready && (
+            <div className="warn-box">
+              <strong>COMPLETE O EDG PARA LIBERAR O SCAN</strong>
+              {asArray(edgeGate.validation?.errors).map((code) => (
+                <div key={code}>· {EDG_ERROR_LABELS[code] || code}</div>
+              ))}
+            </div>
+          )}
+
+          {!scannedEdg && edgeType !== "nenhum" && edgeGate.ready && (
+            <div className="edg-ok-box">EDG PREENCHIDO E COERENTE · O Scan está liberado após a validação dos demais dados obrigatórios.</div>
+          )}
+
           <div className="subsection-label">Prévia determinística do contrato</div>
           <div className="grid3">
             <MetricCard title="Contrato" value={scannedEdg ? scannedEdg.validation?.valid ? "Válido" : "Incompleto" : "—"} note={scannedEdg ? scannedEdg.version : "Disponível após concluir o Scan"} />
@@ -1571,7 +1645,7 @@ export default function NEXOApp() {
               {asArray(scannedEdg.validation?.errors).map((code) => (
                 <div key={code}>· {EDG_ERROR_LABELS[code] || code}</div>
               ))}
-              <div style={{ marginTop: 4 }}>Enquanto estiver incompleto, a regra D2 limita a classificação.</div>
+              <div style={{ marginTop: 4 }}>Um contrato incompleto não pode iniciar uma nova análise.</div>
             </div>
           )}
         </Sec>
@@ -1587,7 +1661,7 @@ export default function NEXOApp() {
         </div>
 
         <div className="actions">
-          {(hasScan || hasDeep || hasFinal || loading || ended) && <button className="btn-cl" onClick={reset}>{loading ? "Cancelar" : "Limpar"}</button>}
+          {loading && loadingKind !== "final" && <button className="btn-cl" onClick={resetToInitial}>Cancelar</button>}
           <button className="btn-scan" onClick={handleScan} disabled={!canScan}>{loadingKind === "scan" ? "Analisando..." : "Scan NEXO →"}</button>
           <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>{loadingKind === "deep" ? "Analisando..." : "Deep NEXO"}</button>
         </div>
@@ -1616,6 +1690,7 @@ export default function NEXOApp() {
               <div className="decision-actions">
                 <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>Rodar NEXO Deep →</button>
                 <button className="btn-end" onClick={handleFinal} disabled={!canFinalize}>Finalizar e Reclassificar</button>
+                {loadingKind !== "final" && <button className="btn-cl" onClick={resetToInitial}>Reset e nova análise</button>}
               </div>
             </div>
           )}
@@ -1623,7 +1698,10 @@ export default function NEXOApp() {
           {hasScan && isVeto && !hasFinal && !ended && (
             <div className="decision-box">
               <div className="decision-title">Ativo vetado no Scan</div>
-              <button className="btn-end" onClick={handleFinal} disabled={!canFinalize}>Finalizar e Reclassificar</button>
+              <div className="decision-actions">
+                <button className="btn-end" onClick={handleFinal} disabled={!canFinalize}>Finalizar e Reclassificar</button>
+                {loadingKind !== "final" && <button className="btn-cl" onClick={resetToInitial}>Reset e nova análise</button>}
+              </div>
             </div>
           )}
 
@@ -1652,6 +1730,7 @@ export default function NEXOApp() {
               <div className="follow-actions">
                 <button className="btn-deep" onClick={handleFollowUp} disabled={!canFollow}>{loadingKind === "follow" ? "Aprofundando..." : "Aprofundar Deep →"}</button>
                 <button className="btn-end" disabled={!canFinalize} onClick={handleFinal}>Finalizar e Reclassificar</button>
+                {loadingKind !== "final" && <button className="btn-cl" onClick={resetToInitial}>Reset e nova análise</button>}
               </div>
             </div>
           )}
@@ -1669,7 +1748,7 @@ export default function NEXOApp() {
               <button className="btn-end" onClick={handleExportPDF} disabled={pdfLoading}>
                 {pdfLoading ? "Gerando PDF..." : "Exportar PDF"}
               </button>
-              <button className="btn-cl" onClick={reset} disabled={pdfLoading}>Nova análise</button>
+              <button className="btn-cl" onClick={resetToInitial} disabled={pdfLoading}>Nova análise</button>
             </div>
           )}
           {pdfError && <div className="err-box">Erro na exportação: {pdfError}</div>}
