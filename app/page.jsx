@@ -37,6 +37,14 @@ import {
 import { splitPriceModels } from "../lib/ui/valuation_adapter.mjs";
 import { readApiJsonResponse } from "../lib/ui/api_response_adapter.mjs";
 import { resolveEdgeScanGate } from "../lib/ui/edge_scan_gate.mjs";
+import {
+  canSharePdfFile,
+  choosePdfSaveHandle,
+  isMobilePdfEnvironment,
+  isPdfDeliveryCancellation,
+  triggerPdfDownload,
+  writePdfToHandle,
+} from "../lib/ui/pdf_delivery.mjs";
 
 const EDGE_TYPE_LABELS = Object.freeze({
   nenhum: "Nenhum edge declarado",
@@ -1045,10 +1053,25 @@ export default function NEXOApp() {
   async function handleExportPDF() {
     if (!hasFinal || pdfLoading) return;
 
+    const normalizedTicker = ticker.trim().toUpperCase();
+    const date = new Date().toISOString().slice(0, 10);
+    const fallbackFilename = `NEXO_${normalizedTicker}_${date}.pdf`;
+    const mobileDelivery = isMobilePdfEnvironment(navigator);
+    let saveHandle = null;
+    let previewWindow = null;
+
     setPdfLoading(true);
     setPdfError("");
     try {
-      const normalizedTicker = ticker.trim().toUpperCase();
+      if (!mobileDelivery) {
+        previewWindow = window.open("", "_blank");
+        if (previewWindow) {
+          previewWindow.document.title = "Relatório NEXO";
+          previewWindow.document.body.textContent = "Preparando relatório NEXO...";
+        }
+        saveHandle = await choosePdfSaveHandle(window, fallbackFilename);
+      }
+
       const response = await fetch("/api/export/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1077,17 +1100,33 @@ export default function NEXOApp() {
       const blob = await response.blob();
       const disposition = response.headers.get("content-disposition") || "";
       const match = disposition.match(/filename="([^"]+)"/i);
-      const filename = match?.[1] || `NEXO_${normalizedTicker}.pdf`;
+      const filename = match?.[1] || fallbackFilename;
+      const file = new File([blob], filename, { type: "application/pdf" });
+
+      if (canSharePdfFile(navigator, file)) {
+        await navigator.share({
+          files: [file],
+          title: `Relatório NEXO · ${normalizedTicker}`,
+          text: `Relatório final da análise NEXO de ${normalizedTicker}.`,
+        });
+        return;
+      }
+
       const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => window.URL.revokeObjectURL(url), 2_000);
+      const savedWithPicker = await writePdfToHandle(saveHandle, blob);
+      if (!savedWithPicker) triggerPdfDownload({ documentRef: document, url, filename });
+
+      if (previewWindow && !previewWindow.closed) {
+        previewWindow.location.href = url;
+      } else {
+        window.open(url, "_blank");
+      }
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 120_000);
     } catch (exportError) {
-      setPdfError(exportError?.message || "Não foi possível gerar o PDF.");
+      if (previewWindow && !previewWindow.closed) previewWindow.close();
+      if (!isPdfDeliveryCancellation(exportError)) {
+        setPdfError(exportError?.message || "Não foi possível gerar o PDF.");
+      }
     } finally {
       setPdfLoading(false);
     }

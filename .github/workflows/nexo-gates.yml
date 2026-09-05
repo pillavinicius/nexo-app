@@ -72,6 +72,7 @@ jobs:
         run: |
           node scripts/pdf_report_test.mjs
           node scripts/pdf_route_contract_test.mjs
+          node scripts/pdf_delivery_contract_test.mjs
 
       # GATE 3 — coletor macro (logica de calculo e classificacao)
       - name: Self-test do coletor macro
