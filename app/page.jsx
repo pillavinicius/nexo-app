@@ -34,7 +34,11 @@ import {
   ASSET_LOOKUP_STATUS,
   resolveAssetLookupState,
 } from "../lib/nexo/data/asset_lookup_contract.mjs";
-import { splitPriceModels } from "../lib/ui/valuation_adapter.mjs";
+import {
+  PRICE_LAYER_GUIDE,
+  PRICE_LAYER_SUMMARY,
+  splitPriceModels,
+} from "../lib/ui/valuation_adapter.mjs";
 import { readApiJsonResponse } from "../lib/ui/api_response_adapter.mjs";
 import { resolveEdgeScanGate } from "../lib/ui/edge_scan_gate.mjs";
 import {
@@ -360,6 +364,16 @@ function DeepReport({ r, showClassicValuations = false }) {
       {lacs.length > 0 && <Sec title="Respostas às Lacunas">{lacs.map((l, i) => <DetailBlock key={i} title={l?.q || l?.lacuna || "Lacuna"} value={l?.r || l?.resposta || l} />)}</Sec>}
       {(precs.length > 0 || classics.length > 0) && (
         <Sec title="Modelo de Preço - 3 Camadas">
+          <div style={{ borderLeft: "2px solid #6A5C3A", background: "rgba(201,168,76,.035)", padding: "9px 11px", marginBottom: 10 }}>
+            {PRICE_LAYER_GUIDE.map((layer) => (
+              <div key={layer.code} style={{ fontSize: 11, color: "#A89060", lineHeight: 1.55, marginBottom: 5 }}>
+                <strong style={{ color: "#E8D5A3" }}>{layer.code} · {layer.title}:</strong>{" "}{layer.description}
+              </div>
+            ))}
+            <div style={{ fontSize: 10, color: "#6A5C3A", lineHeight: 1.55, marginTop: 7 }}>
+              {PRICE_LAYER_SUMMARY}
+            </div>
+          </div>
           {precs.map((item, i) => (
             <DetailBlock
               key={`layer-${i}`}
