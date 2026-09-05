@@ -33,7 +33,9 @@ const modelOutputs = [
   {
     ticker: "TEST3",
     classificacao_final: "COMPRAR",
+    veredito_anterior: "EVITAR",
     veredito_reclassificado: "COMPRAR",
+    mudanca_veredito: "PIOROU",
   },
 ];
 const capturedRequests = [];
@@ -89,6 +91,7 @@ try {
   });
   equal(final.classificacao_final, "EVITAR", "D3 prevalece na classificação final");
   equal(final.veredito_reclassificado, "EVITAR", "D3 prevalece no veredito reclassificado");
+  equal(final.mudanca_veredito, "MANTEVE", "vereditos iguais prevalecem sobre o rótulo produzido pelo modelo");
   equal(final.nexoModules.EDG.exit_signal, "edge_expired", "Final expõe sinal de expiração");
   equal(final.edg_governance.rule, "D3", "Final registra regra D3");
 

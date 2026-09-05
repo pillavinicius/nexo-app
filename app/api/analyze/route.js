@@ -12,6 +12,7 @@ import {
   buildEdgAnalysisContext,
   computeEDG,
 } from "../../../lib/nexo/edg/edg_engine.mjs";
+import { reconcileFinalVerdictChange } from "../../../lib/nexo/analysis/verdict_transition.mjs";
 
 const SCAN_S =
   '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
@@ -352,7 +353,8 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
 }
 
 function responseWithEdg(phase, data, edg) {
-  return Response.json(applyEdgGuardrails({ phase, result: data, edg }));
+  const governed = applyEdgGuardrails({ phase, result: data, edg });
+  return Response.json(reconcileFinalVerdictChange(phase, governed));
 }
 
 async function requestStructuredAnalysis({ phase, systemPrompt, userMsg }) {

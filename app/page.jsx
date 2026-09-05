@@ -135,6 +135,7 @@ function readableRegime(value) {
 
 function Badge({ text }) {
   const value = asText(text || "N/D").toUpperCase();
+  const displayValue = value === "MANTEVE" ? "NEUTRO" : value;
 
   const colors = {
     APROVADO: ["#C9A84C", "rgba(201,168,76,.15)"],
@@ -161,7 +162,7 @@ function Badge({ text }) {
 
   return (
     <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fontWeight: 700, letterSpacing: 1, padding: "2px 8px", border: "1px solid " + c[0], color: c[0], background: c[1], display: "inline-block", whiteSpace: "nowrap" }}>
-      {value}
+      {displayValue}
     </span>
   );
 }
