@@ -3,6 +3,11 @@ export const maxDuration = 120;
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  ASSET_LOOKUP_STATUS,
+  assetLookupFailurePayload,
+  classifyProviderLookupAttempts,
+} from "../../../lib/nexo/data/asset_lookup_contract.mjs";
 
 /**
  * NEXO Data Core - Asset Route V2.5.2
@@ -1599,7 +1604,9 @@ async function fetchHgQuote(ticker, key) {
       endpoint: attempt.endpoint,
       status: result.status,
       message:
-        result.json?.message || result.json?.error || result.textPreview || "sem results",
+        result.ok && !first
+          ? "sem results"
+          : result.json?.message || result.json?.error || result.textPreview || "erro do provedor",
     });
   }
 
@@ -1608,6 +1615,7 @@ async function fetchHgQuote(ticker, key) {
     source: "HG Brasil Finance - Quotes",
     error: "Não foi possível obter cotação na HG",
     attempts: errors,
+    failureKind: classifyProviderLookupAttempts(errors),
   };
 }
 
@@ -1894,23 +1902,24 @@ async function buildB3Asset(ticker, options) {
   const errors = [];
 
   if (!key) {
-    return {
-      ok: false,
-      requestedTicker: ticker,
+    return assetLookupFailurePayload({
+      ticker,
       route: "B3_HG_BRASIL",
-      error: "HG_BRASIL_KEY não encontrada",
-    };
+      status: ASSET_LOOKUP_STATUS.UNAVAILABLE,
+    });
   }
 
   const quoteResult = await fetchHgQuote(ticker, key);
 
   if (!quoteResult.ok) {
     return {
-      ok: false,
-      requestedTicker: ticker,
-      route: "B3_HG_BRASIL",
+      ...assetLookupFailurePayload({
+        ticker,
+        route: "B3_HG_BRASIL",
+        attempts: quoteResult.attempts,
+        status: quoteResult.failureKind,
+      }),
       updatedAt: nowIso(),
-      error: quoteResult.error,
       details: quoteResult,
     };
   }
@@ -1922,6 +1931,8 @@ async function buildB3Asset(ticker, options) {
   if (!history.ok && history.error) errors.push(`HG History: ${history.error}`);
 
   const derivedPackage = computeMarketDerived(history.candles || [], asset.price, asset.currency, loadNexoMacro());
+  const automaticPrice =
+    asset.price ?? (derivedPackage.derived || derivedPackage)?.currentPrice ?? null;
 
   const shouldFetchCorporateFinancials =
     assetType.includes("stock") ||
@@ -2045,6 +2056,9 @@ async function buildB3Asset(ticker, options) {
     ok: true,
     requestedTicker: ticker,
     route: "B3_HG_BRASIL",
+    tickerExists: true,
+    automaticDataAvailable: automaticPrice !== null,
+    manualFallback: automaticPrice === null,
     updatedAt: nowIso(),
     priorityRule:
       "Se o usuário informar valor manual, usar manual. Se manual vazio, usar automático. Se automático indisponível, marcar como não informado.",
@@ -2103,7 +2117,6 @@ async function buildB3Asset(ticker, options) {
       note:
         "FIIs/ETFs B3 recebem dados profundos futuramente via Partnr. Hoje HG cobre preço, histórico, DY e liquidez.",
     },
-    manualFallback: false,
     errors,
   };
 }
@@ -2446,12 +2459,11 @@ async function buildInternationalAsset(ticker, options) {
   const key = process.env.TWELVEDATA_API_KEY;
 
   if (!key) {
-    return {
-      ok: false,
-      requestedTicker: ticker,
+    return assetLookupFailurePayload({
+      ticker,
       route: "INTERNATIONAL_TWELVE_DATA",
-      error: "TWELVEDATA_API_KEY não encontrada",
-    };
+      status: ASSET_LOOKUP_STATUS.UNAVAILABLE,
+    });
   }
 
   const errors = [];
@@ -2493,6 +2505,29 @@ async function buildInternationalAsset(ticker, options) {
   const meta = timeSeriesResult.json?.meta || {};
   const assetType = meta.type || null;
   const isEtf = String(assetType || "").toLowerCase().includes("etf");
+  const tickerExists = Boolean(
+    quote ||
+      candles.length > 0 ||
+      meta.symbol ||
+      meta.exchange ||
+      meta.currency
+  );
+
+  if (!tickerExists) {
+    const attempts = [quoteResult, timeSeriesResult].map((result) => ({
+      status: result.status,
+      message:
+        result.json?.message ||
+        result.json?.error ||
+        result.textPreview ||
+        (result.ok ? "sem results" : "erro do provedor"),
+    }));
+    return assetLookupFailurePayload({
+      ticker,
+      route: "INTERNATIONAL_TWELVE_DATA",
+      attempts,
+    });
+  }
 
   let statistics = null;
   let profile = null;
@@ -2684,6 +2719,9 @@ async function buildInternationalAsset(ticker, options) {
     ok: true,
     requestedTicker: ticker,
     route: "INTERNATIONAL_TWELVE_DATA",
+    tickerExists: true,
+    automaticDataAvailable: price !== null,
+    manualFallback: price === null,
     updatedAt: nowIso(),
     priorityRule:
       "Se o usuário informar valor manual, usar manual. Se manual vazio, usar automático. Se automático indisponível, marcar como não informado.",
@@ -2777,7 +2815,6 @@ async function buildInternationalAsset(ticker, options) {
         "Modo padrão reduz chamadas para evitar limite free. Use deep=true somente para relatórios completos.",
     },
     apiRequests: requests,
-    manualFallback: false,
     errors,
   };
 }
@@ -2824,7 +2861,12 @@ export async function GET(request) {
       ? await buildB3Asset(ticker, options)
       : await buildInternationalAsset(ticker, options);
 
-    return Response.json(data);
+    const status = data?.ok
+      ? 200
+      : data?.lookupStatus === ASSET_LOOKUP_STATUS.NOT_FOUND
+      ? 404
+      : 503;
+    return Response.json(data, { status });
   } catch (error) {
     return Response.json(
       {
@@ -2835,4 +2877,3 @@ export async function GET(request) {
     );
   }
 }
-

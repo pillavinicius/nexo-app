@@ -30,6 +30,10 @@ import {
   EDGE_TYPE_DESCRIPTIONS,
   evidenceOptionsForType,
 } from "../lib/ui/edg_form_adapter.mjs";
+import {
+  ASSET_LOOKUP_STATUS,
+  resolveAssetLookupState,
+} from "../lib/nexo/data/asset_lookup_contract.mjs";
 
 const EDGE_TYPE_LABELS = Object.freeze({
   nenhum: "Nenhum edge declarado",
@@ -412,6 +416,7 @@ export default function NEXOApp() {
   const [assetData, setAssetData] = useState(null);
   const [assetError, setAssetError] = useState("");
   const [assetLoading, setAssetLoading] = useState(false);
+  const [assetLookupStatus, setAssetLookupStatus] = useState(ASSET_LOOKUP_STATUS.IDLE);
 
   const [macroData, setMacroData] = useState(null);
   const [macroError, setMacroError] = useState("");
@@ -449,6 +454,12 @@ export default function NEXOApp() {
   const priceUnit = currency === "USD" ? "USD" : "R$";
   const edgeEvidenceOptions = evidenceOptionsForType(edgeType);
   const selectedInsumo = EDGE_INSUMO_METADATA[edgeInsumo] || null;
+  const selectedEvidenceTemplate = edgeEvidenceOptions.find(
+    (option) => option.id === edgeEvidenceTemplate
+  );
+  const selectedExpiryEvent = EDGE_EXPIRY_EVENTS.find(
+    (option) => option.id === edgeExpiryEvent
+  );
   const edgeEvidence = buildGuidedEdgeEvidence({
     edgeType,
     edgeInsumo,
@@ -490,8 +501,14 @@ export default function NEXOApp() {
     ? "Ticker precisa ter pelo menos 3 caracteres."
     : assetLoading
     ? "Aguarde a busca automática da cotação e dos indicadores."
+    : assetLookupStatus === ASSET_LOOKUP_STATUS.NOT_FOUND
+    ? "Ticker inexistente."
+    : assetLookupStatus === ASSET_LOOKUP_STATUS.UNAVAILABLE
+    ? "Não foi possível validar o ticker no provedor automático."
     : !currentPrice.trim()
-    ? "Cotação automática indisponível. Informe o valor atual manualmente."
+    ? assetLookupStatus === ASSET_LOOKUP_STATUS.MANUAL_FALLBACK
+      ? "Ticker confirmado. Informe o valor atual manualmente."
+      : "Aguarde a validação do ticker e da cotação."
     : complementaryPending
     ? "Aguarde o carregamento dos dados complementares selecionados."
     : "";
@@ -514,6 +531,7 @@ export default function NEXOApp() {
     assetAbortRef.current?.abort();
     setAssetData(null);
     setAssetError("");
+    setAssetLookupStatus(ASSET_LOOKUP_STATUS.IDLE);
     setCurrentPrice("");
     setHistMin("");
     setHistMinDate("");
@@ -526,6 +544,7 @@ export default function NEXOApp() {
     }
 
     setAssetLoading(true);
+    setAssetLookupStatus(ASSET_LOOKUP_STATUS.LOADING);
     const timer = window.setTimeout(async () => {
       const controller = new AbortController();
       assetAbortRef.current = controller;
@@ -535,11 +554,25 @@ export default function NEXOApp() {
           { signal: controller.signal, cache: "no-store" }
         );
         const data = await response.json();
-        if (!response.ok || !data?.ok) {
-          throw new Error(data?.error || "Dados automáticos do ativo indisponíveis");
+        const prefill = data?.ok ? assetPrefill(data) : {};
+        const lookupStatus = resolveAssetLookupState({
+          responseOk: response.ok,
+          data,
+          hasAutomaticPrice: Boolean(prefill.currentPrice),
+        });
+
+        setAssetLookupStatus(lookupStatus);
+
+        if (lookupStatus === ASSET_LOOKUP_STATUS.NOT_FOUND) {
+          setAssetError("Ticker inexistente");
+          return;
         }
 
-        const prefill = assetPrefill(data);
+        if (lookupStatus === ASSET_LOOKUP_STATUS.UNAVAILABLE) {
+          setAssetError(data?.error || "Não foi possível validar o ticker no provedor automático");
+          return;
+        }
+
         setAssetData(data);
         if (prefill.currentPrice) setCurrentPrice(prefill.currentPrice);
         if (prefill.currency) setCurrency(prefill.currency);
@@ -547,9 +580,14 @@ export default function NEXOApp() {
         if (prefill.histMinDate) setHistMinDate(prefill.histMinDate);
         if (prefill.histMax) setHistMax(prefill.histMax);
         if (prefill.histMaxDate) setHistMaxDate(prefill.histMaxDate);
+
+        if (lookupStatus === ASSET_LOOKUP_STATUS.MANUAL_FALLBACK) {
+          setAssetError("Ticker confirmado, mas a cotação automática está indisponível");
+        }
       } catch (fetchError) {
         if (fetchError?.name !== "AbortError") {
-          setAssetError(fetchError?.message || "Erro ao buscar dados do ativo");
+          setAssetLookupStatus(ASSET_LOOKUP_STATUS.UNAVAILABLE);
+          setAssetError("Não foi possível validar o ticker no provedor automático");
         }
       } finally {
         if (assetAbortRef.current === controller) {
@@ -949,14 +987,15 @@ export default function NEXOApp() {
     .q-n{font-size:8px;color:#6A5C3A;letter-spacing:1px;text-transform:uppercase}
     .types{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
     .type-card{font-family:'JetBrains Mono',monospace;font-size:11px;padding:6px 12px;border:1px solid #2A2318;color:#4A3E28;display:flex;align-items:center;gap:6px;border-radius:2px}
-    .field{border:1px solid #2A2318;padding:10px 14px 8px;margin-bottom:8px}
-    .flbl{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
+    .field{border:1px solid #2A2318;padding:10px 14px 8px;margin-bottom:8px;min-width:0}
+    .flbl{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;overflow-wrap:anywhere}
     .finp{width:100%;background:transparent;border:none;outline:none;font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#E8D5A3;letter-spacing:1.5px;text-transform:uppercase}
     .finp::placeholder{color:#2A2318;font-weight:300;font-size:13px;letter-spacing:0;text-transform:none}
-    .finp-sm,.select-sm{width:100%;background:transparent;border:none;outline:none;font-family:'JetBrains Mono',monospace;font-size:12px;color:#A89060}
+    .finp-sm,.select-sm{width:100%;min-width:0;background:transparent;border:none;outline:none;font-family:'JetBrains Mono',monospace;font-size:12px;color:#A89060}
     .finp-sm::placeholder{color:#2A2318}
     .metric-input{font-size:13px;font-weight:700;color:#E8D5A3}
     .metric-input::placeholder{font-size:12px;font-weight:400;color:#2A2318}
+    .select-sm{padding-right:24px;text-overflow:ellipsis}
     .select-sm option{background:#131008;color:#D4C9A8}
     .ftxt{width:100%;background:transparent;border:none;outline:none;resize:none;font-family:'JetBrains Mono',monospace;font-size:11px;color:#A89060;line-height:1.5;max-height:100px;overflow-y:auto}
     .ftxt::placeholder{color:#2A2318}
@@ -973,13 +1012,16 @@ export default function NEXOApp() {
     .edg-audit-note{font-family:'JetBrains Mono',monospace;font-size:8px;color:#4A3E28;margin-top:8px;line-height:1.5}
     .choice-help{font-family:'JetBrains Mono',monospace;font-size:9px;color:#8A7A58;border-left:2px solid #6A5C3A;background:rgba(201,168,76,.035);padding:8px 10px;margin:7px 0 10px;line-height:1.55;overflow-wrap:anywhere}
     .choice-help strong{color:#C9A84C;letter-spacing:.5px}
+    .selected-detail{font-family:'JetBrains Mono',monospace;font-size:9px;color:#8A7A58;line-height:1.55;margin-top:7px;padding-top:7px;border-top:1px solid #2A2318;white-space:normal;overflow-wrap:anywhere}
+    .edg-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #2A2318;background:rgba(201,168,76,.025);padding:9px 10px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;line-height:1.5}
+    .btn-manual{flex-shrink:0;color:#C9A84C;border:1px solid #6A5C3A;padding:7px 9px;text-decoration:none;text-transform:uppercase;letter-spacing:.7px;border-radius:2px}
     .reserved-box{min-height:72px;border:1px dashed #2A2318;display:flex;align-items:center;justify-content:center;text-align:center;padding:14px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#4A3E28;letter-spacing:1px;line-height:1.5}
     .section-meta{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8A7A58;line-height:1.5}
-    .subsection-label{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin:14px 0 7px}
+    .subsection-label{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin:14px 0 7px;line-height:1.5;overflow-wrap:anywhere}
     .macro-card{border:1px solid #2A2318;padding:8px 10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#A89060}
     .macro-title{font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
     .macro-value{font-size:13px;color:#E8D5A3;font-weight:700}
-    .macro-note{font-size:8px;color:#4A3E28;margin-top:3px}
+    .macro-note{font-size:8px;color:#4A3E28;margin-top:3px;line-height:1.45;overflow-wrap:anywhere}
     .actions{display:flex;gap:7px;margin-bottom:10px}
     .btn-scan{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:linear-gradient(135deg,#C9A84C,#E8D5A3);color:#131008;border:none;cursor:pointer;border-radius:2px;flex:1}
     .btn-deep{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:transparent;border:1px solid #A8A8B8;color:#A8A8B8;cursor:pointer;border-radius:2px;flex:1}
@@ -1000,7 +1042,7 @@ export default function NEXOApp() {
     .fc{font-family:'JetBrains Mono',monospace;font-size:7.5px;color:#3A3020;letter-spacing:.8px;display:flex;align-items:center;gap:4px}
     .fd{width:4px;height:4px;border-radius:50%;flex-shrink:0}
     button:disabled,input:disabled,textarea:disabled,select:disabled{opacity:.3!important;cursor:not-allowed!important}
-    @media(max-width:600px){.quads,.grid2,.grid3{grid-template-columns:1fr}.actions,.decision-actions,.follow-actions{flex-direction:column}.btn-deep,.btn-scan,.btn-cl,.btn-end{width:100%}}
+    @media(max-width:600px){.quads,.grid2,.grid3{grid-template-columns:1fr}.actions,.decision-actions,.follow-actions,.edg-tools{flex-direction:column;align-items:stretch}.btn-deep,.btn-scan,.btn-cl,.btn-end,.btn-manual{width:100%;text-align:center}.metric-input.select-sm{font-size:11px;letter-spacing:0}.field{padding-left:12px;padding-right:12px}}
     @media print{
       body{background:#fff!important;color:#111!important}
       body *{visibility:hidden!important}
@@ -1060,16 +1102,40 @@ export default function NEXOApp() {
             <>
               <div className="section-meta">
                 <span>{assetData?.asset?.name || ticker.trim().toUpperCase()}</span>
-                <span>{assetLoading ? "CARREGANDO..." : assetData?.ok ? "DADOS RECEBIDOS" : "FALLBACK MANUAL"}</span>
+                <span>
+                  {assetLoading
+                    ? "CARREGANDO..."
+                    : assetLookupStatus === ASSET_LOOKUP_STATUS.FOUND
+                    ? "DADOS RECEBIDOS"
+                    : assetLookupStatus === ASSET_LOOKUP_STATUS.NOT_FOUND
+                    ? "TICKER INEXISTENTE"
+                    : assetLookupStatus === ASSET_LOOKUP_STATUS.MANUAL_FALLBACK
+                    ? "FALLBACK MANUAL"
+                    : assetLookupStatus === ASSET_LOOKUP_STATUS.UNAVAILABLE
+                    ? "VALIDAÇÃO INDISPONÍVEL"
+                    : "AGUARDANDO"}
+                </span>
               </div>
 
-              {assetError && (
-                <div className="warn-box">Dados automáticos do ativo indisponíveis: {assetError}. Preencha a cotação manualmente para prosseguir.</div>
+              {assetLookupStatus === ASSET_LOOKUP_STATUS.NOT_FOUND && (
+                <div className="err-box">Ticker inexistente</div>
+              )}
+
+              {assetLookupStatus === ASSET_LOOKUP_STATUS.UNAVAILABLE && (
+                <div className="warn-box">
+                  {assetError}. Os campos permanecem bloqueados porque a existência do ticker não pôde ser confirmada.
+                </div>
+              )}
+
+              {assetLookupStatus === ASSET_LOOKUP_STATUS.MANUAL_FALLBACK && (
+                <div className="warn-box">
+                  {assetError}. O preenchimento manual foi liberado porque o ticker foi confirmado.
+                </div>
               )}
 
               {assetLoading ? (
                 <div className="reserved-box">BUSCANDO COTAÇÃO, HISTÓRICO E INDICADORES...</div>
-              ) : assetData?.ok ? (
+              ) : assetLookupStatus === ASSET_LOOKUP_STATUS.FOUND && assetData?.ok ? (
                 <>
                   <div className="grid3">
                     <MetricCard title="Cotação atual" value={displayMoney(assetData?.asset?.price ?? assetData?.derived?.currentPrice, assetData?.asset?.currency)} note="Automático · somente leitura" />
@@ -1093,7 +1159,7 @@ export default function NEXOApp() {
                     Fonte: {assetData?.asset?.source || assetData?.asset?.dataProvider || assetData?.route} · {assetData?.asset?.updatedAt || assetData?.updatedAt || ""}
                   </div>
                 </>
-              ) : assetError ? (
+              ) : assetLookupStatus === ASSET_LOOKUP_STATUS.MANUAL_FALLBACK ? (
                 <>
                   <div className="subsection-label">Fallback manual</div>
                   <div className="grid2">
@@ -1112,7 +1178,7 @@ export default function NEXOApp() {
                     </div>
                   </div>
                 </>
-              ) : (
+              ) : [ASSET_LOOKUP_STATUS.NOT_FOUND, ASSET_LOOKUP_STATUS.UNAVAILABLE].includes(assetLookupStatus) ? null : (
                 <div className="reserved-box">AGUARDANDO RETORNO DOS DADOS AUTOMÁTICOS...</div>
               )}
             </>
@@ -1229,6 +1295,13 @@ export default function NEXOApp() {
         </div>
 
         <Sec title="EDG · Declaração e governança do edge">
+          <div className="edg-tools">
+            <span>Consulte o guia antes de declarar uma vantagem.</span>
+            <a className="btn-manual" href="/edg-manual" target="_blank" rel="noreferrer">
+              Abrir mini manual EDG ↗
+            </a>
+          </div>
+
           <div className="field">
             <div className="flbl">Tipo de edge</div>
             <select className="select-sm metric-input" disabled={locked} value={edgeType} onChange={(e) => handleEdgeType(e.target.value)}>
@@ -1309,6 +1382,12 @@ export default function NEXOApp() {
                 </div>
               </div>
 
+              {selectedEvidenceTemplate?.statement && (
+                <div className="choice-help">
+                  <strong>Significado da opção</strong> · {selectedEvidenceTemplate.statement}.
+                </div>
+              )}
+
               {edgeEvidenceTemplate === "custom" && (
                 <div className="field">
                   <div className="flbl">Evidência específica · modo avançado</div>
@@ -1379,6 +1458,9 @@ export default function NEXOApp() {
                     {EDGE_EXPIRY_EVENTS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                   </select>
                   <div className="macro-note">Eventos devem ser confirmáveis em fonte oficial</div>
+                  {selectedExpiryEvent && (
+                    <div className="selected-detail">{selectedExpiryEvent.condition}</div>
+                  )}
                 </div>
               )}
 

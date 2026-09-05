@@ -5,8 +5,11 @@ import {
   buildGuidedEdgeEvidence,
   buildGuidedExpiryCondition,
   EDGE_DEADLINE_OBJECTS,
+  EDGE_EVIDENCE_BASES,
+  EDGE_EVIDENCE_WINDOWS,
   EDGE_EXPIRY_EVENTS,
   EDGE_EXPIRY_METRICS,
+  EDGE_EXPIRY_TEMPLATES,
   EDGE_INSUMO_METADATA,
   evidenceOptionsForType,
 } from "../lib/ui/edg_form_adapter.mjs";
@@ -157,5 +160,16 @@ check(
 );
 equal(EDGE_INSUMO_METADATA.IQD.available, true, "IQD está habilitado");
 equal(EDGE_INSUMO_METADATA.HDL.available, false, "HDL futuro não pode lastrear edge agora");
+
+const mobileSelectLabels = [
+  ...["informacional", "analitico", "estrutural", "temporal"].flatMap(evidenceOptionsForType),
+  ...EDGE_EVIDENCE_BASES,
+  ...EDGE_EVIDENCE_WINDOWS,
+  ...EDGE_EXPIRY_TEMPLATES,
+  ...EDGE_EXPIRY_EVENTS,
+];
+for (const option of mobileSelectLabels) {
+  check(option.label.length <= 31, `rótulo ${option.id} cabe no seletor mobile`);
+}
 
 console.log(`EDG form adapter: ${assertions} assertions OK`);
