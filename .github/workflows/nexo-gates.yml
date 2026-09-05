@@ -56,6 +56,14 @@ jobs:
       - name: Contrato de validacao do ticker
         run: node scripts/asset_lookup_contract_test.mjs
 
+      - name: Layout dos valuations classicos
+        run: node scripts/valuation_adapter_test.mjs
+
+      - name: Gerador do relatorio PDF
+        run: |
+          node scripts/pdf_report_test.mjs
+          node scripts/pdf_route_contract_test.mjs
+
       # GATE 3 — coletor macro (logica de calculo e classificacao)
       - name: Self-test do coletor macro
         run: NEXO_SELFTEST=1 node scripts/nexo_macro_collector.mjs

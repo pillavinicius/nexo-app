@@ -10,6 +10,7 @@ const nextConfig = {
     ],
     "/api/analyze": ["./data/context/latest.json"],
     "/api/nmi/context/latest": ["./data/context/latest.json"],
+    "/api/export/pdf": ["./node_modules/pdfkit/js/data/*.afm"],
   },
   async headers() {
     return [

@@ -34,6 +34,7 @@ import {
   ASSET_LOOKUP_STATUS,
   resolveAssetLookupState,
 } from "../lib/nexo/data/asset_lookup_contract.mjs";
+import { splitPriceModels } from "../lib/ui/valuation_adapter.mjs";
 
 const EDGE_TYPE_LABELS = Object.freeze({
   nenhum: "Nenhum edge declarado",
@@ -301,9 +302,11 @@ function ScanReport({ r }) {
   );
 }
 
-function DeepReport({ r }) {
+function DeepReport({ r, showClassicValuations = false }) {
   const lacs = asArray(r?.lacunas || r?.lacunas_respondidas);
-  const precs = asArray(r?.preco || r?.modelo_preco);
+  const { layers: precs, classics } = splitPriceModels(r, {
+    includeClassic: showClassicValuations,
+  });
   const macs = asArray(r?.macro || r?.sensibilidade);
   const cats = asArray(r?.catalisadores);
   const risks = asArray(r?.riscos);
@@ -319,7 +322,27 @@ function DeepReport({ r }) {
       </div>
 
       {lacs.length > 0 && <Sec title="Respostas às Lacunas">{lacs.map((l, i) => <DetailBlock key={i} title={l?.q || l?.lacuna || "Lacuna"} value={l?.r || l?.resposta || l} />)}</Sec>}
-      {precs.length > 0 && <Sec title="Modelo de Preço - 3 Camadas">{precs.map((c, i) => <DetailBlock key={i} title={(c?.c || c?.camada || "Camada") + (c?.vj || c?.valor_justo ? " · " + asText(c?.vj || c?.valor_justo) : "")} value={c?.met || c?.metodologia} note={c?.prem || c?.premissas} />)}</Sec>}
+      {(precs.length > 0 || classics.length > 0) && (
+        <Sec title="Modelo de Preço - 3 Camadas">
+          {precs.map((item, i) => (
+            <DetailBlock
+              key={`layer-${i}`}
+              title={item.label + (item.value ? " · " + item.value : "")}
+              value={item.methodology}
+              note={item.premises}
+            />
+          ))}
+          {classics.length > 0 && <div className="valuation-subtitle">Valuations clássicos auxiliares</div>}
+          {classics.map((item, i) => (
+            <DetailBlock
+              key={`classic-${i}`}
+              title={item.label + (item.value ? " · " + item.value : "")}
+              value={item.methodology}
+              note={item.premises}
+            />
+          ))}
+        </Sec>
+      )}
       {(r?.zona || r?.zona_convergida) && <Sec title="Zona Convergida · BESST"><DetailBlock title={r?.zona || r?.zona_convergida} value={r?.besst || r?.zona_besst ? "Entrada BESST: " + asText(r?.besst || r?.zona_besst) : ""} note={r?.desconto || r?.desconto_atual ? "Desconto atual: " + asText(r?.desconto || r?.desconto_atual) : ""} /></Sec>}
       {macs.length > 0 && <Sec title="Sensibilidade Macro">{macs.map((s, i) => <DetailBlock key={i} title={s?.s || s?.cenario} value={s?.i || s?.impacto} note={s?.detalhe} />)}</Sec>}
       {cats.length > 0 && <Sec title="Catalisadores">{cats.map((c, i) => <DetailBlock key={i} title={c?.d || c?.descricao} value={c?.impacto} note={c?.p || c?.prazo} />)}</Sec>}
@@ -337,7 +360,7 @@ function FinalReport({ r }) {
   const preco = r?.preco_final || {};
 
   return (
-    <div id="nexo-final-report" style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8", overflowX: "hidden" }}>
+    <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8", overflowX: "hidden" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, gap: 8 }}>
         <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 14, fontWeight: 700, color: "#E8D5A3", minWidth: 0 }}>
           {asText(r?.ticker)} · Reclassificação Final NEXO
@@ -434,6 +457,8 @@ export default function NEXOApp() {
   const [loading, setLoading] = useState(false);
   const [loadingKind, setLoadingKind] = useState("");
   const [error, setError] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState("");
 
   const [followQ, setFollowQ] = useState("");
   const [followUrl, setFollowUrl] = useState("");
@@ -651,6 +676,8 @@ export default function NEXOApp() {
     setFinalResult(null);
     setPhase("initial");
     setError("");
+    setPdfError("");
+    setPdfLoading(false);
     setFollowQ("");
     setFollowUrl("");
     setEnded(false);
@@ -964,8 +991,55 @@ export default function NEXOApp() {
     }
   }
 
-  function handlePrintPDF() {
-    window.print();
+  async function handleExportPDF() {
+    if (!hasFinal || pdfLoading) return;
+
+    setPdfLoading(true);
+    setPdfError("");
+    try {
+      const normalizedTicker = ticker.trim().toUpperCase();
+      const response = await fetch("/api/export/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportVersion: "NEXO_REPORT_V1",
+          generatedAt: new Date().toISOString(),
+          ticker: normalizedTicker,
+          assetType: detectType(normalizedTicker),
+          currency,
+          asset: compactAssetContext(assetData),
+          macro: macroData,
+          edge: edgeLedger,
+          scan: scanResult,
+          deep: deepResult,
+          deepAdds,
+          final: finalResult,
+          options: { classicValuations },
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || "Não foi possível gerar o PDF.");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/i);
+      const filename = match?.[1] || `NEXO_${normalizedTicker}.pdf`;
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 2_000);
+    } catch (exportError) {
+      setPdfError(exportError?.message || "Não foi possível gerar o PDF.");
+    } finally {
+      setPdfLoading(false);
+    }
   }
 
   const CSS = `
@@ -1010,6 +1084,7 @@ export default function NEXOApp() {
     .edg-rule-box{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);border-left:2px solid #D2A03C;background:rgba(210,160,60,.06);padding:9px 12px;margin-top:10px;line-height:1.7;overflow-wrap:anywhere}
     .edg-rule-box strong{display:block;letter-spacing:1px;margin-bottom:3px}
     .edg-audit-note{font-family:'JetBrains Mono',monospace;font-size:8px;color:#4A3E28;margin-top:8px;line-height:1.5}
+    .valuation-subtitle{font-family:'JetBrains Mono',monospace;font-size:8px;color:#C9A84C;letter-spacing:1.5px;text-transform:uppercase;margin:16px 0 4px;padding-top:10px;border-top:1px solid #2A2318;overflow-wrap:anywhere}
     .choice-help{font-family:'JetBrains Mono',monospace;font-size:9px;color:#8A7A58;border-left:2px solid #6A5C3A;background:rgba(201,168,76,.035);padding:8px 10px;margin:7px 0 10px;line-height:1.55;overflow-wrap:anywhere}
     .choice-help strong{color:#C9A84C;letter-spacing:.5px}
     .selected-detail{font-family:'JetBrains Mono',monospace;font-size:9px;color:#8A7A58;line-height:1.55;margin-top:7px;padding-top:7px;border-top:1px solid #2A2318;white-space:normal;overflow-wrap:anywhere}
@@ -1043,13 +1118,6 @@ export default function NEXOApp() {
     .fd{width:4px;height:4px;border-radius:50%;flex-shrink:0}
     button:disabled,input:disabled,textarea:disabled,select:disabled{opacity:.3!important;cursor:not-allowed!important}
     @media(max-width:600px){.quads,.grid2,.grid3{grid-template-columns:1fr}.actions,.decision-actions,.follow-actions,.edg-tools{flex-direction:column;align-items:stretch}.btn-deep,.btn-scan,.btn-cl,.btn-end,.btn-manual{width:100%;text-align:center}.metric-input.select-sm{font-size:11px;letter-spacing:0}.field{padding-left:12px;padding-right:12px}}
-    @media print{
-      body{background:#fff!important;color:#111!important}
-      body *{visibility:hidden!important}
-      #nexo-final-report,#nexo-final-report *{visibility:visible!important;color:#111!important}
-      #nexo-final-report{position:absolute;left:0;top:0;width:100%;padding:24px;background:#fff!important}
-      #nexo-final-report div{border-color:#ddd!important}
-    }
   `;
 
   return (
@@ -1570,11 +1638,11 @@ export default function NEXOApp() {
             </div>
           )}
 
-          {hasDeep && <div style={{ marginTop: 24 }}><Sec title="Resultado Deep Principal"><DeepReport r={deepResult} /></Sec></div>}
+          {hasDeep && <div style={{ marginTop: 24 }}><Sec title="Resultado Deep Principal"><DeepReport r={deepResult} showClassicValuations={classicValuations === "SIM"} /></Sec></div>}
 
           {deepAdds.length > 0 && deepAdds.map((d, i) => (
             <div key={i} style={{ marginTop: 26 }}>
-              <Sec title={"Resultado Deep Aprofundado " + (i + 1)}><DeepReport r={d} /></Sec>
+              <Sec title={"Resultado Deep Aprofundado " + (i + 1)}><DeepReport r={d} showClassicValuations={classicValuations === "SIM"} /></Sec>
             </div>
           ))}
 
@@ -1609,10 +1677,13 @@ export default function NEXOApp() {
 
           {ended && hasFinal && (
             <div className="decision-actions" style={{ marginTop: 12 }}>
-              <button className="btn-end" onClick={handlePrintPDF}>Exportar PDF</button>
-              <button className="btn-cl" onClick={reset}>Nova análise</button>
+              <button className="btn-end" onClick={handleExportPDF} disabled={pdfLoading}>
+                {pdfLoading ? "Gerando PDF..." : "Exportar PDF"}
+              </button>
+              <button className="btn-cl" onClick={reset} disabled={pdfLoading}>Nova análise</button>
             </div>
           )}
+          {pdfError && <div className="err-box">Erro na exportação: {pdfError}</div>}
         </div>
 
         <div className="footer">
