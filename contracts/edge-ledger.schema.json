@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexo.app/contracts/edge-ledger.schema.json",
+  "title": "NEXO EDG Edge Ledger v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["edge_type", "edge_status"],
+  "properties": {
+    "edge_type": {
+      "type": "string",
+      "enum": ["informacional", "analitico", "estrutural", "temporal", "nenhum"]
+    },
+    "edge_evidence": { "type": "string" },
+    "edge_insumo": {
+      "type": "string",
+      "enum": ["IQD", "NMI", "SEE", "FDM", "CNE", "PIJR", "TNH", "PIN", "RES", "ECS", "ICN-D", "ICN-R", "GNP", "HDL", "NFI", "TDN", "BJR", "NCS", "NALM"]
+    },
+    "edge_expiry_condition": { "type": "string" },
+    "edge_declared_at": { "type": "string", "format": "date" },
+    "edge_status": {
+      "type": "string",
+      "enum": ["ativo", "expirado", "nao_declarado"]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "edge_type": { "const": "nenhum" } } },
+      "then": { "properties": { "edge_status": { "const": "nao_declarado" } } },
+      "else": {
+        "required": ["edge_evidence", "edge_insumo", "edge_expiry_condition", "edge_declared_at"],
+        "properties": {
+          "edge_evidence": { "minLength": 12 },
+          "edge_expiry_condition": { "minLength": 20 },
+          "edge_status": { "enum": ["ativo", "expirado"] }
+        }
+      }
+    }
+  ]
+}

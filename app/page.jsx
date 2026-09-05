@@ -12,6 +12,73 @@ import {
   mergeMacroData,
   nmiContextToMacroData,
 } from "../lib/ui/nmi_macro_adapter.mjs";
+import {
+  EDGE_INSUMOS,
+} from "../lib/nexo/edg/edg_engine.mjs";
+import {
+  buildGuidedEdgeEvidence,
+  buildGuidedExpiryCondition,
+  EDGE_DEADLINE_OBJECTS,
+  EDGE_EVIDENCE_BASES,
+  EDGE_EVIDENCE_WINDOWS,
+  EDGE_EXPIRY_EVENTS,
+  EDGE_EXPIRY_METRICS,
+  EDGE_EXPIRY_PERIODS,
+  EDGE_EXPIRY_TEMPLATES,
+  EDGE_EXPIRY_UNITS,
+  EDGE_INSUMO_METADATA,
+  EDGE_TYPE_DESCRIPTIONS,
+  evidenceOptionsForType,
+} from "../lib/ui/edg_form_adapter.mjs";
+import {
+  ASSET_LOOKUP_STATUS,
+  resolveAssetLookupState,
+} from "../lib/nexo/data/asset_lookup_contract.mjs";
+import { splitPriceModels } from "../lib/ui/valuation_adapter.mjs";
+import { readApiJsonResponse } from "../lib/ui/api_response_adapter.mjs";
+import { resolveEdgeScanGate } from "../lib/ui/edge_scan_gate.mjs";
+import {
+  canSharePdfFile,
+  choosePdfSaveHandle,
+  isMobilePdfEnvironment,
+  isPdfDeliveryCancellation,
+  triggerPdfDownload,
+  writePdfToHandle,
+} from "../lib/ui/pdf_delivery.mjs";
+
+const EDGE_TYPE_LABELS = Object.freeze({
+  nenhum: "Nenhum edge declarado",
+  informacional: "Informacional",
+  analitico: "Analítico",
+  estrutural: "Estrutural",
+  temporal: "Temporal",
+});
+
+const EDGE_STATUS_LABELS = Object.freeze({
+  ativo: "Ativo",
+  expirado: "Expirado",
+  nao_declarado: "Não declarado",
+});
+
+const EDG_ERROR_LABELS = Object.freeze({
+  edge_type_required: "Selecione o tipo de edge.",
+  edge_type_invalid: "O tipo de edge não pertence ao contrato EDG.",
+  edge_status_must_be_nao_declarado: "Sem edge, o status precisa ser não declarado.",
+  edge_evidence_not_verifiable: "Descreva uma evidência verificável com pelo menos 12 caracteres.",
+  edge_insumo_required: "Selecione o insumo NEXO que sustenta a evidência.",
+  edge_insumo_unknown: "O insumo selecionado não pertence ao catálogo NEXO.",
+  edge_expiry_condition_required: "Defina a condição observável de expiração.",
+  edge_expiry_condition_not_observable: "A condição de expiração está vaga: use métrica, limite e janela, ou um evento objetivo.",
+  edge_declared_at_invalid: "Informe uma data de declaração válida.",
+  edge_status_required: "Informe se o edge está ativo ou expirado.",
+  edge_status_invalid: "O status informado não é válido para um edge declarado.",
+});
+
+function localIsoDate() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
 
 function detectType(t) {
   const tk = (t || "").toUpperCase().trim();
@@ -76,6 +143,7 @@ function readableRegime(value) {
 
 function Badge({ text }) {
   const value = asText(text || "N/D").toUpperCase();
+  const displayValue = value === "MANTEVE" ? "NEUTRO" : value;
 
   const colors = {
     APROVADO: ["#C9A84C", "rgba(201,168,76,.15)"],
@@ -102,7 +170,7 @@ function Badge({ text }) {
 
   return (
     <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fontWeight: 700, letterSpacing: 1, padding: "2px 8px", border: "1px solid " + c[0], color: c[0], background: c[1], display: "inline-block", whiteSpace: "nowrap" }}>
-      {value}
+      {displayValue}
     </span>
   );
 }
@@ -170,6 +238,50 @@ function Note({ children, col }) {
   return <div style={{ fontSize: 11, color: col || "#8A7A58", marginTop: 3, lineHeight: 1.5 }}>{children}</div>;
 }
 
+function EdgAudit({ result }) {
+  const edg = result?.nexoModules?.EDG;
+  const governance = result?.edg_governance;
+
+  if (!edg) return null;
+
+  const changes = asArray(governance?.changes);
+  const comparison = governance?.comparison;
+  const signal = edg.exit_signal === "edge_expired" ? "Edge expirado" : "Nenhum";
+  const ceiling = edg.max_allowed_classification === "posicao" ? "Posição" : "Watchlist";
+
+  return (
+    <Sec title="EDG · Governança de Edge">
+      <div className="grid3">
+        <MetricCard title="Tipo" value={EDGE_TYPE_LABELS[edg.edge_type] || edg.edge_type} note={EDGE_STATUS_LABELS[edg.edge_status] || edg.edge_status} />
+        <MetricCard title="Teto permitido" value={ceiling} note={edg.has_declared_edge ? "Edge válido no contrato" : "Regra D2 ativa"} />
+        <MetricCard title="Sinal de saída" value={signal} note={edg.exit_signal === "edge_expired" ? "Regra D3 ativa" : "Sem gatilho D3"} />
+      </div>
+
+      {comparison && (
+        <div className="grid2" style={{ marginTop: 8 }}>
+          <MetricCard title="Veredito sem governança EDG" value={comparison.without_edg || "—"} note="Saída analítica bruta do motor" />
+          <MetricCard title="Veredito com governança EDG" value={comparison.with_edg || "—"} note="Resultado após aplicação determinística de D2/D3" />
+        </div>
+      )}
+
+      {governance?.applied && (
+        <div className="edg-rule-box">
+          <strong>REGRA {governance.rule} APLICADA</strong>
+          {changes.map((change, index) => (
+            <div key={`${change?.field || "campo"}-${index}`}>
+              {asText(change?.field)}: {asText(change?.before)} → {asText(change?.after)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!governance?.applied && (
+        <div className="edg-audit-note">EDG auditado · nenhuma classificação precisou ser alterada nesta etapa.</div>
+      )}
+    </Sec>
+  );
+}
+
 function ScanReport({ r }) {
   const filtros = asArray(r?.filtros);
   const governanca = asArray(r?.governanca);
@@ -204,13 +316,16 @@ function ScanReport({ r }) {
       {catalisadores.length > 0 && <Sec title="Catalisadores">{catalisadores.map((c, i) => <DetailBlock key={i} title={c?.descricao} value={c?.impacto} note={c?.prazo} />)}</Sec>}
       {riscos.length > 0 && <Sec title="Riscos">{riscos.map((risco, i) => <Row key={i} label={risco?.descricao} right={<Badge text={risco?.severidade} />}><Note>{asText(risco?.probabilidade)}</Note></Row>)}</Sec>}
       {lacunas.length > 0 && <Sec title="Lacunas para o Deep">{lacunas.map((l, i) => <DetailBlock key={i} title={"Lacuna " + (i + 1)} value={l} />)}</Sec>}
+      <EdgAudit result={r} />
     </div>
   );
 }
 
-function DeepReport({ r }) {
+function DeepReport({ r, showClassicValuations = false }) {
   const lacs = asArray(r?.lacunas || r?.lacunas_respondidas);
-  const precs = asArray(r?.preco || r?.modelo_preco);
+  const { layers: precs, classics } = splitPriceModels(r, {
+    includeClassic: showClassicValuations,
+  });
   const macs = asArray(r?.macro || r?.sensibilidade);
   const cats = asArray(r?.catalisadores);
   const risks = asArray(r?.riscos);
@@ -226,12 +341,33 @@ function DeepReport({ r }) {
       </div>
 
       {lacs.length > 0 && <Sec title="Respostas às Lacunas">{lacs.map((l, i) => <DetailBlock key={i} title={l?.q || l?.lacuna || "Lacuna"} value={l?.r || l?.resposta || l} />)}</Sec>}
-      {precs.length > 0 && <Sec title="Modelo de Preço - 3 Camadas">{precs.map((c, i) => <DetailBlock key={i} title={(c?.c || c?.camada || "Camada") + (c?.vj || c?.valor_justo ? " · " + asText(c?.vj || c?.valor_justo) : "")} value={c?.met || c?.metodologia} note={c?.prem || c?.premissas} />)}</Sec>}
+      {(precs.length > 0 || classics.length > 0) && (
+        <Sec title="Modelo de Preço - 3 Camadas">
+          {precs.map((item, i) => (
+            <DetailBlock
+              key={`layer-${i}`}
+              title={item.label + (item.value ? " · " + item.value : "")}
+              value={item.methodology}
+              note={item.premises}
+            />
+          ))}
+          {classics.length > 0 && <div className="valuation-subtitle">Valuations clássicos auxiliares</div>}
+          {classics.map((item, i) => (
+            <DetailBlock
+              key={`classic-${i}`}
+              title={item.label + (item.value ? " · " + item.value : "")}
+              value={item.methodology}
+              note={item.premises}
+            />
+          ))}
+        </Sec>
+      )}
       {(r?.zona || r?.zona_convergida) && <Sec title="Zona Convergida · BESST"><DetailBlock title={r?.zona || r?.zona_convergida} value={r?.besst || r?.zona_besst ? "Entrada BESST: " + asText(r?.besst || r?.zona_besst) : ""} note={r?.desconto || r?.desconto_atual ? "Desconto atual: " + asText(r?.desconto || r?.desconto_atual) : ""} /></Sec>}
       {macs.length > 0 && <Sec title="Sensibilidade Macro">{macs.map((s, i) => <DetailBlock key={i} title={s?.s || s?.cenario} value={s?.i || s?.impacto} note={s?.detalhe} />)}</Sec>}
       {cats.length > 0 && <Sec title="Catalisadores">{cats.map((c, i) => <DetailBlock key={i} title={c?.d || c?.descricao} value={c?.impacto} note={c?.p || c?.prazo} />)}</Sec>}
       {risks.length > 0 && <Sec title="Riscos">{risks.map((risco, i) => <DetailBlock key={i} title={risco?.d || risco?.descricao} value={"Severidade: " + asText(risco?.sev || risco?.severidade || "MEDIO")} note={risco?.g || risco?.gatilho ? "Gatilho: " + asText(risco?.g || risco?.gatilho) : ""} />)}</Sec>}
       {steps.length > 0 && <Sec title="Próximos Passos">{steps.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
+      <EdgAudit result={r} />
     </div>
   );
 }
@@ -243,7 +379,7 @@ function FinalReport({ r }) {
   const preco = r?.preco_final || {};
 
   return (
-    <div id="nexo-final-report" style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8", overflowX: "hidden" }}>
+    <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8", overflowX: "hidden" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, gap: 8 }}>
         <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 14, fontWeight: 700, color: "#E8D5A3", minWidth: 0 }}>
           {asText(r?.ticker)} · Reclassificação Final NEXO
@@ -275,6 +411,7 @@ function FinalReport({ r }) {
 
       {r?.conclusao && <Sec title="Conclusão"><DetailBlock title="Conclusão NEXO" value={r.conclusao} /></Sec>}
       {passos.length > 0 && <Sec title="Próximos Passos">{passos.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
+      <EdgAudit result={r} />
     </div>
   );
 }
@@ -299,10 +436,29 @@ export default function NEXOApp() {
   const [plIbov, setPlIbov] = useState("");
   const [plSp500, setPlSp500] = useState("");
   const [classicValuations, setClassicValuations] = useState("NAO");
+  const [edgeType, setEdgeType] = useState("nenhum");
+  const [edgeInsumo, setEdgeInsumo] = useState("");
+  const [edgeEvidenceTemplate, setEdgeEvidenceTemplate] = useState("");
+  const [edgeEvidenceBasis, setEdgeEvidenceBasis] = useState("");
+  const [edgeEvidenceWindow, setEdgeEvidenceWindow] = useState("");
+  const [edgeEvidenceCustom, setEdgeEvidenceCustom] = useState("");
+  const [edgeExpiryTemplate, setEdgeExpiryTemplate] = useState("");
+  const [edgeExpiryMetric, setEdgeExpiryMetric] = useState("");
+  const [edgeExpiryThreshold, setEdgeExpiryThreshold] = useState("");
+  const [edgeExpiryUnit, setEdgeExpiryUnit] = useState("percent");
+  const [edgeExpiryPersistence, setEdgeExpiryPersistence] = useState("2");
+  const [edgeExpiryPeriod, setEdgeExpiryPeriod] = useState("quarter");
+  const [edgeExpiryEvent, setEdgeExpiryEvent] = useState("");
+  const [edgeDeadlineObject, setEdgeDeadlineObject] = useState("");
+  const [edgeDeadlineDate, setEdgeDeadlineDate] = useState("");
+  const [edgeExpiryCustom, setEdgeExpiryCustom] = useState("");
+  const [edgeDeclaredAt, setEdgeDeclaredAt] = useState("");
+  const [edgeStatus, setEdgeStatus] = useState("nao_declarado");
 
   const [assetData, setAssetData] = useState(null);
   const [assetError, setAssetError] = useState("");
   const [assetLoading, setAssetLoading] = useState(false);
+  const [assetLookupStatus, setAssetLookupStatus] = useState(ASSET_LOOKUP_STATUS.IDLE);
 
   const [macroData, setMacroData] = useState(null);
   const [macroError, setMacroError] = useState("");
@@ -320,6 +476,8 @@ export default function NEXOApp() {
   const [loading, setLoading] = useState(false);
   const [loadingKind, setLoadingKind] = useState("");
   const [error, setError] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState("");
 
   const [followQ, setFollowQ] = useState("");
   const [followUrl, setFollowUrl] = useState("");
@@ -338,6 +496,51 @@ export default function NEXOApp() {
 
   const macro = macroData?.automatic || {};
   const priceUnit = currency === "USD" ? "USD" : "R$";
+  const edgeEvidenceOptions = evidenceOptionsForType(edgeType);
+  const selectedInsumo = EDGE_INSUMO_METADATA[edgeInsumo] || null;
+  const selectedEvidenceTemplate = edgeEvidenceOptions.find(
+    (option) => option.id === edgeEvidenceTemplate
+  );
+  const selectedExpiryEvent = EDGE_EXPIRY_EVENTS.find(
+    (option) => option.id === edgeExpiryEvent
+  );
+  const edgeEvidence = buildGuidedEdgeEvidence({
+    edgeType,
+    edgeInsumo,
+    templateId: edgeEvidenceTemplate,
+    basisId: edgeEvidenceBasis,
+    windowId: edgeEvidenceWindow,
+    customText: edgeEvidenceCustom,
+  });
+  const edgeExpiryCondition = buildGuidedExpiryCondition({
+    templateId: edgeExpiryTemplate,
+    metricId: edgeExpiryMetric,
+    threshold: edgeExpiryThreshold,
+    unitId: edgeExpiryUnit,
+    persistence: edgeExpiryPersistence,
+    periodId: edgeExpiryPeriod,
+    eventId: edgeExpiryEvent,
+    deadlineObjectId: edgeDeadlineObject,
+    deadlineDate: edgeDeadlineDate,
+    customText: edgeExpiryCustom,
+  });
+  const edgeLedger = {
+    edge_type: edgeType,
+    edge_evidence: edgeEvidence,
+    edge_insumo: edgeInsumo,
+    edge_expiry_condition: edgeExpiryCondition,
+    edge_declared_at: edgeDeclaredAt,
+    edge_status: edgeStatus,
+  };
+  const availableEdgeModules = EDGE_INSUMOS.filter(
+    (insumo) => EDGE_INSUMO_METADATA[insumo]?.available !== false
+  );
+  const edgeGate = resolveEdgeScanGate({
+    record: edgeLedger,
+    availableModules: availableEdgeModules,
+    errorLabels: EDG_ERROR_LABELS,
+  });
+  const scannedEdg = scanResult?.nexoModules?.EDG || null;
   const requiredInputsReady =
     ticker.trim().length >= 3 &&
     currentPrice.trim().length > 0;
@@ -350,13 +553,21 @@ export default function NEXOApp() {
     ? "Ticker precisa ter pelo menos 3 caracteres."
     : assetLoading
     ? "Aguarde a busca automática da cotação e dos indicadores."
+    : assetLookupStatus === ASSET_LOOKUP_STATUS.NOT_FOUND
+    ? "Ticker inexistente."
+    : assetLookupStatus === ASSET_LOOKUP_STATUS.UNAVAILABLE
+    ? "Não foi possível validar o ticker no provedor automático."
     : !currentPrice.trim()
-    ? "Cotação automática indisponível. Informe o valor atual manualmente."
+    ? assetLookupStatus === ASSET_LOOKUP_STATUS.MANUAL_FALLBACK
+      ? "Ticker confirmado. Informe o valor atual manualmente."
+      : "Aguarde a validação do ticker e da cotação."
+    : !edgeGate.ready
+    ? "EDG incompleto ou incoerente: " + edgeGate.reason
     : complementaryPending
     ? "Aguarde o carregamento dos dados complementares selecionados."
     : "";
 
-  const canScan = requiredInputsReady && !assetLoading && !complementaryPending && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
+  const canScan = requiredInputsReady && edgeGate.ready && !assetLoading && !complementaryPending && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
   const canDeep = hasScan && !hasDeep && !isVeto && !loading && !hasFinal && !ended;
   const canFinalize = (hasScan || hasDeep) && !loading && !hasFinal && !ended;
   const canFollow = hasDeep && !loading && !hasFinal && !ended && (followQ.trim() || followUrl.trim());
@@ -374,6 +585,7 @@ export default function NEXOApp() {
     assetAbortRef.current?.abort();
     setAssetData(null);
     setAssetError("");
+    setAssetLookupStatus(ASSET_LOOKUP_STATUS.IDLE);
     setCurrentPrice("");
     setHistMin("");
     setHistMinDate("");
@@ -386,6 +598,7 @@ export default function NEXOApp() {
     }
 
     setAssetLoading(true);
+    setAssetLookupStatus(ASSET_LOOKUP_STATUS.LOADING);
     const timer = window.setTimeout(async () => {
       const controller = new AbortController();
       assetAbortRef.current = controller;
@@ -395,11 +608,25 @@ export default function NEXOApp() {
           { signal: controller.signal, cache: "no-store" }
         );
         const data = await response.json();
-        if (!response.ok || !data?.ok) {
-          throw new Error(data?.error || "Dados automáticos do ativo indisponíveis");
+        const prefill = data?.ok ? assetPrefill(data) : {};
+        const lookupStatus = resolveAssetLookupState({
+          responseOk: response.ok,
+          data,
+          hasAutomaticPrice: Boolean(prefill.currentPrice),
+        });
+
+        setAssetLookupStatus(lookupStatus);
+
+        if (lookupStatus === ASSET_LOOKUP_STATUS.NOT_FOUND) {
+          setAssetError("Ticker inexistente");
+          return;
         }
 
-        const prefill = assetPrefill(data);
+        if (lookupStatus === ASSET_LOOKUP_STATUS.UNAVAILABLE) {
+          setAssetError(data?.error || "Não foi possível validar o ticker no provedor automático");
+          return;
+        }
+
         setAssetData(data);
         if (prefill.currentPrice) setCurrentPrice(prefill.currentPrice);
         if (prefill.currency) setCurrency(prefill.currency);
@@ -407,9 +634,14 @@ export default function NEXOApp() {
         if (prefill.histMinDate) setHistMinDate(prefill.histMinDate);
         if (prefill.histMax) setHistMax(prefill.histMax);
         if (prefill.histMaxDate) setHistMaxDate(prefill.histMaxDate);
+
+        if (lookupStatus === ASSET_LOOKUP_STATUS.MANUAL_FALLBACK) {
+          setAssetError("Ticker confirmado, mas a cotação automática está indisponível");
+        }
       } catch (fetchError) {
         if (fetchError?.name !== "AbortError") {
-          setAssetError(fetchError?.message || "Erro ao buscar dados do ativo");
+          setAssetLookupStatus(ASSET_LOOKUP_STATUS.UNAVAILABLE);
+          setAssetError("Não foi possível validar o ticker no provedor automático");
         }
       } finally {
         if (assetAbortRef.current === controller) {
@@ -458,24 +690,68 @@ export default function NEXOApp() {
     );
   }
 
-  function reset() {
-    if (loading && abortRef.current) {
-      abortRef.current.abort();
-      setLoading(false);
-      setLoadingKind("");
-      setError("Análise cancelada pelo usuário.");
-      return;
-    }
-
+  function resetToInitial() {
+    abortRef.current?.abort();
+    assetAbortRef.current?.abort();
+    supplementalAbortRef.current?.abort();
     setScanResult(null);
     setDeepResult(null);
     setDeepAdds([]);
     setFinalResult(null);
+    setTicker("");
+    setRiUrl("");
+    setExtraCtx("");
+    setCurrency("BRL");
+    setCurrentPrice("");
+    setHistMin("");
+    setHistMinDate("");
+    setHistMax("");
+    setHistMaxDate("");
+    setPlIbov("");
+    setPlSp500("");
+    setClassicValuations("NAO");
+    setEdgeType("nenhum");
+    setEdgeInsumo("");
+    setEdgeEvidenceTemplate("");
+    setEdgeEvidenceBasis("");
+    setEdgeEvidenceWindow("");
+    setEdgeEvidenceCustom("");
+    setEdgeExpiryTemplate("");
+    setEdgeExpiryMetric("");
+    setEdgeExpiryThreshold("");
+    setEdgeExpiryUnit("percent");
+    setEdgeExpiryPersistence("2");
+    setEdgeExpiryPeriod("quarter");
+    setEdgeExpiryEvent("");
+    setEdgeDeadlineObject("");
+    setEdgeDeadlineDate("");
+    setEdgeExpiryCustom("");
+    setEdgeDeclaredAt("");
+    setEdgeStatus("nao_declarado");
+    setAssetData(null);
+    setAssetError("");
+    setAssetLoading(false);
+    setAssetLookupStatus(ASSET_LOOKUP_STATUS.IDLE);
+    setUseComplementaryData("NAO");
+    setSupplementalLoading(false);
+    setSupplementalLoaded(false);
+    setSupplementalError("");
+    setIbovManual("");
+    setSp500Manual("");
+    setIfixManual("");
+    setJurosFuturoManual("");
     setPhase("initial");
+    setLoading(false);
+    setLoadingKind("");
     setError("");
+    setPdfError("");
+    setPdfLoading(false);
     setFollowQ("");
     setFollowUrl("");
     setEnded(false);
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
   }
 
   async function loadMacro() {
@@ -568,6 +844,42 @@ export default function NEXOApp() {
     if (value === "SIM") void loadSupplementalMacro();
   }
 
+  function handleEdgeType(value) {
+    setEdgeType(value);
+    setEdgeEvidenceTemplate("");
+    setEdgeEvidenceBasis("");
+    setEdgeEvidenceWindow("");
+    setEdgeEvidenceCustom("");
+
+    if (value === "nenhum") {
+      setEdgeInsumo("");
+      setEdgeExpiryTemplate("");
+      setEdgeExpiryMetric("");
+      setEdgeExpiryThreshold("");
+      setEdgeExpiryEvent("");
+      setEdgeDeadlineObject("");
+      setEdgeDeadlineDate("");
+      setEdgeExpiryCustom("");
+      setEdgeDeclaredAt("");
+      setEdgeStatus("nao_declarado");
+      return;
+    }
+
+    if (!edgeInsumo) setEdgeInsumo("IQD");
+    if (!edgeDeclaredAt) setEdgeDeclaredAt(localIsoDate());
+    setEdgeStatus("ativo");
+  }
+
+  function handleExpiryTemplate(value) {
+    setEdgeExpiryTemplate(value);
+    setEdgeExpiryMetric("");
+    setEdgeExpiryThreshold("");
+    setEdgeExpiryEvent("");
+    setEdgeDeadlineObject("");
+    setEdgeDeadlineDate("");
+    setEdgeExpiryCustom("");
+  }
+
   async function callAPI(ph, overrideCtx = "") {
     const controller = new AbortController();
     abortRef.current = controller;
@@ -600,22 +912,11 @@ export default function NEXOApp() {
         ticker: t,
         scanSummary: summary,
         extraCtx: mergedCtx,
+        edgeLedger,
       }),
     });
 
-    const txt = await res.text();
-    if (!txt || txt.trim() === "") throw new Error("Sem resposta do servidor");
-
-    let data;
-
-    try {
-      data = JSON.parse(txt);
-    } catch {
-      const s = txt.indexOf("{");
-      const e = txt.lastIndexOf("}");
-      if (s === -1 || e === -1) throw new Error("Resposta inválida da API");
-      data = JSON.parse(txt.slice(s, e + 1));
-    }
+    const data = await readApiJsonResponse(res);
 
     if (data?.error) throw new Error(asText(data.error.message || data.error));
     return data;
@@ -749,8 +1050,86 @@ export default function NEXOApp() {
     }
   }
 
-  function handlePrintPDF() {
-    window.print();
+  async function handleExportPDF() {
+    if (!hasFinal || pdfLoading) return;
+
+    const normalizedTicker = ticker.trim().toUpperCase();
+    const date = new Date().toISOString().slice(0, 10);
+    const fallbackFilename = `NEXO_${normalizedTicker}_${date}.pdf`;
+    const mobileDelivery = isMobilePdfEnvironment(navigator);
+    let saveHandle = null;
+    let previewWindow = null;
+
+    setPdfLoading(true);
+    setPdfError("");
+    try {
+      if (!mobileDelivery) {
+        previewWindow = window.open("", "_blank");
+        if (previewWindow) {
+          previewWindow.document.title = "Relatório NEXO";
+          previewWindow.document.body.textContent = "Preparando relatório NEXO...";
+        }
+        saveHandle = await choosePdfSaveHandle(window, fallbackFilename);
+      }
+
+      const response = await fetch("/api/export/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportVersion: "NEXO_REPORT_V1",
+          generatedAt: new Date().toISOString(),
+          ticker: normalizedTicker,
+          assetType: detectType(normalizedTicker),
+          currency,
+          asset: compactAssetContext(assetData),
+          macro: macroData,
+          edge: edgeLedger,
+          scan: scanResult,
+          deep: deepResult,
+          deepAdds,
+          final: finalResult,
+          options: { classicValuations },
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || "Não foi possível gerar o PDF.");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/i);
+      const filename = match?.[1] || fallbackFilename;
+      const file = new File([blob], filename, { type: "application/pdf" });
+
+      if (canSharePdfFile(navigator, file)) {
+        await navigator.share({
+          files: [file],
+          title: `Relatório NEXO · ${normalizedTicker}`,
+          text: `Relatório final da análise NEXO de ${normalizedTicker}.`,
+        });
+        return;
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const savedWithPicker = await writePdfToHandle(saveHandle, blob);
+      if (!savedWithPicker) triggerPdfDownload({ documentRef: document, url, filename });
+
+      if (previewWindow && !previewWindow.closed) {
+        previewWindow.location.href = url;
+      } else {
+        window.open(url, "_blank");
+      }
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 120_000);
+    } catch (exportError) {
+      if (previewWindow && !previewWindow.closed) previewWindow.close();
+      if (!isPdfDeliveryCancellation(exportError)) {
+        setPdfError(exportError?.message || "Não foi possível gerar o PDF.");
+      }
+    } finally {
+      setPdfLoading(false);
+    }
   }
 
   const CSS = `
@@ -772,14 +1151,15 @@ export default function NEXOApp() {
     .q-n{font-size:8px;color:#6A5C3A;letter-spacing:1px;text-transform:uppercase}
     .types{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
     .type-card{font-family:'JetBrains Mono',monospace;font-size:11px;padding:6px 12px;border:1px solid #2A2318;color:#4A3E28;display:flex;align-items:center;gap:6px;border-radius:2px}
-    .field{border:1px solid #2A2318;padding:10px 14px 8px;margin-bottom:8px}
-    .flbl{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
+    .field{border:1px solid #2A2318;padding:10px 14px 8px;margin-bottom:8px;min-width:0}
+    .flbl{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;overflow-wrap:anywhere}
     .finp{width:100%;background:transparent;border:none;outline:none;font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:#E8D5A3;letter-spacing:1.5px;text-transform:uppercase}
     .finp::placeholder{color:#2A2318;font-weight:300;font-size:13px;letter-spacing:0;text-transform:none}
-    .finp-sm,.select-sm{width:100%;background:transparent;border:none;outline:none;font-family:'JetBrains Mono',monospace;font-size:12px;color:#A89060}
+    .finp-sm,.select-sm{width:100%;min-width:0;background:transparent;border:none;outline:none;font-family:'JetBrains Mono',monospace;font-size:12px;color:#A89060}
     .finp-sm::placeholder{color:#2A2318}
     .metric-input{font-size:13px;font-weight:700;color:#E8D5A3}
     .metric-input::placeholder{font-size:12px;font-weight:400;color:#2A2318}
+    .select-sm{padding-right:24px;text-overflow:ellipsis}
     .select-sm option{background:#131008;color:#D4C9A8}
     .ftxt{width:100%;background:transparent;border:none;outline:none;resize:none;font-family:'JetBrains Mono',monospace;font-size:11px;color:#A89060;line-height:1.5;max-height:100px;overflow-y:auto}
     .ftxt::placeholder{color:#2A2318}
@@ -790,13 +1170,23 @@ export default function NEXOApp() {
     .help-text{font-size:11px;color:#8A7A58;line-height:1.6}
     .scan-hint{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);background:rgba(210,160,60,.06);padding:9px 12px;margin-bottom:10px;letter-spacing:.8px}
     .warn-box{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);border-left:2px solid #D2A03C;background:rgba(210,160,60,.06);padding:9px 12px;margin:8px 0;line-height:1.5}
+    .edg-ok-box{font-family:'JetBrains Mono',monospace;font-size:9px;color:#6DB46D;border:1px solid rgba(109,180,109,.25);border-left:2px solid #6DB46D;background:rgba(109,180,109,.05);padding:9px 12px;margin:8px 0;line-height:1.5}
+    .edg-rule-box{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);border-left:2px solid #D2A03C;background:rgba(210,160,60,.06);padding:9px 12px;margin-top:10px;line-height:1.7;overflow-wrap:anywhere}
+    .edg-rule-box strong{display:block;letter-spacing:1px;margin-bottom:3px}
+    .edg-audit-note{font-family:'JetBrains Mono',monospace;font-size:8px;color:#4A3E28;margin-top:8px;line-height:1.5}
+    .valuation-subtitle{font-family:'JetBrains Mono',monospace;font-size:8px;color:#C9A84C;letter-spacing:1.5px;text-transform:uppercase;margin:16px 0 4px;padding-top:10px;border-top:1px solid #2A2318;overflow-wrap:anywhere}
+    .choice-help{font-family:'JetBrains Mono',monospace;font-size:9px;color:#8A7A58;border-left:2px solid #6A5C3A;background:rgba(201,168,76,.035);padding:8px 10px;margin:7px 0 10px;line-height:1.55;overflow-wrap:anywhere}
+    .choice-help strong{color:#C9A84C;letter-spacing:.5px}
+    .selected-detail{font-family:'JetBrains Mono',monospace;font-size:9px;color:#8A7A58;line-height:1.55;margin-top:7px;padding-top:7px;border-top:1px solid #2A2318;white-space:normal;overflow-wrap:anywhere}
+    .edg-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #2A2318;background:rgba(201,168,76,.025);padding:9px 10px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;line-height:1.5}
+    .btn-manual{flex-shrink:0;color:#C9A84C;border:1px solid #6A5C3A;padding:7px 9px;text-decoration:none;text-transform:uppercase;letter-spacing:.7px;border-radius:2px}
     .reserved-box{min-height:72px;border:1px dashed #2A2318;display:flex;align-items:center;justify-content:center;text-align:center;padding:14px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#4A3E28;letter-spacing:1px;line-height:1.5}
     .section-meta{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8A7A58;line-height:1.5}
-    .subsection-label{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin:14px 0 7px}
+    .subsection-label{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin:14px 0 7px;line-height:1.5;overflow-wrap:anywhere}
     .macro-card{border:1px solid #2A2318;padding:8px 10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#A89060}
     .macro-title{font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
     .macro-value{font-size:13px;color:#E8D5A3;font-weight:700}
-    .macro-note{font-size:8px;color:#4A3E28;margin-top:3px}
+    .macro-note{font-size:8px;color:#4A3E28;margin-top:3px;line-height:1.45;overflow-wrap:anywhere}
     .actions{display:flex;gap:7px;margin-bottom:10px}
     .btn-scan{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:linear-gradient(135deg,#C9A84C,#E8D5A3);color:#131008;border:none;cursor:pointer;border-radius:2px;flex:1}
     .btn-deep{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:transparent;border:1px solid #A8A8B8;color:#A8A8B8;cursor:pointer;border-radius:2px;flex:1}
@@ -817,14 +1207,7 @@ export default function NEXOApp() {
     .fc{font-family:'JetBrains Mono',monospace;font-size:7.5px;color:#3A3020;letter-spacing:.8px;display:flex;align-items:center;gap:4px}
     .fd{width:4px;height:4px;border-radius:50%;flex-shrink:0}
     button:disabled,input:disabled,textarea:disabled,select:disabled{opacity:.3!important;cursor:not-allowed!important}
-    @media(max-width:600px){.quads,.grid2,.grid3{grid-template-columns:1fr}.actions,.decision-actions,.follow-actions{flex-direction:column}.btn-deep,.btn-scan,.btn-cl,.btn-end{width:100%}}
-    @media print{
-      body{background:#fff!important;color:#111!important}
-      body *{visibility:hidden!important}
-      #nexo-final-report,#nexo-final-report *{visibility:visible!important;color:#111!important}
-      #nexo-final-report{position:absolute;left:0;top:0;width:100%;padding:24px;background:#fff!important}
-      #nexo-final-report div{border-color:#ddd!important}
-    }
+    @media(max-width:600px){.quads,.grid2,.grid3{grid-template-columns:1fr}.actions,.decision-actions,.follow-actions,.edg-tools{flex-direction:column;align-items:stretch}.btn-deep,.btn-scan,.btn-cl,.btn-end,.btn-manual{width:100%;text-align:center}.metric-input.select-sm{font-size:11px;letter-spacing:0}.field{padding-left:12px;padding-right:12px}}
   `;
 
   return (
@@ -860,7 +1243,8 @@ export default function NEXOApp() {
           <div className="help-text">
             1) Informe o ticker. 2) Revise os dados do ativo preenchidos automaticamente.
             3) O Macro Fundamental NMI permanece ativo. Habilite dados complementares somente quando forem úteis para a tese.
-            4) Execute o Scan. O contexto validado alimenta também o Deep e a Reclassificação Final.
+            4) Declare um edge verificável no EDG ou mantenha “nenhum” para aplicar o teto de Watchlist.
+            5) Execute o Scan. O contexto validado alimenta também o Deep e a Reclassificação Final.
           </div>
         </div>
 
@@ -876,16 +1260,40 @@ export default function NEXOApp() {
             <>
               <div className="section-meta">
                 <span>{assetData?.asset?.name || ticker.trim().toUpperCase()}</span>
-                <span>{assetLoading ? "CARREGANDO..." : assetData?.ok ? "DADOS RECEBIDOS" : "FALLBACK MANUAL"}</span>
+                <span>
+                  {assetLoading
+                    ? "CARREGANDO..."
+                    : assetLookupStatus === ASSET_LOOKUP_STATUS.FOUND
+                    ? "DADOS RECEBIDOS"
+                    : assetLookupStatus === ASSET_LOOKUP_STATUS.NOT_FOUND
+                    ? "TICKER INEXISTENTE"
+                    : assetLookupStatus === ASSET_LOOKUP_STATUS.MANUAL_FALLBACK
+                    ? "FALLBACK MANUAL"
+                    : assetLookupStatus === ASSET_LOOKUP_STATUS.UNAVAILABLE
+                    ? "VALIDAÇÃO INDISPONÍVEL"
+                    : "AGUARDANDO"}
+                </span>
               </div>
 
-              {assetError && (
-                <div className="warn-box">Dados automáticos do ativo indisponíveis: {assetError}. Preencha a cotação manualmente para prosseguir.</div>
+              {assetLookupStatus === ASSET_LOOKUP_STATUS.NOT_FOUND && (
+                <div className="err-box">Ticker inexistente</div>
+              )}
+
+              {assetLookupStatus === ASSET_LOOKUP_STATUS.UNAVAILABLE && (
+                <div className="warn-box">
+                  {assetError}. Os campos permanecem bloqueados porque a existência do ticker não pôde ser confirmada.
+                </div>
+              )}
+
+              {assetLookupStatus === ASSET_LOOKUP_STATUS.MANUAL_FALLBACK && (
+                <div className="warn-box">
+                  {assetError}. O preenchimento manual foi liberado porque o ticker foi confirmado.
+                </div>
               )}
 
               {assetLoading ? (
                 <div className="reserved-box">BUSCANDO COTAÇÃO, HISTÓRICO E INDICADORES...</div>
-              ) : assetData?.ok ? (
+              ) : assetLookupStatus === ASSET_LOOKUP_STATUS.FOUND && assetData?.ok ? (
                 <>
                   <div className="grid3">
                     <MetricCard title="Cotação atual" value={displayMoney(assetData?.asset?.price ?? assetData?.derived?.currentPrice, assetData?.asset?.currency)} note="Automático · somente leitura" />
@@ -909,7 +1317,7 @@ export default function NEXOApp() {
                     Fonte: {assetData?.asset?.source || assetData?.asset?.dataProvider || assetData?.route} · {assetData?.asset?.updatedAt || assetData?.updatedAt || ""}
                   </div>
                 </>
-              ) : assetError ? (
+              ) : assetLookupStatus === ASSET_LOOKUP_STATUS.MANUAL_FALLBACK ? (
                 <>
                   <div className="subsection-label">Fallback manual</div>
                   <div className="grid2">
@@ -928,7 +1336,7 @@ export default function NEXOApp() {
                     </div>
                   </div>
                 </>
-              ) : (
+              ) : [ASSET_LOOKUP_STATUS.NOT_FOUND, ASSET_LOOKUP_STATUS.UNAVAILABLE].includes(assetLookupStatus) ? null : (
                 <div className="reserved-box">AGUARDANDO RETORNO DOS DADOS AUTOMÁTICOS...</div>
               )}
             </>
@@ -1044,6 +1452,244 @@ export default function NEXOApp() {
           <div className="macro-note">Referência auxiliar, não decisória · escolha independente dos dados complementares</div>
         </div>
 
+        <Sec title="EDG · Declaração e governança do edge">
+          <div className="edg-tools">
+            <span>Consulte o guia antes de declarar uma vantagem.</span>
+            <a className="btn-manual" href="/edg-manual" target="_blank" rel="noreferrer">
+              Abrir mini manual EDG ↗
+            </a>
+          </div>
+
+          <div className="field">
+            <div className="flbl">Tipo de edge</div>
+            <select className="select-sm metric-input" disabled={locked} value={edgeType} onChange={(e) => handleEdgeType(e.target.value)}>
+              <option value="nenhum">Nenhum edge declarado</option>
+              <option value="informacional">Informacional</option>
+              <option value="analitico">Analítico</option>
+              <option value="estrutural">Estrutural</option>
+              <option value="temporal">Temporal</option>
+            </select>
+            <div className="choice-help">{EDGE_TYPE_DESCRIPTIONS[edgeType]}</div>
+          </div>
+
+          {edgeType === "nenhum" ? (
+            <div className="warn-box">
+              REGRA D2 · Sem edge declarado e verificável, o Scan fica limitado a WATCHLIST e o Deep/Final não pode emitir COMPRAR.
+            </div>
+          ) : (
+            <>
+              <div className="grid3">
+                <div className="field">
+                  <div className="flbl">Insumo NEXO</div>
+                  <select className="select-sm metric-input" disabled={locked} value={edgeInsumo} onChange={(e) => setEdgeInsumo(e.target.value)}>
+                    <option value="">Selecione</option>
+                    {EDGE_INSUMOS.map((insumo) => (
+                      <option key={insumo} value={insumo} disabled={EDGE_INSUMO_METADATA[insumo]?.available === false}>
+                        {insumo}{EDGE_INSUMO_METADATA[insumo]?.available === false ? " · em implementação" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="macro-note">Módulo que lastreia a evidência declarada</div>
+                </div>
+
+                <div className="field">
+                  <div className="flbl">Declarado em</div>
+                  <input className="finp-sm metric-input" type="date" disabled={locked} value={edgeDeclaredAt} onChange={(e) => setEdgeDeclaredAt(e.target.value)} />
+                  <div className="macro-note">Data registrada no ledger</div>
+                </div>
+
+                <div className="field">
+                  <div className="flbl">Status do edge</div>
+                  <select className="select-sm metric-input" disabled={locked} value={edgeStatus} onChange={(e) => setEdgeStatus(e.target.value)}>
+                    <option value="ativo">Ativo</option>
+                    <option value="expirado">Expirado</option>
+                  </select>
+                  <div className="macro-note">Expirado aciona a precedência D3</div>
+                </div>
+              </div>
+
+              {selectedInsumo && <div className="choice-help"><strong>{edgeInsumo}</strong> · {selectedInsumo.description}</div>}
+
+              <div className="subsection-label">Evidência verificável · formulário guiado</div>
+              <div className="grid3">
+                <div className="field">
+                  <div className="flbl">Padrão da evidência</div>
+                  <select className="select-sm metric-input" disabled={locked} value={edgeEvidenceTemplate} onChange={(e) => setEdgeEvidenceTemplate(e.target.value)}>
+                    <option value="">Selecione</option>
+                    {edgeEvidenceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                  <div className="macro-note">Opções coerentes com o tipo de edge</div>
+                </div>
+
+                <div className="field">
+                  <div className="flbl">Base verificável</div>
+                  <select className="select-sm metric-input" disabled={locked} value={edgeEvidenceBasis} onChange={(e) => setEdgeEvidenceBasis(e.target.value)}>
+                    <option value="">Selecione</option>
+                    {EDGE_EVIDENCE_BASES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                  <div className="macro-note">Origem objetiva da evidência</div>
+                </div>
+
+                <div className="field">
+                  <div className="flbl">Janela observada</div>
+                  <select className="select-sm metric-input" disabled={locked} value={edgeEvidenceWindow} onChange={(e) => setEdgeEvidenceWindow(e.target.value)}>
+                    <option value="">Selecione</option>
+                    {EDGE_EVIDENCE_WINDOWS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                  <div className="macro-note">Período ao qual a evidência declarada se refere</div>
+                </div>
+              </div>
+
+              {selectedEvidenceTemplate?.statement && (
+                <div className="choice-help">
+                  <strong>Significado da opção</strong> · {selectedEvidenceTemplate.statement}.
+                </div>
+              )}
+
+              {edgeEvidenceTemplate === "custom" && (
+                <div className="field">
+                  <div className="flbl">Evidência específica · modo avançado</div>
+                  <textarea className="ftxt" disabled={locked} rows={3} maxLength={280} value={edgeEvidenceCustom} placeholder="Descreva somente o fato específico que não está no catálogo..." onChange={(e) => setEdgeEvidenceCustom(e.target.value)} />
+                  <div className="macro-note">Máximo 280 caracteres · o módulo, a base e a janela continuam obrigatórios</div>
+                </div>
+              )}
+
+              <div className="subsection-label">Condição observável de expiração · formulário guiado</div>
+              <div className="field">
+                <div className="flbl">Gatilho que encerra o edge</div>
+                <select className="select-sm metric-input" disabled={locked} value={edgeExpiryTemplate} onChange={(e) => handleExpiryTemplate(e.target.value)}>
+                  <option value="">Selecione</option>
+                  {EDGE_EXPIRY_TEMPLATES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </select>
+                <div className="macro-note">O caminho guiado gera a condição canônica enviada ao motor</div>
+              </div>
+
+              {["metric_below", "metric_above"].includes(edgeExpiryTemplate) && (
+                <>
+                  <div className="grid3">
+                    <div className="field">
+                      <div className="flbl">Métrica observada</div>
+                      <select className="select-sm metric-input" disabled={locked} value={edgeExpiryMetric} onChange={(e) => setEdgeExpiryMetric(e.target.value)}>
+                        <option value="">Selecione</option>
+                        {EDGE_EXPIRY_METRICS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="field">
+                      <div className="flbl">Limite</div>
+                      <input className="finp-sm metric-input" inputMode="decimal" disabled={locked} value={edgeExpiryThreshold} placeholder="Ex.: 17 ou 17,5" onChange={(e) => setEdgeExpiryThreshold(e.target.value)} />
+                      <div className="macro-note">Valor objetivo do gatilho</div>
+                    </div>
+
+                    <div className="field">
+                      <div className="flbl">Unidade</div>
+                      <select className="select-sm metric-input" disabled={locked} value={edgeExpiryUnit} onChange={(e) => setEdgeExpiryUnit(e.target.value)}>
+                        {EDGE_EXPIRY_UNITS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid2">
+                    <div className="field">
+                      <div className="flbl">Persistência</div>
+                      <select className="select-sm metric-input" disabled={locked} value={edgeExpiryPersistence} onChange={(e) => setEdgeExpiryPersistence(e.target.value)}>
+                        {[1, 2, 3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={String(value)}>{value}</option>)}
+                      </select>
+                      <div className="macro-note">Quantidade necessária para confirmar o gatilho</div>
+                    </div>
+
+                    <div className="field">
+                      <div className="flbl">Período</div>
+                      <select className="select-sm metric-input" disabled={locked} value={edgeExpiryPeriod} onChange={(e) => setEdgeExpiryPeriod(e.target.value)}>
+                        {EDGE_EXPIRY_PERIODS.map((option) => <option key={option.id} value={option.id}>{option.plural}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {edgeExpiryTemplate === "objective_event" && (
+                <div className="field">
+                  <div className="flbl">Evento objetivo</div>
+                  <select className="select-sm metric-input" disabled={locked} value={edgeExpiryEvent} onChange={(e) => setEdgeExpiryEvent(e.target.value)}>
+                    <option value="">Selecione</option>
+                    {EDGE_EXPIRY_EVENTS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                  <div className="macro-note">Eventos devem ser confirmáveis em fonte oficial</div>
+                  {selectedExpiryEvent && (
+                    <div className="selected-detail">{selectedExpiryEvent.condition}</div>
+                  )}
+                </div>
+              )}
+
+              {edgeExpiryTemplate === "deadline_unconfirmed" && (
+                <div className="grid2">
+                  <div className="field">
+                    <div className="flbl">Objeto da confirmação</div>
+                    <select className="select-sm metric-input" disabled={locked} value={edgeDeadlineObject} onChange={(e) => setEdgeDeadlineObject(e.target.value)}>
+                      <option value="">Selecione</option>
+                      {EDGE_DEADLINE_OBJECTS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="field">
+                    <div className="flbl">Data-limite</div>
+                    <input className="finp-sm metric-input" type="date" disabled={locked} value={edgeDeadlineDate} onChange={(e) => setEdgeDeadlineDate(e.target.value)} />
+                    <div className="macro-note">Sem confirmação nesta data, o edge expira</div>
+                  </div>
+                </div>
+              )}
+
+              {edgeExpiryTemplate === "custom" && (
+                <div className="field">
+                  <div className="flbl">Condição específica · modo avançado</div>
+                  <textarea className="ftxt" disabled={locked} rows={3} maxLength={220} value={edgeExpiryCustom} placeholder="Use métrica + limite + janela, ou evento objetivo..." onChange={(e) => setEdgeExpiryCustom(e.target.value)} />
+                  <div className="macro-note">Máximo 220 caracteres · formulações vagas continuam rejeitadas pelo servidor</div>
+                </div>
+              )}
+            </>
+          )}
+
+          {!scannedEdg && edgeType !== "nenhum" && !edgeGate.ready && (
+            <div className="warn-box">
+              <strong>COMPLETE O EDG PARA LIBERAR O SCAN</strong>
+              {asArray(edgeGate.validation?.errors).map((code) => (
+                <div key={code}>· {EDG_ERROR_LABELS[code] || code}</div>
+              ))}
+            </div>
+          )}
+
+          {!scannedEdg && edgeType !== "nenhum" && edgeGate.ready && (
+            <div className="edg-ok-box">EDG PREENCHIDO E COERENTE · O Scan está liberado após a validação dos demais dados obrigatórios.</div>
+          )}
+
+          <div className="subsection-label">Prévia determinística do contrato</div>
+          <div className="grid3">
+            <MetricCard title="Contrato" value={scannedEdg ? scannedEdg.validation?.valid ? "Válido" : "Incompleto" : "—"} note={scannedEdg ? scannedEdg.version : "Disponível após concluir o Scan"} />
+            <MetricCard title="Completude" value={scannedEdg ? `${displayNumber(scannedEdg.ledger_completeness * 100)}%` : "—"} note={scannedEdg ? "6 campos canônicos" : "Disponível após concluir o Scan"} />
+            <MetricCard title="Teto permitido" value={scannedEdg ? scannedEdg.max_allowed_classification === "posicao" ? "Posição" : "Watchlist" : "—"} note={scannedEdg ? scannedEdg.has_declared_edge ? "Edge verificável" : "Regra D2" : "Disponível após concluir o Scan"} />
+            <MetricCard title="Sinal de saída" value={scannedEdg ? scannedEdg.exit_signal === "edge_expired" ? "Edge expirado" : "Nenhum" : "—"} note={scannedEdg ? scannedEdg.exit_signal === "edge_expired" ? "Regra D3" : "Sem gatilho" : "Disponível após concluir o Scan"} />
+          </div>
+
+          {scannedEdg && edgeType !== "nenhum" && scannedEdg.validation?.valid && scannedEdg.exit_signal === "none" && (
+            <div className="edg-ok-box">CONTRATO EDG VÁLIDO · A evidência e a condição de expiração serão enviadas ao Scan, Deep e Final.</div>
+          )}
+
+          {scannedEdg?.exit_signal === "edge_expired" && (
+            <div className="edg-rule-box"><strong>REGRA D3 ATIVA</strong>O sinal de edge expirado precede uma leitura favorável de preço.</div>
+          )}
+
+          {scannedEdg && edgeType !== "nenhum" && !scannedEdg.validation?.valid && (
+            <div className="warn-box">
+              <strong>CONTRATO EDG INCOMPLETO</strong>
+              {asArray(scannedEdg.validation?.errors).map((code) => (
+                <div key={code}>· {EDG_ERROR_LABELS[code] || code}</div>
+              ))}
+              <div style={{ marginTop: 4 }}>Um contrato incompleto não pode iniciar uma nova análise.</div>
+            </div>
+          )}
+        </Sec>
+
         <div className="field">
           <div className="flbl">Link RI / Dados Oficiais</div>
           <input className="finp-sm" disabled={locked} value={riUrl} placeholder="https://ri.empresa.com.br..." onChange={(e) => setRiUrl(e.target.value)} />
@@ -1055,7 +1701,7 @@ export default function NEXOApp() {
         </div>
 
         <div className="actions">
-          {(hasScan || hasDeep || hasFinal || loading || ended) && <button className="btn-cl" onClick={reset}>{loading ? "Cancelar" : "Limpar"}</button>}
+          {loading && loadingKind !== "final" && <button className="btn-cl" onClick={resetToInitial}>Cancelar</button>}
           <button className="btn-scan" onClick={handleScan} disabled={!canScan}>{loadingKind === "scan" ? "Analisando..." : "Scan NEXO →"}</button>
           <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>{loadingKind === "deep" ? "Analisando..." : "Deep NEXO"}</button>
         </div>
@@ -1084,6 +1730,7 @@ export default function NEXOApp() {
               <div className="decision-actions">
                 <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>Rodar NEXO Deep →</button>
                 <button className="btn-end" onClick={handleFinal} disabled={!canFinalize}>Finalizar e Reclassificar</button>
+                {loadingKind !== "final" && <button className="btn-cl" onClick={resetToInitial}>Reset e nova análise</button>}
               </div>
             </div>
           )}
@@ -1091,15 +1738,18 @@ export default function NEXOApp() {
           {hasScan && isVeto && !hasFinal && !ended && (
             <div className="decision-box">
               <div className="decision-title">Ativo vetado no Scan</div>
-              <button className="btn-end" onClick={handleFinal} disabled={!canFinalize}>Finalizar e Reclassificar</button>
+              <div className="decision-actions">
+                <button className="btn-end" onClick={handleFinal} disabled={!canFinalize}>Finalizar e Reclassificar</button>
+                {loadingKind !== "final" && <button className="btn-cl" onClick={resetToInitial}>Reset e nova análise</button>}
+              </div>
             </div>
           )}
 
-          {hasDeep && <div style={{ marginTop: 24 }}><Sec title="Resultado Deep Principal"><DeepReport r={deepResult} /></Sec></div>}
+          {hasDeep && <div style={{ marginTop: 24 }}><Sec title="Resultado Deep Principal"><DeepReport r={deepResult} showClassicValuations={classicValuations === "SIM"} /></Sec></div>}
 
           {deepAdds.length > 0 && deepAdds.map((d, i) => (
             <div key={i} style={{ marginTop: 26 }}>
-              <Sec title={"Resultado Deep Aprofundado " + (i + 1)}><DeepReport r={d} /></Sec>
+              <Sec title={"Resultado Deep Aprofundado " + (i + 1)}><DeepReport r={d} showClassicValuations={classicValuations === "SIM"} /></Sec>
             </div>
           ))}
 
@@ -1120,6 +1770,7 @@ export default function NEXOApp() {
               <div className="follow-actions">
                 <button className="btn-deep" onClick={handleFollowUp} disabled={!canFollow}>{loadingKind === "follow" ? "Aprofundando..." : "Aprofundar Deep →"}</button>
                 <button className="btn-end" disabled={!canFinalize} onClick={handleFinal}>Finalizar e Reclassificar</button>
+                {loadingKind !== "final" && <button className="btn-cl" onClick={resetToInitial}>Reset e nova análise</button>}
               </div>
             </div>
           )}
@@ -1134,10 +1785,13 @@ export default function NEXOApp() {
 
           {ended && hasFinal && (
             <div className="decision-actions" style={{ marginTop: 12 }}>
-              <button className="btn-end" onClick={handlePrintPDF}>Exportar PDF</button>
-              <button className="btn-cl" onClick={reset}>Nova análise</button>
+              <button className="btn-end" onClick={handleExportPDF} disabled={pdfLoading}>
+                {pdfLoading ? "Gerando PDF..." : "Exportar PDF"}
+              </button>
+              <button className="btn-cl" onClick={resetToInitial} disabled={pdfLoading}>Nova análise</button>
             </div>
           )}
+          {pdfError && <div className="err-box">Erro na exportação: {pdfError}</div>}
         </div>
 
         <div className="footer">
