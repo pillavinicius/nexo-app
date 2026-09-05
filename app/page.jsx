@@ -13,9 +13,23 @@ import {
   nmiContextToMacroData,
 } from "../lib/ui/nmi_macro_adapter.mjs";
 import {
-  computeEDG,
   EDGE_INSUMOS,
 } from "../lib/nexo/edg/edg_engine.mjs";
+import {
+  buildGuidedEdgeEvidence,
+  buildGuidedExpiryCondition,
+  EDGE_DEADLINE_OBJECTS,
+  EDGE_EVIDENCE_BASES,
+  EDGE_EVIDENCE_WINDOWS,
+  EDGE_EXPIRY_EVENTS,
+  EDGE_EXPIRY_METRICS,
+  EDGE_EXPIRY_PERIODS,
+  EDGE_EXPIRY_TEMPLATES,
+  EDGE_EXPIRY_UNITS,
+  EDGE_INSUMO_METADATA,
+  EDGE_TYPE_DESCRIPTIONS,
+  evidenceOptionsForType,
+} from "../lib/ui/edg_form_adapter.mjs";
 
 const EDGE_TYPE_LABELS = Object.freeze({
   nenhum: "Nenhum edge declarado",
@@ -377,9 +391,21 @@ export default function NEXOApp() {
   const [plSp500, setPlSp500] = useState("");
   const [classicValuations, setClassicValuations] = useState("NAO");
   const [edgeType, setEdgeType] = useState("nenhum");
-  const [edgeEvidence, setEdgeEvidence] = useState("");
   const [edgeInsumo, setEdgeInsumo] = useState("");
-  const [edgeExpiryCondition, setEdgeExpiryCondition] = useState("");
+  const [edgeEvidenceTemplate, setEdgeEvidenceTemplate] = useState("");
+  const [edgeEvidenceBasis, setEdgeEvidenceBasis] = useState("");
+  const [edgeEvidenceWindow, setEdgeEvidenceWindow] = useState("");
+  const [edgeEvidenceCustom, setEdgeEvidenceCustom] = useState("");
+  const [edgeExpiryTemplate, setEdgeExpiryTemplate] = useState("");
+  const [edgeExpiryMetric, setEdgeExpiryMetric] = useState("");
+  const [edgeExpiryThreshold, setEdgeExpiryThreshold] = useState("");
+  const [edgeExpiryUnit, setEdgeExpiryUnit] = useState("percent");
+  const [edgeExpiryPersistence, setEdgeExpiryPersistence] = useState("2");
+  const [edgeExpiryPeriod, setEdgeExpiryPeriod] = useState("quarter");
+  const [edgeExpiryEvent, setEdgeExpiryEvent] = useState("");
+  const [edgeDeadlineObject, setEdgeDeadlineObject] = useState("");
+  const [edgeDeadlineDate, setEdgeDeadlineDate] = useState("");
+  const [edgeExpiryCustom, setEdgeExpiryCustom] = useState("");
   const [edgeDeclaredAt, setEdgeDeclaredAt] = useState("");
   const [edgeStatus, setEdgeStatus] = useState("nao_declarado");
 
@@ -421,6 +447,28 @@ export default function NEXOApp() {
 
   const macro = macroData?.automatic || {};
   const priceUnit = currency === "USD" ? "USD" : "R$";
+  const edgeEvidenceOptions = evidenceOptionsForType(edgeType);
+  const selectedInsumo = EDGE_INSUMO_METADATA[edgeInsumo] || null;
+  const edgeEvidence = buildGuidedEdgeEvidence({
+    edgeType,
+    edgeInsumo,
+    templateId: edgeEvidenceTemplate,
+    basisId: edgeEvidenceBasis,
+    windowId: edgeEvidenceWindow,
+    customText: edgeEvidenceCustom,
+  });
+  const edgeExpiryCondition = buildGuidedExpiryCondition({
+    templateId: edgeExpiryTemplate,
+    metricId: edgeExpiryMetric,
+    threshold: edgeExpiryThreshold,
+    unitId: edgeExpiryUnit,
+    persistence: edgeExpiryPersistence,
+    periodId: edgeExpiryPeriod,
+    eventId: edgeExpiryEvent,
+    deadlineObjectId: edgeDeadlineObject,
+    deadlineDate: edgeDeadlineDate,
+    customText: edgeExpiryCustom,
+  });
   const edgeLedger = {
     edge_type: edgeType,
     edge_evidence: edgeEvidence,
@@ -429,7 +477,7 @@ export default function NEXOApp() {
     edge_declared_at: edgeDeclaredAt,
     edge_status: edgeStatus,
   };
-  const edgPreview = computeEDG(edgeLedger);
+  const scannedEdg = scanResult?.nexoModules?.EDG || null;
   const requiredInputsReady =
     ticker.trim().length >= 3 &&
     currentPrice.trim().length > 0;
@@ -662,11 +710,20 @@ export default function NEXOApp() {
 
   function handleEdgeType(value) {
     setEdgeType(value);
+    setEdgeEvidenceTemplate("");
+    setEdgeEvidenceBasis("");
+    setEdgeEvidenceWindow("");
+    setEdgeEvidenceCustom("");
 
     if (value === "nenhum") {
-      setEdgeEvidence("");
       setEdgeInsumo("");
-      setEdgeExpiryCondition("");
+      setEdgeExpiryTemplate("");
+      setEdgeExpiryMetric("");
+      setEdgeExpiryThreshold("");
+      setEdgeExpiryEvent("");
+      setEdgeDeadlineObject("");
+      setEdgeDeadlineDate("");
+      setEdgeExpiryCustom("");
       setEdgeDeclaredAt("");
       setEdgeStatus("nao_declarado");
       return;
@@ -675,6 +732,16 @@ export default function NEXOApp() {
     if (!edgeInsumo) setEdgeInsumo("IQD");
     if (!edgeDeclaredAt) setEdgeDeclaredAt(localIsoDate());
     setEdgeStatus("ativo");
+  }
+
+  function handleExpiryTemplate(value) {
+    setEdgeExpiryTemplate(value);
+    setEdgeExpiryMetric("");
+    setEdgeExpiryThreshold("");
+    setEdgeExpiryEvent("");
+    setEdgeDeadlineObject("");
+    setEdgeDeadlineDate("");
+    setEdgeExpiryCustom("");
   }
 
   async function callAPI(ph, overrideCtx = "") {
@@ -904,6 +971,8 @@ export default function NEXOApp() {
     .edg-rule-box{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;border:1px solid rgba(210,160,60,.25);border-left:2px solid #D2A03C;background:rgba(210,160,60,.06);padding:9px 12px;margin-top:10px;line-height:1.7;overflow-wrap:anywhere}
     .edg-rule-box strong{display:block;letter-spacing:1px;margin-bottom:3px}
     .edg-audit-note{font-family:'JetBrains Mono',monospace;font-size:8px;color:#4A3E28;margin-top:8px;line-height:1.5}
+    .choice-help{font-family:'JetBrains Mono',monospace;font-size:9px;color:#8A7A58;border-left:2px solid #6A5C3A;background:rgba(201,168,76,.035);padding:8px 10px;margin:7px 0 10px;line-height:1.55;overflow-wrap:anywhere}
+    .choice-help strong{color:#C9A84C;letter-spacing:.5px}
     .reserved-box{min-height:72px;border:1px dashed #2A2318;display:flex;align-items:center;justify-content:center;text-align:center;padding:14px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#4A3E28;letter-spacing:1px;line-height:1.5}
     .section-meta{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8A7A58;line-height:1.5}
     .subsection-label{font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;letter-spacing:1.5px;text-transform:uppercase;margin:14px 0 7px}
@@ -1169,7 +1238,7 @@ export default function NEXOApp() {
               <option value="estrutural">Estrutural</option>
               <option value="temporal">Temporal</option>
             </select>
-            <div className="macro-note">O EDG não cria um veredito favorável; ele valida e limita a classificação dos demais módulos</div>
+            <div className="choice-help">{EDGE_TYPE_DESCRIPTIONS[edgeType]}</div>
           </div>
 
           {edgeType === "nenhum" ? (
@@ -1178,19 +1247,18 @@ export default function NEXOApp() {
             </div>
           ) : (
             <>
-              <div className="field">
-                <div className="flbl">Evidência verificável</div>
-                <textarea className="ftxt" disabled={locked} rows={3} value={edgeEvidence} placeholder="Descreva a evidência, a fonte e o dado que diferenciam a tese..." onChange={(e) => setEdgeEvidence(e.target.value)} />
-              </div>
-
               <div className="grid3">
                 <div className="field">
                   <div className="flbl">Insumo NEXO</div>
                   <select className="select-sm metric-input" disabled={locked} value={edgeInsumo} onChange={(e) => setEdgeInsumo(e.target.value)}>
                     <option value="">Selecione</option>
-                    {EDGE_INSUMOS.map((insumo) => <option key={insumo} value={insumo}>{insumo}</option>)}
+                    {EDGE_INSUMOS.map((insumo) => (
+                      <option key={insumo} value={insumo} disabled={EDGE_INSUMO_METADATA[insumo]?.available === false}>
+                        {insumo}{EDGE_INSUMO_METADATA[insumo]?.available === false ? " · em implementação" : ""}
+                      </option>
+                    ))}
                   </select>
-                  <div className="macro-note">Módulo que sustenta a evidência</div>
+                  <div className="macro-note">Módulo que lastreia a evidência declarada</div>
                 </div>
 
                 <div className="field">
@@ -1209,34 +1277,159 @@ export default function NEXOApp() {
                 </div>
               </div>
 
-              <div className="field">
-                <div className="flbl">Condição observável de expiração</div>
-                <textarea className="ftxt" disabled={locked} rows={3} value={edgeExpiryCondition} placeholder="Ex.: margem bruta abaixo de 17% por dois trimestres consecutivos" onChange={(e) => setEdgeExpiryCondition(e.target.value)} />
-                <div className="macro-note">Use métrica + limite + janela, ou um evento objetivo. Condições vagas são rejeitadas.</div>
+              {selectedInsumo && <div className="choice-help"><strong>{edgeInsumo}</strong> · {selectedInsumo.description}</div>}
+
+              <div className="subsection-label">Evidência verificável · formulário guiado</div>
+              <div className="grid3">
+                <div className="field">
+                  <div className="flbl">Padrão da evidência</div>
+                  <select className="select-sm metric-input" disabled={locked} value={edgeEvidenceTemplate} onChange={(e) => setEdgeEvidenceTemplate(e.target.value)}>
+                    <option value="">Selecione</option>
+                    {edgeEvidenceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                  <div className="macro-note">Opções coerentes com o tipo de edge</div>
+                </div>
+
+                <div className="field">
+                  <div className="flbl">Base verificável</div>
+                  <select className="select-sm metric-input" disabled={locked} value={edgeEvidenceBasis} onChange={(e) => setEdgeEvidenceBasis(e.target.value)}>
+                    <option value="">Selecione</option>
+                    {EDGE_EVIDENCE_BASES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                  <div className="macro-note">Origem objetiva da evidência</div>
+                </div>
+
+                <div className="field">
+                  <div className="flbl">Janela observada</div>
+                  <select className="select-sm metric-input" disabled={locked} value={edgeEvidenceWindow} onChange={(e) => setEdgeEvidenceWindow(e.target.value)}>
+                    <option value="">Selecione</option>
+                    {EDGE_EVIDENCE_WINDOWS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                  <div className="macro-note">Período ao qual a evidência declarada se refere</div>
+                </div>
               </div>
+
+              {edgeEvidenceTemplate === "custom" && (
+                <div className="field">
+                  <div className="flbl">Evidência específica · modo avançado</div>
+                  <textarea className="ftxt" disabled={locked} rows={3} maxLength={280} value={edgeEvidenceCustom} placeholder="Descreva somente o fato específico que não está no catálogo..." onChange={(e) => setEdgeEvidenceCustom(e.target.value)} />
+                  <div className="macro-note">Máximo 280 caracteres · o módulo, a base e a janela continuam obrigatórios</div>
+                </div>
+              )}
+
+              <div className="subsection-label">Condição observável de expiração · formulário guiado</div>
+              <div className="field">
+                <div className="flbl">Gatilho que encerra o edge</div>
+                <select className="select-sm metric-input" disabled={locked} value={edgeExpiryTemplate} onChange={(e) => handleExpiryTemplate(e.target.value)}>
+                  <option value="">Selecione</option>
+                  {EDGE_EXPIRY_TEMPLATES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </select>
+                <div className="macro-note">O caminho guiado gera a condição canônica enviada ao motor</div>
+              </div>
+
+              {["metric_below", "metric_above"].includes(edgeExpiryTemplate) && (
+                <>
+                  <div className="grid3">
+                    <div className="field">
+                      <div className="flbl">Métrica observada</div>
+                      <select className="select-sm metric-input" disabled={locked} value={edgeExpiryMetric} onChange={(e) => setEdgeExpiryMetric(e.target.value)}>
+                        <option value="">Selecione</option>
+                        {EDGE_EXPIRY_METRICS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="field">
+                      <div className="flbl">Limite</div>
+                      <input className="finp-sm metric-input" inputMode="decimal" disabled={locked} value={edgeExpiryThreshold} placeholder="Ex.: 17 ou 17,5" onChange={(e) => setEdgeExpiryThreshold(e.target.value)} />
+                      <div className="macro-note">Valor objetivo do gatilho</div>
+                    </div>
+
+                    <div className="field">
+                      <div className="flbl">Unidade</div>
+                      <select className="select-sm metric-input" disabled={locked} value={edgeExpiryUnit} onChange={(e) => setEdgeExpiryUnit(e.target.value)}>
+                        {EDGE_EXPIRY_UNITS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid2">
+                    <div className="field">
+                      <div className="flbl">Persistência</div>
+                      <select className="select-sm metric-input" disabled={locked} value={edgeExpiryPersistence} onChange={(e) => setEdgeExpiryPersistence(e.target.value)}>
+                        {[1, 2, 3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={String(value)}>{value}</option>)}
+                      </select>
+                      <div className="macro-note">Quantidade necessária para confirmar o gatilho</div>
+                    </div>
+
+                    <div className="field">
+                      <div className="flbl">Período</div>
+                      <select className="select-sm metric-input" disabled={locked} value={edgeExpiryPeriod} onChange={(e) => setEdgeExpiryPeriod(e.target.value)}>
+                        {EDGE_EXPIRY_PERIODS.map((option) => <option key={option.id} value={option.id}>{option.plural}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {edgeExpiryTemplate === "objective_event" && (
+                <div className="field">
+                  <div className="flbl">Evento objetivo</div>
+                  <select className="select-sm metric-input" disabled={locked} value={edgeExpiryEvent} onChange={(e) => setEdgeExpiryEvent(e.target.value)}>
+                    <option value="">Selecione</option>
+                    {EDGE_EXPIRY_EVENTS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                  <div className="macro-note">Eventos devem ser confirmáveis em fonte oficial</div>
+                </div>
+              )}
+
+              {edgeExpiryTemplate === "deadline_unconfirmed" && (
+                <div className="grid2">
+                  <div className="field">
+                    <div className="flbl">Objeto da confirmação</div>
+                    <select className="select-sm metric-input" disabled={locked} value={edgeDeadlineObject} onChange={(e) => setEdgeDeadlineObject(e.target.value)}>
+                      <option value="">Selecione</option>
+                      {EDGE_DEADLINE_OBJECTS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="field">
+                    <div className="flbl">Data-limite</div>
+                    <input className="finp-sm metric-input" type="date" disabled={locked} value={edgeDeadlineDate} onChange={(e) => setEdgeDeadlineDate(e.target.value)} />
+                    <div className="macro-note">Sem confirmação nesta data, o edge expira</div>
+                  </div>
+                </div>
+              )}
+
+              {edgeExpiryTemplate === "custom" && (
+                <div className="field">
+                  <div className="flbl">Condição específica · modo avançado</div>
+                  <textarea className="ftxt" disabled={locked} rows={3} maxLength={220} value={edgeExpiryCustom} placeholder="Use métrica + limite + janela, ou evento objetivo..." onChange={(e) => setEdgeExpiryCustom(e.target.value)} />
+                  <div className="macro-note">Máximo 220 caracteres · formulações vagas continuam rejeitadas pelo servidor</div>
+                </div>
+              )}
             </>
           )}
 
           <div className="subsection-label">Prévia determinística do contrato</div>
           <div className="grid3">
-            <MetricCard title="Contrato" value={edgPreview.validation.valid ? "Válido" : "Incompleto"} note={edgPreview.version} />
-            <MetricCard title="Completude" value={`${displayNumber(edgPreview.ledger_completeness * 100)}%`} note="6 campos canônicos" />
-            <MetricCard title="Teto permitido" value={edgPreview.max_allowed_classification === "posicao" ? "Posição" : "Watchlist"} note={edgPreview.has_declared_edge ? "Edge verificável" : "Regra D2"} />
-            <MetricCard title="Sinal de saída" value={edgPreview.exit_signal === "edge_expired" ? "Edge expirado" : "Nenhum"} note={edgPreview.exit_signal === "edge_expired" ? "Regra D3" : "Sem gatilho"} />
+            <MetricCard title="Contrato" value={scannedEdg ? scannedEdg.validation?.valid ? "Válido" : "Incompleto" : "—"} note={scannedEdg ? scannedEdg.version : "Disponível após concluir o Scan"} />
+            <MetricCard title="Completude" value={scannedEdg ? `${displayNumber(scannedEdg.ledger_completeness * 100)}%` : "—"} note={scannedEdg ? "6 campos canônicos" : "Disponível após concluir o Scan"} />
+            <MetricCard title="Teto permitido" value={scannedEdg ? scannedEdg.max_allowed_classification === "posicao" ? "Posição" : "Watchlist" : "—"} note={scannedEdg ? scannedEdg.has_declared_edge ? "Edge verificável" : "Regra D2" : "Disponível após concluir o Scan"} />
+            <MetricCard title="Sinal de saída" value={scannedEdg ? scannedEdg.exit_signal === "edge_expired" ? "Edge expirado" : "Nenhum" : "—"} note={scannedEdg ? scannedEdg.exit_signal === "edge_expired" ? "Regra D3" : "Sem gatilho" : "Disponível após concluir o Scan"} />
           </div>
 
-          {edgeType !== "nenhum" && edgPreview.validation.valid && edgPreview.exit_signal === "none" && (
+          {scannedEdg && edgeType !== "nenhum" && scannedEdg.validation?.valid && scannedEdg.exit_signal === "none" && (
             <div className="edg-ok-box">CONTRATO EDG VÁLIDO · A evidência e a condição de expiração serão enviadas ao Scan, Deep e Final.</div>
           )}
 
-          {edgPreview.exit_signal === "edge_expired" && (
+          {scannedEdg?.exit_signal === "edge_expired" && (
             <div className="edg-rule-box"><strong>REGRA D3 ATIVA</strong>O sinal de edge expirado precede uma leitura favorável de preço.</div>
           )}
 
-          {edgeType !== "nenhum" && !edgPreview.validation.valid && (
+          {scannedEdg && edgeType !== "nenhum" && !scannedEdg.validation?.valid && (
             <div className="warn-box">
               <strong>CONTRATO EDG INCOMPLETO</strong>
-              {edgPreview.validation.errors.map((code) => (
+              {asArray(scannedEdg.validation?.errors).map((code) => (
                 <div key={code}>· {EDG_ERROR_LABELS[code] || code}</div>
               ))}
               <div style={{ marginTop: 4 }}>Enquanto estiver incompleto, a regra D2 limita a classificação.</div>

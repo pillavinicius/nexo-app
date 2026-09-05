@@ -47,6 +47,9 @@ jobs:
       - name: Self-test do engine EDG
         run: NEXO_SELFTEST=1 node lib/nexo/edg/edg_engine.mjs
 
+      - name: Formulario guiado do EDG
+        run: node scripts/edg_form_adapter_test.mjs
+
       - name: Integracao EDG no Scan Deep e Final
         run: node scripts/edg_api_integration_test.mjs
 
