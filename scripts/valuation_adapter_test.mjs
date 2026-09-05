@@ -1,5 +1,15 @@
 import assert from "node:assert/strict";
-import { splitPriceModels } from "../lib/ui/valuation_adapter.mjs";
+import {
+  PRICE_LAYER_GUIDE,
+  PRICE_LAYER_SUMMARY,
+  splitPriceModels,
+} from "../lib/ui/valuation_adapter.mjs";
+
+assert.deepEqual(PRICE_LAYER_GUIDE.map((layer) => layer.code), ["C1", "C2", "C3"]);
+assert.match(PRICE_LAYER_GUIDE[0].description, /mensurável/);
+assert.match(PRICE_LAYER_GUIDE[1].description, /benchmarks/);
+assert.match(PRICE_LAYER_GUIDE[2].description, /riscos/);
+assert.match(PRICE_LAYER_SUMMARY, /não é uma média automática/);
 
 const result = {
   preco: [
@@ -31,4 +41,4 @@ const arrayVariant = splitPriceModels({
 assert.equal(arrayVariant.layers[0].label, "C3");
 assert.equal(arrayVariant.classics[0].methodology, "Owner earnings");
 
-console.log("valuation adapter: 10/10 checks passed");
+console.log("valuation adapter: 16/16 checks passed");

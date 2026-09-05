@@ -34,7 +34,11 @@ import {
   ASSET_LOOKUP_STATUS,
   resolveAssetLookupState,
 } from "../lib/nexo/data/asset_lookup_contract.mjs";
-import { splitPriceModels } from "../lib/ui/valuation_adapter.mjs";
+import {
+  PRICE_LAYER_GUIDE,
+  PRICE_LAYER_SUMMARY,
+  splitPriceModels,
+} from "../lib/ui/valuation_adapter.mjs";
 import { readApiJsonResponse } from "../lib/ui/api_response_adapter.mjs";
 import { resolveEdgeScanGate } from "../lib/ui/edge_scan_gate.mjs";
 import {
@@ -330,6 +334,7 @@ function DeepReport({ r, showClassicValuations = false }) {
   const cats = asArray(r?.catalisadores);
   const risks = asArray(r?.riscos);
   const steps = asArray(r?.passos || r?.proximos_passos);
+  const scoreAdjustments = asArray(r?.ajustes_score);
 
   return (
     <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8", overflowX: "hidden" }}>
@@ -340,9 +345,35 @@ function DeepReport({ r, showClassicValuations = false }) {
         {r?.veredito_final && <Badge text={r.veredito_final} />}
       </div>
 
+      {Number.isFinite(Number(r?.score_revisado)) && (
+        <Sec title="Evolução auditável do score">
+          <Row label="Score de entrada" right={<ScoreBar score={r?.score_original} max={r?.score_max || 30} />} />
+          <Row label="Score após o Deep" right={<ScoreBar score={r?.score_revisado} max={r?.score_max || 30} />} />
+          <DetailBlock title="Variação calculada pelo servidor" value={r?.mudanca_score || "0"} note="Somente evidências novas do Deep podem alterar o score." />
+          {scoreAdjustments.map((adjustment, index) => (
+            <DetailBlock
+              key={`deep-score-${index}`}
+              title={`${adjustment?.dimensao || "Dimensão"} · ${asText(adjustment?.antes)} → ${asText(adjustment?.depois)}`}
+              value={adjustment?.motivo}
+              note={`Fonte: ${asText(adjustment?.fonte_nova || "DEEP")}`}
+            />
+          ))}
+        </Sec>
+      )}
+
       {lacs.length > 0 && <Sec title="Respostas às Lacunas">{lacs.map((l, i) => <DetailBlock key={i} title={l?.q || l?.lacuna || "Lacuna"} value={l?.r || l?.resposta || l} />)}</Sec>}
       {(precs.length > 0 || classics.length > 0) && (
         <Sec title="Modelo de Preço - 3 Camadas">
+          <div style={{ borderLeft: "2px solid #6A5C3A", background: "rgba(201,168,76,.035)", padding: "9px 11px", marginBottom: 10 }}>
+            {PRICE_LAYER_GUIDE.map((layer) => (
+              <div key={layer.code} style={{ fontSize: 11, color: "#A89060", lineHeight: 1.55, marginBottom: 5 }}>
+                <strong style={{ color: "#E8D5A3" }}>{layer.code} · {layer.title}:</strong>{" "}{layer.description}
+              </div>
+            ))}
+            <div style={{ fontSize: 10, color: "#6A5C3A", lineHeight: 1.55, marginTop: 7 }}>
+              {PRICE_LAYER_SUMMARY}
+            </div>
+          </div>
           {precs.map((item, i) => (
             <DetailBlock
               key={`layer-${i}`}
@@ -362,7 +393,22 @@ function DeepReport({ r, showClassicValuations = false }) {
           ))}
         </Sec>
       )}
-      {(r?.zona || r?.zona_convergida) && <Sec title="Zona Convergida · BESST"><DetailBlock title={r?.zona || r?.zona_convergida} value={r?.besst || r?.zona_besst ? "Entrada BESST: " + asText(r?.besst || r?.zona_besst) : ""} note={r?.desconto || r?.desconto_atual ? "Desconto atual: " + asText(r?.desconto || r?.desconto_atual) : ""} /></Sec>}
+      {(r?.zona || r?.zona_convergida) && (
+        <Sec title="Zona Convergida · BESST">
+          <DetailBlock
+            title={r?.zona || r?.zona_convergida}
+            value={r?.besst || r?.zona_besst ? "Entrada BESST: " + asText(r?.besst || r?.zona_besst) : ""}
+            note={r?.desconto || r?.desconto_atual ? "Desconto atual: " + asText(r?.desconto || r?.desconto_atual) : ""}
+          />
+          {r?.integridade_analise?.besst_corrected && (
+            <DetailBlock
+              title="BESST corrigido automaticamente"
+              value={`Valor retornado pelo motor: ${asText(r.integridade_analise.besst_previous_value)}`}
+              note="A faixa foi recalculada para permanecer entre 15% e 25% abaixo da zona de convergência."
+            />
+          )}
+        </Sec>
+      )}
       {macs.length > 0 && <Sec title="Sensibilidade Macro">{macs.map((s, i) => <DetailBlock key={i} title={s?.s || s?.cenario} value={s?.i || s?.impacto} note={s?.detalhe} />)}</Sec>}
       {cats.length > 0 && <Sec title="Catalisadores">{cats.map((c, i) => <DetailBlock key={i} title={c?.d || c?.descricao} value={c?.impacto} note={c?.p || c?.prazo} />)}</Sec>}
       {risks.length > 0 && <Sec title="Riscos">{risks.map((risco, i) => <DetailBlock key={i} title={risco?.d || risco?.descricao} value={"Severidade: " + asText(risco?.sev || risco?.severidade || "MEDIO")} note={risco?.g || risco?.gatilho ? "Gatilho: " + asText(risco?.g || risco?.gatilho) : ""} />)}</Sec>}
@@ -395,6 +441,16 @@ function FinalReport({ r }) {
           <Note>{asText(r?.veredito_anterior)} → {asText(r?.veredito_reclassificado)}</Note>
         </Row>
       </Sec>
+
+      {r?.integridade_reclassificacao && (
+        <Sec title="Integridade da Reclassificação">
+          <DetailBlock
+            title="Consolidação determinística"
+            value={`Base preservada: ${asText(r.integridade_reclassificacao.baseline_phase)}`}
+            note="A finalização não executou uma segunda análise nem criou evidências novas."
+          />
+        </Sec>
+      )}
 
       {riscos.length > 0 && <Sec title="Riscos Incorporados">{riscos.map((risco, i) => <DetailBlock key={i} title={risco?.descricao} value={"Impacto no score: " + asText(risco?.impacto_score)} note={"Severidade: " + asText(risco?.severidade)} />)}</Sec>}
       {ajustes.length > 0 && <Sec title="Ajustes de Score">{ajustes.map((a, i) => <DetailBlock key={i} title={a?.dimensao + " · " + asText(a?.antes) + " → " + asText(a?.depois)} value={a?.motivo} />)}</Sec>}
@@ -880,7 +936,7 @@ export default function NEXOApp() {
     setEdgeExpiryCustom("");
   }
 
-  async function callAPI(ph, overrideCtx = "") {
+  async function callAPI(ph, overrideCtx = "", analysisHistory = {}) {
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -913,6 +969,7 @@ export default function NEXOApp() {
         scanSummary: summary,
         extraCtx: mergedCtx,
         edgeLedger,
+        analysisHistory,
       }),
     });
 
@@ -964,7 +1021,7 @@ export default function NEXOApp() {
     setPhase("deep_running");
 
     try {
-      const r = await callAPI("deep");
+      const r = await callAPI("deep", "", { scan: scanResult });
       setDeepResult(r);
       setPhase("deep_done");
     } catch (e) {
@@ -995,7 +1052,11 @@ export default function NEXOApp() {
         "\nAprofundamentos anteriores:\n" +
         JSON.stringify(deepAdds || []);
 
-      const r = await callAPI("deep", contexto);
+      const r = await callAPI("deep", contexto, {
+        scan: scanResult,
+        deep: deepResult,
+        deepAdds,
+      });
       setDeepAdds((prev) => [...prev, r]);
       setFollowQ("");
       setFollowUrl("");
@@ -1036,7 +1097,11 @@ export default function NEXOApp() {
         "\n\nDEEPS APROFUNDADOS:\n" +
         JSON.stringify(deepAdds || [], null, 2);
 
-      const r = await callAPI("final", contexto);
+      const r = await callAPI("final", contexto, {
+        scan: scanResult,
+        deep: deepResult,
+        deepAdds,
+      });
       setFinalResult(r);
       setEnded(true);
       setPhase("final_done");
