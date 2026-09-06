@@ -82,7 +82,7 @@ jobs:
         run: |
           test -s contracts/tdn-result.schema.json || { echo "Contrato TDN ausente"; exit 1; }
           test -s data/goldberg/tdn_sector_matrix.json || { echo "Matriz TDN ausente"; exit 1; }
-          test -s data/goldberg/tdn_fatos.json || { echo "Fatos históricos TDN ausentes"; exit 1; }
+          test -s data/goldberg/tdn_fatos.json.gz || { echo "Fatos históricos TDN ausentes"; exit 1; }
           test -s db/migrations/004_tdn_historical_facts.sql || { echo "Migração point-in-time TDN ausente"; exit 1; }
 
       - name: Resiliencia HTTP e reparo da resposta da Estacao 3
