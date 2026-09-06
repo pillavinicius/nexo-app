@@ -78,6 +78,9 @@ const EDG_ERROR_LABELS = Object.freeze({
   edge_status_invalid: "O status informado não é válido para um edge declarado.",
 });
 
+const HDL_MIN_HORIZON_YEARS = 1;
+const HDL_MAX_HORIZON_YEARS = 33;
+
 function localIsoDate() {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
@@ -107,6 +110,12 @@ function asText(v) {
   } catch {
     return String(v);
   }
+}
+
+function localizedNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(String(value).trim().replace(",", "."));
+  return Number.isFinite(number) ? number : null;
 }
 
 function macroValue(item) {
@@ -168,6 +177,10 @@ function Badge({ text }) {
     PIOROU: ["#C87070", "rgba(200,112,112,.12)"],
     AUTOMATIC: ["#6DB46D", "rgba(100,180,100,.12)"],
     MANUAL_FALLBACK: ["#D2A03C", "rgba(210,160,60,.12)"],
+    SUPERA: ["#6DB46D", "rgba(100,180,100,.12)"],
+    "NÃO SUPERA": ["#C87070", "rgba(200,112,112,.12)"],
+    INCOMPLETO: ["#D2A03C", "rgba(210,160,60,.12)"],
+    "NÃO APLICÁVEL": ["#A8A8B8", "rgba(168,168,184,.12)"],
   };
 
   const c = colors[value] || ["#6A5C3A", "rgba(168,168,184,.1)"];
@@ -286,6 +299,63 @@ function EdgAudit({ result }) {
   );
 }
 
+function HdlAudit({ result, showUnavailable = false }) {
+  const hdl = result?.nexoModules?.HDL;
+  if (!hdl) return null;
+
+  if (hdl.status === "not_applicable") {
+    return showUnavailable ? (
+      <Sec title="HDL · Hurdle do Leviatã">
+        <DetailBlock
+          title="Não aplicável nesta fase"
+          value={hdl.note || "A curva real soberana brasileira não deve ser comparada diretamente com retorno em moeda estrangeira."}
+        />
+      </Sec>
+    ) : null;
+  }
+
+  if (hdl.status !== "ok") {
+    return showUnavailable ? (
+      <Sec title="HDL · Hurdle do Leviatã">
+        <DetailBlock title="Cálculo incompleto" value="TIR real e horizonte válidos são obrigatórios para o Deep brasileiro." />
+      </Sec>
+    ) : null;
+  }
+
+  const alpha = Number(hdl.alfa_vs_classe_pp);
+  const alphaText = Number.isFinite(alpha)
+    ? `${alpha > 0 ? "+" : ""}${displayNumber(alpha)} p.p.`
+    : "—";
+  const selection = hdl.selection_method === "linear_interpolation"
+    ? `Interpolação linear entre ${asArray(hdl.vertices_base_anos).join(" e ")} anos`
+    : hdl.selection_method === "shortest_vertex_floor"
+    ? `Vértice mínimo oficial de ${asArray(hdl.vertices_base_anos)[0]} ano(s)`
+    : "Vértice oficial exato";
+  const sourceLabel = hdl.source === "anbima_ettj" ? "ANBIMA ETTJ" : asText(hdl.source);
+
+  return (
+    <Sec title="HDL · Hurdle do Leviatã">
+      <div className="grid3">
+        <MetricCard title="TIR real esperada" value={`${displayNumber(hdl.tir_esperada_pct)}% a.a.`} note={`Horizonte: ${displayNumber(hdl.horizonte_anos)} anos`} />
+        <MetricCard title="Hurdle soberano real" value={`${displayNumber(hdl.hurdle_real_pct)}% a.a.`} note={`Curva ANBIMA · ${asText(hdl.curva_as_of)}`} />
+        <MetricCard title="Alfa vs. soberano" value={alphaText} note={hdl.supera_hurdle ? "Retorno esperado acima do hurdle" : "Retorno esperado não supera o hurdle"} />
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <Row label="Resultado da comparação" right={<Badge text={hdl.supera_hurdle ? "SUPERA" : "NÃO SUPERA"} />}>
+          <Note>{selection}</Note>
+        </Row>
+        {result?.hdl_conclusao && <DetailBlock title="Conclusão HDL no Deep" value={result.hdl_conclusao} />}
+      </div>
+      {result?.hdl_integrity?.complete === false && (
+        <div className="warn-box">
+          HDL INCOMPLETO · a conclusão não trouxe a interpretação obrigatória ou, com alfa não positivo, uma justificativa explícita.
+        </div>
+      )}
+      <div className="edg-audit-note">{asText(hdl.version)} · fonte {sourceLabel} · status {asText(hdl.source_status)} · o módulo não altera score nem veredito.</div>
+    </Sec>
+  );
+}
+
 function ScanReport({ r }) {
   const filtros = asArray(r?.filtros);
   const governanca = asArray(r?.governanca);
@@ -320,6 +390,7 @@ function ScanReport({ r }) {
       {catalisadores.length > 0 && <Sec title="Catalisadores">{catalisadores.map((c, i) => <DetailBlock key={i} title={c?.descricao} value={c?.impacto} note={c?.prazo} />)}</Sec>}
       {riscos.length > 0 && <Sec title="Riscos">{riscos.map((risco, i) => <Row key={i} label={risco?.descricao} right={<Badge text={risco?.severidade} />}><Note>{asText(risco?.probabilidade)}</Note></Row>)}</Sec>}
       {lacunas.length > 0 && <Sec title="Lacunas para o Deep">{lacunas.map((l, i) => <DetailBlock key={i} title={"Lacuna " + (i + 1)} value={l} />)}</Sec>}
+      <HdlAudit result={r} />
       <EdgAudit result={r} />
     </div>
   );
@@ -413,6 +484,7 @@ function DeepReport({ r, showClassicValuations = false }) {
       {cats.length > 0 && <Sec title="Catalisadores">{cats.map((c, i) => <DetailBlock key={i} title={c?.d || c?.descricao} value={c?.impacto} note={c?.p || c?.prazo} />)}</Sec>}
       {risks.length > 0 && <Sec title="Riscos">{risks.map((risco, i) => <DetailBlock key={i} title={risco?.d || risco?.descricao} value={"Severidade: " + asText(risco?.sev || risco?.severidade || "MEDIO")} note={risco?.g || risco?.gatilho ? "Gatilho: " + asText(risco?.g || risco?.gatilho) : ""} />)}</Sec>}
       {steps.length > 0 && <Sec title="Próximos Passos">{steps.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
+      <HdlAudit result={r} showUnavailable />
       <EdgAudit result={r} />
     </div>
   );
@@ -467,6 +539,7 @@ function FinalReport({ r }) {
 
       {r?.conclusao && <Sec title="Conclusão"><DetailBlock title="Conclusão NEXO" value={r.conclusao} /></Sec>}
       {passos.length > 0 && <Sec title="Próximos Passos">{passos.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
+      <HdlAudit result={r} showUnavailable />
       <EdgAudit result={r} />
     </div>
   );
@@ -492,6 +565,8 @@ export default function NEXOApp() {
   const [plIbov, setPlIbov] = useState("");
   const [plSp500, setPlSp500] = useState("");
   const [classicValuations, setClassicValuations] = useState("NAO");
+  const [hdlExpectedRealReturn, setHdlExpectedRealReturn] = useState("");
+  const [hdlHorizonYears, setHdlHorizonYears] = useState("");
   const [edgeType, setEdgeType] = useState("nenhum");
   const [edgeInsumo, setEdgeInsumo] = useState("");
   const [edgeEvidenceTemplate, setEdgeEvidenceTemplate] = useState("");
@@ -549,6 +624,19 @@ export default function NEXOApp() {
   const hasFinal = !!finalResult;
   const isVeto = scanResult?.veredito === "VETADO";
   const locked = loading || hasScan || hasDeep || hasFinal || ended;
+  const currentAssetType = detectType(ticker);
+  const hdlApplies = currentAssetType === "acao-br" || currentAssetType === "fii";
+  const hdlReturnNumber = localizedNumber(hdlExpectedRealReturn);
+  const hdlHorizonNumber = localizedNumber(hdlHorizonYears);
+  const hdlInputReady =
+    !hdlApplies ||
+    (hdlReturnNumber !== null &&
+      hdlReturnNumber > -100 &&
+      hdlHorizonNumber !== null &&
+      hdlHorizonNumber >= HDL_MIN_HORIZON_YEARS &&
+      hdlHorizonNumber <= HDL_MAX_HORIZON_YEARS);
+  const hdlLocked =
+    loading || hasDeep || hasFinal || ended || (hasScan && edgeInsumo === "HDL");
 
   const macro = macroData?.automatic || {};
   const priceUnit = currency === "USD" ? "USD" : "R$";
@@ -602,6 +690,7 @@ export default function NEXOApp() {
     currentPrice.trim().length > 0;
   const complementaryPending =
     useComplementaryData === "SIM" && supplementalLoading;
+  const hdlRequiredForScan = hdlApplies && edgeInsumo === "HDL";
 
   const scanBlockReason = !ticker.trim()
     ? "Informe o ticker."
@@ -619,12 +708,21 @@ export default function NEXOApp() {
       : "Aguarde a validação do ticker e da cotação."
     : !edgeGate.ready
     ? "EDG incompleto ou incoerente: " + edgeGate.reason
+    : hdlRequiredForScan && !hdlInputReady
+    ? `O edge usa HDL: informe a TIR real esperada e um horizonte entre ${HDL_MIN_HORIZON_YEARS} e ${HDL_MAX_HORIZON_YEARS} anos.`
     : complementaryPending
     ? "Aguarde o carregamento dos dados complementares selecionados."
     : "";
 
-  const canScan = requiredInputsReady && edgeGate.ready && !assetLoading && !complementaryPending && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
-  const canDeep = hasScan && !hasDeep && !isVeto && !loading && !hasFinal && !ended;
+  const canScan = requiredInputsReady && edgeGate.ready && (!hdlRequiredForScan || hdlInputReady) && !assetLoading && !complementaryPending && !loading && !hasScan && !hasDeep && !hasFinal && !ended;
+  const canDeep = hasScan && !hasDeep && !isVeto && hdlInputReady && !loading && !hasFinal && !ended;
+  const deepBlockReason = !hdlApplies
+    ? ""
+    : hdlExpectedRealReturn.trim() === "" || hdlHorizonYears.trim() === ""
+    ? "Informe a TIR real esperada e o horizonte do investimento."
+    : !hdlInputReady
+    ? `Use TIR real válida e horizonte entre ${HDL_MIN_HORIZON_YEARS} e ${HDL_MAX_HORIZON_YEARS} anos; extrapolação além da curva é proibida.`
+    : "";
   const canFinalize = (hasScan || hasDeep) && !loading && !hasFinal && !ended;
   const canFollow = hasDeep && !loading && !hasFinal && !ended && (followQ.trim() || followUrl.trim());
 
@@ -737,6 +835,8 @@ export default function NEXOApp() {
       "- Máximo histórico: " + (histMax || "não informado") + "\n" +
       "- Data do máximo histórico: " + (histMaxDate || "não informada") + "\n" +
       "- Calcular valuations clássicos como referência auxiliar na análise final? " + classicValuations + "\n" +
+      "- HDL — TIR real esperada (% a.a.): " + (hdlExpectedRealReturn || "não informada") + "\n" +
+      "- HDL — horizonte (anos): " + (hdlHorizonYears || "não informado") + "\n" +
       "- Macro fundamental: usar o Context Package NMI validado e injetado pelo servidor; não duplicar nem sobrescrever com dados do ativo.\n" +
       complementaryContext +
       "- Dados automáticos do ativo (HG Brasil/Twelve Data): " +
@@ -766,6 +866,8 @@ export default function NEXOApp() {
     setPlIbov("");
     setPlSp500("");
     setClassicValuations("NAO");
+    setHdlExpectedRealReturn("");
+    setHdlHorizonYears("");
     setEdgeType("nenhum");
     setEdgeInsumo("");
     setEdgeEvidenceTemplate("");
@@ -969,6 +1071,10 @@ export default function NEXOApp() {
         scanSummary: summary,
         extraCtx: mergedCtx,
         edgeLedger,
+        hdlInput: {
+          tir_esperada_pct: hdlExpectedRealReturn,
+          horizonte_anos: hdlHorizonYears,
+        },
         analysisHistory,
       }),
     });
@@ -1149,6 +1255,10 @@ export default function NEXOApp() {
           asset: compactAssetContext(assetData),
           macro: macroData,
           edge: edgeLedger,
+          hdlInput: {
+            tir_esperada_pct: hdlExpectedRealReturn,
+            horizonte_anos: hdlHorizonYears,
+          },
           scan: scanResult,
           deep: deepResult,
           deepAdds,
@@ -1765,6 +1875,61 @@ export default function NEXOApp() {
           <textarea className="ftxt" disabled={locked} rows={2} value={extraCtx} placeholder="Foco em KPI específico, tese, dúvida pontual..." onChange={(e) => setExtraCtx(e.target.value)} />
         </div>
 
+        <Sec title="HDL · Hurdle do Leviatã · F1a">
+          <div className="edg-tools">
+            <span>Consulte as condições por classe de ativo, cenário macro e limites de interpretação.</span>
+            <a className="btn-manual" href="/hdl-manual" target="_blank" rel="noreferrer">
+              Abrir mini manual HDL ↗
+            </a>
+          </div>
+          <div className="choice-help">
+            <strong>O que o HDL mede</strong> · compara a TIR real esperada do ativo com a taxa real soberana ANBIMA no mesmo horizonte. Ele responde se o prêmio esperado supera o Tesouro; não calcula valuation, score ou veredito.
+          </div>
+
+          {hdlApplies ? (
+            <>
+              <div className="grid2">
+                <div className="field">
+                  <div className="flbl">TIR real esperada · % a.a.</div>
+                  <input
+                    className="finp-sm metric-input"
+                    inputMode="decimal"
+                    disabled={hdlLocked}
+                    value={hdlExpectedRealReturn}
+                    placeholder="Ex.: 9,50"
+                    onChange={(event) => setHdlExpectedRealReturn(event.target.value)}
+                  />
+                  <div className="macro-note">Retorno anual já descontado da inflação; não use retorno nominal.</div>
+                </div>
+
+                <div className="field">
+                  <div className="flbl">Horizonte · anos</div>
+                  <input
+                    className="finp-sm metric-input"
+                    inputMode="decimal"
+                    disabled={hdlLocked}
+                    value={hdlHorizonYears}
+                    placeholder="Ex.: 5"
+                    onChange={(event) => setHdlHorizonYears(event.target.value)}
+                  />
+                  <div className="macro-note">Entre {HDL_MIN_HORIZON_YEARS} e {HDL_MAX_HORIZON_YEARS} anos · sem extrapolação além da curva.</div>
+                </div>
+              </div>
+              <div className={hdlInputReady ? "edg-ok-box" : "warn-box"}>
+                {hdlInputReady
+                  ? "HDL PRONTO · os valores serão calculados pelo servidor usando a curva oficial versionada."
+                  : edgeInsumo === "HDL"
+                  ? "HDL OBRIGATÓRIO NO SCAN · este módulo foi escolhido como insumo do Edge."
+                  : "HDL OBRIGATÓRIO NO DEEP · o Scan pode ser concluído antes do preenchimento."}
+              </div>
+            </>
+          ) : (
+            <div className="reserved-box">
+              NÃO APLICÁVEL NESTA FASE · ativos no exterior exigem uma curva soberana e premissas na mesma moeda. O módulo não fará comparação BRL × moeda estrangeira.
+            </div>
+          )}
+        </Sec>
+
         <div className="actions">
           {loading && loadingKind !== "final" && <button className="btn-cl" onClick={resetToInitial}>Cancelar</button>}
           <button className="btn-scan" onClick={handleScan} disabled={!canScan}>{loadingKind === "scan" ? "Analisando..." : "Scan NEXO →"}</button>
@@ -1775,6 +1940,10 @@ export default function NEXOApp() {
           <div className="scan-hint">
             Para habilitar o Scan: {scanBlockReason}
           </div>
+        )}
+
+        {hasScan && !hasDeep && !isVeto && deepBlockReason && (
+          <div className="scan-hint">Para habilitar o Deep: {deepBlockReason}</div>
         )}
 
         <div className="output">
@@ -1792,6 +1961,7 @@ export default function NEXOApp() {
           {hasScan && !hasDeep && !hasFinal && !isVeto && !ended && (
             <div className="decision-box">
               <div className="decision-title">Próxima etapa</div>
+              {deepBlockReason && <div className="scan-hint">Para rodar o Deep: {deepBlockReason}</div>}
               <div className="decision-actions">
                 <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>Rodar NEXO Deep →</button>
                 <button className="btn-end" onClick={handleFinal} disabled={!canFinalize}>Finalizar e Reclassificar</button>

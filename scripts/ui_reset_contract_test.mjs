@@ -15,6 +15,8 @@ for (const requiredReset of [
   "setFinalResult(null)",
   'setEdgeType("nenhum")',
   'setClassicValuations("NAO")',
+  'setHdlExpectedRealReturn("")',
+  'setHdlHorizonYears("")',
   'setUseComplementaryData("NAO")',
   "setAssetData(null)",
   'setPhase("initial")',

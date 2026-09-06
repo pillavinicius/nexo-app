@@ -46,6 +46,7 @@ try {
       zona: "R$ 19,00 a R$ 21,00",
       besst: "R$ 24,50 a R$ 26,00",
       desconto: "10%",
+      hdl_conclusao: "Não supera o soberano porque a TIR real esperada permanece abaixo do hurdle oficial.",
       passos: ["Acompanhar divulgação."],
     }) }] }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
@@ -58,6 +59,7 @@ try {
       assetType: "acao-br",
       ticker: "BBAS3",
       edgeLedger: activeEdge,
+      hdlInput: { tir_esperada_pct: 6.5, horizonte_anos: 5 },
       analysisHistory: { scan },
     }),
   }));
@@ -86,6 +88,7 @@ try {
       assetType: "acao-br",
       ticker: "BBAS3",
       edgeLedger: activeEdge,
+      hdlInput: { tir_esperada_pct: 6.5, horizonte_anos: 5 },
       analysisHistory: { scan },
     }),
   }));
@@ -109,6 +112,7 @@ try {
       assetType: "acao-br",
       ticker: "BBAS3",
       edgeLedger: activeEdge,
+      hdlInput: { tir_esperada_pct: 6.5, horizonte_anos: 5 },
       analysisHistory: { scan, deep },
     }),
   }));

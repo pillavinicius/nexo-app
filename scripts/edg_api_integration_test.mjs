@@ -29,7 +29,11 @@ const activeEdge = {
 
 const modelOutputs = [
   { ticker: "TEST3", veredito: "APROVADO", score_resumo: "Teste D2" },
-  { ticker: "TEST3", veredito_final: "COMPRAR" },
+  {
+    ticker: "TEST3",
+    veredito_final: "COMPRAR",
+    hdl_conclusao: "O alfa positivo supera o soberano, condicionado à manutenção das premissas da TIR.",
+  },
   {
     ticker: "TEST3",
     classificacao_final: "COMPRAR",
@@ -64,6 +68,7 @@ try {
           ticker: "TEST3",
           extraCtx: "contexto de integração EDG",
           edgeLedger,
+          hdlInput: { tir_esperada_pct: 9, horizonte_anos: 5 },
         }),
       })
     );

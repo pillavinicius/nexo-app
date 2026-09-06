@@ -22,12 +22,16 @@
     "test:verdict-transition": "node scripts/verdict_transition_test.mjs",
     "test:reclassification-integrity": "node scripts/reclassification_integrity_test.mjs",
     "test:reclassification-api": "node scripts/reclassification_api_integration_test.mjs",
+    "test:hdl": "NEXO_SELFTEST=1 node lib/nexo/hdl/hdl_engine.mjs && NEXO_SELFTEST=1 node lib/nexo/hdl/hdl_repository.mjs",
+    "test:hdl:collector": "NEXO_SELFTEST=1 node scripts/collectors/hdl_collector.mjs",
+    "test:hdl:integration": "node scripts/hdl_api_integration_test.mjs",
+    "test:hdl:ui": "node scripts/hdl_ui_contract_test.mjs",
     "test:edge-ui": "node scripts/edge_ui_contract_test.mjs",
     "test:ui-reset": "node scripts/ui_reset_contract_test.mjs",
     "test:macro": "NEXO_SELFTEST=1 node scripts/nexo_macro_collector.mjs",
     "validate:context": "node scripts/validate_context.mjs data/context/latest.json",
     "collect:nmi": "node scripts/nmi_context_collector.mjs",
-    "test": "npm run test:nmi && npm run test:nmi:collector && npm run test:nmi:consumer && npm run test:edg && npm run test:edg:form && npm run test:edg:integration && npm run test:edge-ui && npm run test:ui-reset && npm run test:analysis:resilience && npm run test:verdict-transition && npm run test:reclassification-integrity && npm run test:reclassification-api && npm run test:asset:lookup && npm run test:macro && npm run test:ui-asset && npm run test:valuation && npm run test:pdf && npm run test:pdf:route && npm run test:pdf:delivery && npm run validate:context",
+    "test": "npm run test:nmi && npm run test:nmi:collector && npm run test:nmi:consumer && npm run test:edg && npm run test:edg:form && npm run test:edg:integration && npm run test:edge-ui && npm run test:ui-reset && npm run test:analysis:resilience && npm run test:verdict-transition && npm run test:reclassification-integrity && npm run test:reclassification-api && npm run test:hdl && npm run test:hdl:collector && npm run test:hdl:integration && npm run test:hdl:ui && npm run test:asset:lookup && npm run test:macro && npm run test:ui-asset && npm run test:valuation && npm run test:pdf && npm run test:pdf:route && npm run test:pdf:delivery && npm run validate:context",
     "ci": "npm test && npm run build"
   },
   "dependencies": {

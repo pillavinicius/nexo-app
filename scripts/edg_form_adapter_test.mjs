@@ -159,7 +159,7 @@ check(
   "opções de evidência respeitam o tipo selecionado"
 );
 equal(EDGE_INSUMO_METADATA.IQD.available, true, "IQD está habilitado");
-equal(EDGE_INSUMO_METADATA.HDL.available, false, "HDL futuro não pode lastrear edge agora");
+equal(EDGE_INSUMO_METADATA.HDL.available, true, "HDL F1a deve poder lastrear edge");
 
 const mobileSelectLabels = [
   ...["informacional", "analitico", "estrutural", "temporal"].flatMap(evidenceOptionsForType),

@@ -93,7 +93,7 @@ try {
   globalThis.fetch = async (_url, options) => {
     capturedRequests.push(JSON.parse(options.body));
     return new Response(
-      JSON.stringify({ content: [{ text: '{"ticker":"TEST"}' }] }),
+      JSON.stringify({ content: [{ text: '{"ticker":"TEST","hdl_conclusao":"O alfa supera o soberano, condicionado à validade das premissas informadas."}' }] }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   };
@@ -110,6 +110,7 @@ try {
         ticker: "TEST3",
         scanSummary: "scan de teste",
         extraCtx: "contexto de teste",
+        hdlInput: { tir_esperada_pct: 9, horizonte_anos: 5 },
       }),
     });
 

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexo.local/contracts/hdl-result.schema.json",
+  "title": "NEXO HDL Result v1.0",
+  "type": "object",
+  "required": [
+    "version",
+    "status",
+    "hurdle_real_pct",
+    "alfa_vs_classe_pp",
+    "supera_hurdle",
+    "vertice_usado_anos",
+    "curva_as_of"
+  ],
+  "properties": {
+    "version": { "const": "HDL_v1.0" },
+    "status": {
+      "enum": [
+        "ok",
+        "missing_input",
+        "invalid_input",
+        "curve_unavailable",
+        "out_of_curve",
+        "not_applicable"
+      ]
+    },
+    "hurdle_real_pct": { "type": ["number", "null"] },
+    "alfa_vs_classe_pp": { "type": ["number", "null"] },
+    "supera_hurdle": { "type": ["boolean", "null"] },
+    "vertice_usado_anos": { "type": ["number", "null"] },
+    "curva_as_of": {
+      "type": ["string", "null"],
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "tir_esperada_pct": { "type": ["number", "null"] },
+    "horizonte_anos": { "type": ["number", "null"] },
+    "selection_method": { "type": ["string", "null"] },
+    "vertices_base_anos": {
+      "type": "array",
+      "items": { "type": "number" },
+      "maxItems": 2
+    },
+    "source": { "type": ["string", "null"] },
+    "source_status": { "type": ["string", "null"] },
+    "requires_justification": { "type": ["boolean", "null"] },
+    "error_code": { "type": ["string", "null"] },
+    "units": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "ok" } } },
+      "then": {
+        "properties": {
+          "hurdle_real_pct": { "type": "number" },
+          "alfa_vs_classe_pp": { "type": "number" },
+          "supera_hurdle": { "type": "boolean" },
+          "vertice_usado_anos": { "type": "number" },
+          "curva_as_of": { "type": "string" }
+        }
+      }
+    }
+  ],
+  "additionalProperties": true
+}
