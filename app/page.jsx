@@ -1324,12 +1324,16 @@ export default function NEXOApp() {
         deep: deepResult,
         deepAdds,
       }, { kind: "follow_up", userFocus: followQ.trim() });
+      const nextDeepView = `deep-${deepAdds.length + 1}`;
       setDeepAdds((prev) => [...prev, r]);
-      setActiveView(`deep-${deepAdds.length + 1}`);
+      setActiveView(nextDeepView);
       setFollowQ("");
       setFollowUrl("");
       setFollowError("");
       setPhase("deep_done");
+      window.requestAnimationFrame(() => {
+        pageTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     } catch (e) {
       if (e?.name !== "AbortError") {
         const message = importedSource
