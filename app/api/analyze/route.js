@@ -35,6 +35,7 @@ import { loadNfiFlow } from "../../../lib/nexo/nfi/nfi_repository.mjs";
 import {
   applyBibliotecaAudit,
   buildBibliotecaPromptContext,
+  deriveExpectedDeepGaps,
   loadBibliotecaContext,
 } from "../../../lib/nexo/biblioteca/context.mjs";
 
@@ -335,7 +336,7 @@ function trimContextForFinal(extraCtx) {
   );
 }
 
-function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, edgContext, hdlContext, nfiContext, bibliotecaContext, analysisHistory = {} }) {
+function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, edgContext, hdlContext, nfiContext, bibliotecaContext, analysisHistory = {}, analysisIntent = {} }) {
   const validatedNmiBlock =
     "\n\n--- CONTEXTO MACRO TRANSVERSAL ---\n" + nmiContext;
   const validatedEdgBlock =
@@ -377,6 +378,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
       analysisHistory.deep ||
       analysisHistory.scan ||
       null;
+    const expectedGaps = deriveExpectedDeepGaps(analysisHistory, analysisIntent?.userFocus);
     return (
       "Analyze ticker: " +
       ticker +
@@ -385,6 +387,9 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
       trimContextForDeep(extraCtx || "") +
       "\n\n--- BASE ANALÍTICA ANTERIOR (PRESERVAR SCORE E NÃO DUPLICAR RISCOS) ---\n" +
       JSON.stringify(analyticalBaseline || {}, null, 2) +
+      "\n\n--- ESCOPO DETERMINÍSTICO DAS LACUNAS ---\n" +
+      JSON.stringify(expectedGaps) +
+      "\nResponda exatamente essas lacunas. Não substitua, remova ou acrescente perguntas por iniciativa própria.\n" +
       validatedNmiBlock +
       validatedEdgBlock +
       validatedHdlBlock +
@@ -408,11 +413,12 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
   );
 }
 
-function responseWithGovernance(phase, data, edg, hdl, nfi, analysisHistory = {}, biblioteca = null) {
+function responseWithGovernance(phase, data, edg, hdl, nfi, analysisHistory = {}, biblioteca = null, analysisIntent = {}) {
   const integrityChecked = phase === "deep"
     ? reconcileDeepIntegrity(data, analysisHistory, { documentIds: biblioteca?.documentIds || [] })
     : data;
-  const withBiblioteca = phase === "deep" ? applyBibliotecaAudit(integrityChecked, biblioteca) : integrityChecked;
+  const expectedGaps = phase === "deep" ? deriveExpectedDeepGaps(analysisHistory, analysisIntent?.userFocus) : [];
+  const withBiblioteca = phase === "deep" ? applyBibliotecaAudit(integrityChecked, biblioteca, { expectedGaps }) : integrityChecked;
   const withHdl = applyHdlToAnalysis({ phase, result: withBiblioteca, hdl });
   const withNfi = applyNfiToAnalysis({ result: withHdl, nfi });
   const governed = applyEdgGuardrails({ phase, result: withNfi, edg });
@@ -514,6 +520,7 @@ export async function POST(req) {
       edgeLedger,
       hdlInput = {},
       analysisHistory = {},
+      analysisIntent = {},
     } = body;
 
     if (!phase || !assetType) {
@@ -595,6 +602,7 @@ export async function POST(req) {
       nfiContext,
       bibliotecaContext,
       analysisHistory,
+      analysisIntent,
     });
 
     let modelResult = await requestStructuredAnalysis({ phase, systemPrompt, userMsg });
@@ -613,7 +621,8 @@ export async function POST(req) {
           hdl,
           nfi,
           analysisHistory,
-          biblioteca
+          biblioteca,
+          analysisIntent
         );
       }
 
@@ -629,7 +638,8 @@ export async function POST(req) {
           hdl,
           nfi,
           analysisHistory,
-          biblioteca
+          biblioteca,
+          analysisIntent
         );
       }
 
@@ -667,7 +677,8 @@ export async function POST(req) {
           hdl,
           nfi,
           analysisHistory,
-          biblioteca
+          biblioteca,
+          analysisIntent
         );
       }
 
@@ -708,7 +719,7 @@ export async function POST(req) {
       }
     }
 
-    return responseWithGovernance(phase, result.data, edg, hdl, nfi, analysisHistory, biblioteca);
+    return responseWithGovernance(phase, result.data, edg, hdl, nfi, analysisHistory, biblioteca, analysisIntent);
   } catch (err) {
     return safeError("Erro servidor: " + err.message);
   }
