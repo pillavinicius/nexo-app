@@ -9,6 +9,7 @@ import { loadNfiFlow } from "../../../lib/nexo/nfi/nfi_repository.mjs";
 import { bibliotecaDatabaseHealth } from "../../../lib/nexo/biblioteca/database.mjs";
 import { createDatabaseClient } from "../../../lib/nexo/biblioteca/database.mjs";
 import { createBibliotecaRepository } from "../../../lib/nexo/biblioteca/repository.mjs";
+import { B3_PARSER_VERSION } from "../../../lib/nexo/biblioteca/document_parser.mjs";
 
 function readMacroStatus() {
   try {
@@ -111,6 +112,22 @@ async function readBibliotecaB2(b1) {
   }
 }
 
+async function readBibliotecaB3(b1) {
+  if (!b1.available) return { available: false, version: B3_PARSER_VERSION, status: "database_unavailable" };
+  try {
+    const repository = createBibliotecaRepository(createDatabaseClient());
+    const counts = await repository.parseStatusCounts();
+    return {
+      available: Number(counts.ok || 0) > 0,
+      version: B3_PARSER_VERSION,
+      status: Number(counts.falhou || 0) > 0 ? "degraded" : Number(counts.ok || 0) > 0 ? "ready" : "empty",
+      documents: counts,
+    };
+  } catch {
+    return { available: false, version: B3_PARSER_VERSION, status: "unavailable" };
+  }
+}
+
 export async function GET() {
   const macro = readMacroStatus();
   const context = readContext();
@@ -120,6 +137,7 @@ export async function GET() {
   const bibliotecaB0 = readBibliotecaB0();
   const bibliotecaB1 = await bibliotecaDatabaseHealth();
   const bibliotecaB2 = await readBibliotecaB2(bibliotecaB1);
+  const bibliotecaB3 = await readBibliotecaB3(bibliotecaB1);
 
   const contextReadable =
     typeof context?.contextSchemaVersion === "string" &&
@@ -173,6 +191,7 @@ export async function GET() {
         bibliotecaB0,
         bibliotecaB1,
         bibliotecaB2,
+        bibliotecaB3,
       },
     },
     {

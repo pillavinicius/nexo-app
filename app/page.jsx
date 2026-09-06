@@ -118,6 +118,15 @@ function localizedNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function isValidHttpsUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
 function macroValue(item) {
   if (!item || item.value === null || item.value === undefined) return "";
   return String(item.value);
@@ -383,6 +392,25 @@ function NfiAudit({ result, showUnavailable = false }) {
   );
 }
 
+function BibliotecaAudit({ result }) {
+  const library = result?.nexoModules?.BIBLIOTECA;
+  if (!library || library.status === "not_applicable") return null;
+  const open = asArray(library.lacunas_abertas);
+  const resolved = asArray(library.lacunas_resolvidas);
+  return (
+    <Sec title="Biblioteca Viva · Evidências do Deep">
+      <div className="grid3">
+        <MetricCard title="Documentos disponíveis" value={asText(library.documents_available || 0)} note={asText(library.version)} />
+        <MetricCard title="Lacunas resolvidas" value={asText(resolved.length)} note="Com documento oficial identificado" />
+        <MetricCard title="Lacunas abertas" value={asText(open.length)} note={open.length ? "Exigem fonte complementar" : "Nenhuma fonte adicional exigida"} />
+      </div>
+      {asArray(library.documents_used).map((id, index) => <DetailBlock key={`bib-doc-${index}`} title={`Evidência ${index + 1}`} value={id} />)}
+      {open.map((gap, index) => <DetailBlock key={`bib-gap-${index}`} title={`Lacuna aberta ${index + 1}`} value={gap} />)}
+      <div className="edg-audit-note">A Biblioteca fornece evidências; score e veredito só mudam por ajuste novo, explícito e reconciliado pelo servidor.</div>
+    </Sec>
+  );
+}
+
 function ScanReport({ r }) {
   const filtros = asArray(r?.filtros);
   const governanca = asArray(r?.governanca);
@@ -514,6 +542,7 @@ function DeepReport({ r, showClassicValuations = false }) {
       {steps.length > 0 && <Sec title="Próximos Passos">{steps.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
       <HdlAudit result={r} showUnavailable />
       <NfiAudit result={r} showUnavailable />
+      <BibliotecaAudit result={r} />
       <EdgAudit result={r} />
     </div>
   );
@@ -582,7 +611,6 @@ export default function NEXOApp() {
   const [finalResult, setFinalResult] = useState(null);
 
   const [ticker, setTicker] = useState("");
-  const [riUrl, setRiUrl] = useState("");
   const [extraCtx, setExtraCtx] = useState("");
 
   const [currency, setCurrency] = useState("BRL");
@@ -759,7 +787,12 @@ export default function NEXOApp() {
     ? `Use TIR real válida e horizonte entre ${HDL_MIN_HORIZON_YEARS} e ${HDL_MAX_HORIZON_YEARS} anos; extrapolação além da curva é proibida.`
     : "";
   const canFinalize = (hasScan || hasDeep) && !loading && !hasFinal && !ended;
-  const canFollow = hasDeep && !loading && !hasFinal && !ended && (followQ.trim() || followUrl.trim());
+  const latestDeep = deepAdds.at(-1) || deepResult;
+  const bibliotecaAudit = latestDeep?.nexoModules?.BIBLIOTECA || null;
+  const needsUserSource = !isExternalAsset && bibliotecaAudit?.requires_user_source === true;
+  const canFollow = hasDeep && !loading && !hasFinal && !ended && (
+    needsUserSource ? isValidHttpsUrl(followUrl) : Boolean(followQ.trim())
+  );
 
   useEffect(() => {
     void loadMacro();
@@ -890,7 +923,6 @@ export default function NEXOApp() {
     setDeepAdds([]);
     setFinalResult(null);
     setTicker("");
-    setRiUrl("");
     setExtraCtx("");
     setCurrency("BRL");
     setCurrentPrice("");
@@ -1183,9 +1215,20 @@ export default function NEXOApp() {
     setError("");
 
     try {
+      let importedSource = null;
+      if (needsUserSource) {
+        const importResponse = await fetch("/api/biblioteca/ingest-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticker: ticker.trim().toUpperCase(), assetType: currentAssetType, url: followUrl.trim() }),
+        });
+        const imported = await readApiJsonResponse(importResponse);
+        if (!importResponse.ok || !imported?.ok) throw new Error(imported?.error?.message || "Não foi possível importar a fonte para a Biblioteca Viva.");
+        importedSource = imported.result;
+      }
       const contexto =
         "Aprofundamento adicional do Deep NEXO.\n" +
-        (followUrl.trim() ? "Link ou fonte adicional: " + followUrl.trim() + "\n" : "") +
+        (importedSource ? "Fonte complementar importada e processada pela Biblioteca: " + importedSource.dedupKey + "\n" : "") +
         (followQ.trim() ? "Pergunta/foco do usuário: " + followQ.trim() + "\n" : "") +
         "\nGere um NOVO resultado de Deep aprofundado em JSON válido, mantendo o mesmo schema. Não apague nem substitua o Deep anterior.\n" +
         "Deep anterior:\n" +
@@ -1227,8 +1270,6 @@ export default function NEXOApp() {
         ticker.trim().toUpperCase() +
         "\n\nTIPO DO ATIVO:\n" +
         detectType(ticker) +
-        "\n\nLINK RI / FONTE INICIAL:\n" +
-        (riUrl || "") +
         "\n\nCONTEXTO INICIAL DO USUÁRIO:\n" +
         (extraCtx || "") +
         "\n\nSCAN ORIGINAL:\n" +
@@ -1907,11 +1948,6 @@ export default function NEXOApp() {
         </Sec>
 
         <div className="field">
-          <div className="flbl">Link RI / Dados Oficiais</div>
-          <input className="finp-sm" disabled={locked} value={riUrl} placeholder="https://ri.empresa.com.br..." onChange={(e) => setRiUrl(e.target.value)} />
-        </div>
-
-        <div className="field">
           <div className="flbl">Contexto adicional</div>
           <textarea className="ftxt" disabled={locked} rows={2} value={extraCtx} placeholder="Foco em KPI específico, tese, dúvida pontual..." onChange={(e) => setExtraCtx(e.target.value)} />
         </div>
@@ -2048,18 +2084,22 @@ export default function NEXOApp() {
             <div className="follow-box">
               <div className="follow-title">Aprofundamento Pós-Deep</div>
 
-              <div className="field">
-                <div className="flbl">Link adicional opcional</div>
-                <input className="finp-sm" disabled={loading} value={followUrl} placeholder="Cole aqui link de fato relevante, documento RI, release, página oficial..." onChange={(e) => setFollowUrl(e.target.value)} />
-              </div>
+              {needsUserSource && (
+                <div className="field">
+                  <div className="flbl">Fonte oficial para fechar as lacunas · obrigatório</div>
+                  <input className="finp-sm" disabled={loading} value={followUrl} placeholder="https://ri.empresa.com.br/documento.pdf" onChange={(e) => setFollowUrl(e.target.value)} />
+                  <div className="macro-note">Ao aprofundar, o documento será validado, importado e processado na Biblioteca deste ativo.</div>
+                  {followUrl.trim() && !isValidHttpsUrl(followUrl) && <div className="scan-hint">Informe um endereço HTTPS válido.</div>}
+                </div>
+              )}
 
               <div className="field">
-                <div className="flbl">Pergunta ou foco opcional</div>
+                <div className="flbl">Pergunta ou foco {needsUserSource ? "opcional" : "obrigatório"}</div>
                 <textarea className="ftxt" disabled={loading} rows={3} value={followQ} placeholder="Ex: aprofundar impacto da Selic, risco fiscal, guidance, dívida, payout..." onChange={(e) => setFollowQ(e.target.value)} />
               </div>
 
               <div className="follow-actions">
-                <button className="btn-deep" onClick={handleFollowUp} disabled={!canFollow}>{loadingKind === "follow" ? "Aprofundando..." : "Aprofundar Deep →"}</button>
+                <button className="btn-deep" onClick={handleFollowUp} disabled={!canFollow}>{loadingKind === "follow" ? (needsUserSource ? "Importando e aprofundando..." : "Aprofundando...") : "Aprofundar Deep →"}</button>
                 <button className="btn-end" disabled={!canFinalize} onClick={handleFinal}>Finalizar e Reclassificar</button>
                 {loadingKind !== "final" && <button className="btn-cl" onClick={resetToInitial}>Reset e nova análise</button>}
               </div>
