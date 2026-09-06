@@ -117,6 +117,16 @@ try {
   assert.equal((await edgeWithoutHdl.json()).error.code, "hdl_input_required");
   assert.equal(upstreamCalls, 0, "HDL usado como edge precisa existir antes do Scan");
 
+  const prematureNfiEdge = await request({
+    phase: "scan",
+    assetType: "acao-br",
+    ticker: "BBAS3",
+    edgeLedger: { ...activeEdge, edge_insumo: "NFI" },
+  });
+  assert.equal(prematureNfiEdge.status, 422);
+  assert.equal((await prematureNfiEdge.json()).error.code, "nfi_edge_unavailable");
+  assert.equal(upstreamCalls, 0, "NFI sem 24 meses não pode lastrear Edge");
+
   const semanticRetryResponse = await request({
     phase: "deep",
     assetType: "acao-br",
@@ -149,6 +159,11 @@ try {
   assert.equal(negative.nexoModules.HDL.alfa_vs_classe_pp, -1.4001);
   assert.equal(negative.nexoModules.HDL.supera_hurdle, false);
   assert.equal(negative.nexoModules.HDL.requires_justification, true);
+  assert.equal(negative.nexoModules.NFI.version, "NFI_v1.0");
+  assert.equal(negative.nexoModules.NFI.history_months, 20);
+  assert.equal(negative.nexoModules.NFI.fluxo_percentil_24m, null);
+  assert.equal(negative.nexoModules.NFI.fluxo_percentil_disponivel, 0);
+  assert.equal(negative.nexoModules.NFI.explica_deslocamento, false);
   assert.equal(negative.hdl_integrity.complete, true);
   assert.equal(negative.score_revisado, 20, "HDL não altera score");
   assert.equal(negative.veredito_final, "MONITORAR", "HDL não altera veredito");
@@ -156,6 +171,8 @@ try {
   assert.match(negativePrompt, /HDL · HURDLE DO LEVIATÃ/);
   assert.match(negativePrompt, /"alfa_vs_classe_pp":-1\.4001/);
   assert.match(negativePrompt, /imutáveis/);
+  assert.match(negativePrompt, /NFI · NEXO FLOW INTELLIGENCE/);
+  assert.match(negativePrompt, /nunca altera valor intrínseco, score ou veredito/);
 
   globalThis.fetch = async () => {
     throw new Error("A finalização determinística não pode chamar a IA.");
@@ -197,6 +214,9 @@ try {
   assert.equal(externalResponse.status, 200);
   assert.equal(external.nexoModules.HDL.status, "not_applicable");
   assert.equal(external.nexoModules.HDL.hurdle_real_pct, null);
+  assert.equal(external.nexoModules.NFI.status, "not_applicable");
+  assert.equal(external.nexoModules.EDG.has_declared_edge, false);
+  assert.equal(external.nexoModules.EDG.max_allowed_classification, "watchlist");
   assert.match(capturedRequests.at(-1).messages[0].content, /não aplicável/i);
 
   console.log("HDL API integration: semantic and boundary checks passed");

@@ -356,6 +356,33 @@ function HdlAudit({ result, showUnavailable = false }) {
   );
 }
 
+function NfiAudit({ result, showUnavailable = false }) {
+  const nfi = result?.nexoModules?.NFI;
+  if (!nfi) return null;
+  if (nfi.status === "not_applicable") {
+    return showUnavailable ? <Sec title="NFI · NEXO Flow Intelligence"><DetailBlock title="Não aplicável nesta fase" value={nfi.note} /></Sec> : null;
+  }
+  if (["unavailable", "pending"].includes(nfi.status)) {
+    return showUnavailable ? <Sec title="NFI · NEXO Flow Intelligence"><DetailBlock title="Fluxo oficial indisponível" value={nfi.note || "A publicação D+2 ainda não está disponível; nenhum valor foi estimado."} /></Sec> : null;
+  }
+  const flow = Number(nfi.fluxo_liquido_janela_brl);
+  const percentile = nfi.fluxo_percentil_24m ?? nfi.fluxo_percentil_disponivel;
+  const flowText = Number.isFinite(flow) ? flow.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }) : "—";
+  const percentileText = Number.isFinite(Number(percentile)) ? `${displayNumber(Number(percentile) * 100)}%` : "—";
+  return (
+    <Sec title="NFI · NEXO Flow Intelligence">
+      <div className="grid3">
+        <MetricCard title={`Fluxo líquido · ${asText(nfi.janela_dias)} dias`} value={flowText} note={`Mês fechado · ${asText(nfi.window_reference_date || nfi.source_as_of)}`} />
+        <MetricCard title={nfi.history_complete ? "Percentil 24 meses" : "Percentil provisório"} value={percentileText} note={`${asText(nfi.history_months)} observações mensais`} />
+        <MetricCard title="Pressão observada" value={asText(nfi.pressao).toUpperCase()} note={nfi.explica_deslocamento ? "Fluxo extremo: explicação causal autorizada" : "Sem extremo canônico confirmado"} />
+      </div>
+      {Number.isFinite(Number(nfi.fluxo_parcial_mes_brl)) && <DetailBlock title={`Mês corrente parcial · até ${asText(nfi.partial_as_of)}`} value={Number(nfi.fluxo_parcial_mes_brl).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })} note="Exibido separadamente; não entra no percentil contra meses fechados." />}
+      {!nfi.history_complete && <div className="warn-box">HISTÓRICO EM FORMAÇÃO · o percentil é informativo; a regra de extremo só será ativada com 24 meses oficiais completos.</div>}
+      <div className="edg-audit-note">{asText(nfi.version)} · fonte B3 D+2 · efeito em valuation: nenhum · não altera score nem veredito.</div>
+    </Sec>
+  );
+}
+
 function ScanReport({ r }) {
   const filtros = asArray(r?.filtros);
   const governanca = asArray(r?.governanca);
@@ -391,6 +418,7 @@ function ScanReport({ r }) {
       {riscos.length > 0 && <Sec title="Riscos">{riscos.map((risco, i) => <Row key={i} label={risco?.descricao} right={<Badge text={risco?.severidade} />}><Note>{asText(risco?.probabilidade)}</Note></Row>)}</Sec>}
       {lacunas.length > 0 && <Sec title="Lacunas para o Deep">{lacunas.map((l, i) => <DetailBlock key={i} title={"Lacuna " + (i + 1)} value={l} />)}</Sec>}
       <HdlAudit result={r} />
+      <NfiAudit result={r} />
       <EdgAudit result={r} />
     </div>
   );
@@ -485,6 +513,7 @@ function DeepReport({ r, showClassicValuations = false }) {
       {risks.length > 0 && <Sec title="Riscos">{risks.map((risco, i) => <DetailBlock key={i} title={risco?.d || risco?.descricao} value={"Severidade: " + asText(risco?.sev || risco?.severidade || "MEDIO")} note={risco?.g || risco?.gatilho ? "Gatilho: " + asText(risco?.g || risco?.gatilho) : ""} />)}</Sec>}
       {steps.length > 0 && <Sec title="Próximos Passos">{steps.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
       <HdlAudit result={r} showUnavailable />
+      <NfiAudit result={r} showUnavailable />
       <EdgAudit result={r} />
     </div>
   );
@@ -540,6 +569,7 @@ function FinalReport({ r }) {
       {r?.conclusao && <Sec title="Conclusão"><DetailBlock title="Conclusão NEXO" value={r.conclusao} /></Sec>}
       {passos.length > 0 && <Sec title="Próximos Passos">{passos.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
       <HdlAudit result={r} showUnavailable />
+      <NfiAudit result={r} showUnavailable />
       <EdgAudit result={r} />
     </div>
   );
@@ -625,6 +655,7 @@ export default function NEXOApp() {
   const isVeto = scanResult?.veredito === "VETADO";
   const locked = loading || hasScan || hasDeep || hasFinal || ended;
   const currentAssetType = detectType(ticker);
+  const isExternalAsset = currentAssetType === "stock-ext" || currentAssetType === "etf-ext";
   const hdlApplies = currentAssetType === "acao-br" || currentAssetType === "fii";
   const hdlReturnNumber = localizedNumber(hdlExpectedRealReturn);
   const hdlHorizonNumber = localizedNumber(hdlHorizonYears);
@@ -637,6 +668,7 @@ export default function NEXOApp() {
       hdlHorizonNumber <= HDL_MAX_HORIZON_YEARS);
   const hdlLocked =
     loading || hasDeep || hasFinal || ended || (hasScan && edgeInsumo === "HDL");
+  const edgLocked = locked || isExternalAsset;
 
   const macro = macroData?.automatic || {};
   const priceUnit = currency === "USD" ? "USD" : "R$";
@@ -668,16 +700,19 @@ export default function NEXOApp() {
     deadlineDate: edgeDeadlineDate,
     customText: edgeExpiryCustom,
   });
-  const edgeLedger = {
-    edge_type: edgeType,
-    edge_evidence: edgeEvidence,
-    edge_insumo: edgeInsumo,
-    edge_expiry_condition: edgeExpiryCondition,
-    edge_declared_at: edgeDeclaredAt,
-    edge_status: edgeStatus,
-  };
+  const edgeLedger = isExternalAsset
+    ? { edge_type: "nenhum", edge_status: "nao_declarado" }
+    : {
+        edge_type: edgeType,
+        edge_evidence: edgeEvidence,
+        edge_insumo: edgeInsumo,
+        edge_expiry_condition: edgeExpiryCondition,
+        edge_declared_at: edgeDeclaredAt,
+        edge_status: edgeStatus,
+      };
+  const nfiEdgeReady = macroData?.nmi?.flowIntelligence?.explica_deslocamento === true;
   const availableEdgeModules = EDGE_INSUMOS.filter(
-    (insumo) => EDGE_INSUMO_METADATA[insumo]?.available !== false
+    (insumo) => EDGE_INSUMO_METADATA[insumo]?.available !== false && (insumo !== "NFI" || nfiEdgeReady)
   );
   const edgeGate = resolveEdgeScanGate({
     record: edgeLedger,
@@ -1635,9 +1670,15 @@ export default function NEXOApp() {
             </a>
           </div>
 
+          {isExternalAsset && (
+            <div className="reserved-box">
+              EDG INDISPONÍVEL PARA ATIVOS NO EXTERIOR · o contrato é normalizado para “nenhum edge” e permanece sujeito ao teto D2 de Watchlist até a evolução do motor internacional.
+            </div>
+          )}
+
           <div className="field">
             <div className="flbl">Tipo de edge</div>
-            <select className="select-sm metric-input" disabled={locked} value={edgeType} onChange={(e) => handleEdgeType(e.target.value)}>
+            <select className="select-sm metric-input" disabled={edgLocked} value={edgeType} onChange={(e) => handleEdgeType(e.target.value)}>
               <option value="nenhum">Nenhum edge declarado</option>
               <option value="informacional">Informacional</option>
               <option value="analitico">Analítico</option>
@@ -1656,11 +1697,11 @@ export default function NEXOApp() {
               <div className="grid3">
                 <div className="field">
                   <div className="flbl">Insumo NEXO</div>
-                  <select className="select-sm metric-input" disabled={locked} value={edgeInsumo} onChange={(e) => setEdgeInsumo(e.target.value)}>
+                  <select className="select-sm metric-input" disabled={edgLocked} value={edgeInsumo} onChange={(e) => setEdgeInsumo(e.target.value)}>
                     <option value="">Selecione</option>
                     {EDGE_INSUMOS.map((insumo) => (
-                      <option key={insumo} value={insumo} disabled={EDGE_INSUMO_METADATA[insumo]?.available === false}>
-                        {insumo}{EDGE_INSUMO_METADATA[insumo]?.available === false ? " · em implementação" : ""}
+                      <option key={insumo} value={insumo} disabled={EDGE_INSUMO_METADATA[insumo]?.available === false || (insumo === "NFI" && !nfiEdgeReady)}>
+                        {insumo}{EDGE_INSUMO_METADATA[insumo]?.available === false ? " · em implementação" : insumo === "NFI" && !nfiEdgeReady ? " · aguardando 24 meses" : ""}
                       </option>
                     ))}
                   </select>
@@ -1669,13 +1710,13 @@ export default function NEXOApp() {
 
                 <div className="field">
                   <div className="flbl">Declarado em</div>
-                  <input className="finp-sm metric-input" type="date" disabled={locked} value={edgeDeclaredAt} onChange={(e) => setEdgeDeclaredAt(e.target.value)} />
+                  <input className="finp-sm metric-input" type="date" disabled={edgLocked} value={edgeDeclaredAt} onChange={(e) => setEdgeDeclaredAt(e.target.value)} />
                   <div className="macro-note">Data registrada no ledger</div>
                 </div>
 
                 <div className="field">
                   <div className="flbl">Status do edge</div>
-                  <select className="select-sm metric-input" disabled={locked} value={edgeStatus} onChange={(e) => setEdgeStatus(e.target.value)}>
+                  <select className="select-sm metric-input" disabled={edgLocked} value={edgeStatus} onChange={(e) => setEdgeStatus(e.target.value)}>
                     <option value="ativo">Ativo</option>
                     <option value="expirado">Expirado</option>
                   </select>
@@ -1689,7 +1730,7 @@ export default function NEXOApp() {
               <div className="grid3">
                 <div className="field">
                   <div className="flbl">Padrão da evidência</div>
-                  <select className="select-sm metric-input" disabled={locked} value={edgeEvidenceTemplate} onChange={(e) => setEdgeEvidenceTemplate(e.target.value)}>
+                  <select className="select-sm metric-input" disabled={edgLocked} value={edgeEvidenceTemplate} onChange={(e) => setEdgeEvidenceTemplate(e.target.value)}>
                     <option value="">Selecione</option>
                     {edgeEvidenceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                   </select>
@@ -1698,7 +1739,7 @@ export default function NEXOApp() {
 
                 <div className="field">
                   <div className="flbl">Base verificável</div>
-                  <select className="select-sm metric-input" disabled={locked} value={edgeEvidenceBasis} onChange={(e) => setEdgeEvidenceBasis(e.target.value)}>
+                  <select className="select-sm metric-input" disabled={edgLocked} value={edgeEvidenceBasis} onChange={(e) => setEdgeEvidenceBasis(e.target.value)}>
                     <option value="">Selecione</option>
                     {EDGE_EVIDENCE_BASES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                   </select>
@@ -1707,7 +1748,7 @@ export default function NEXOApp() {
 
                 <div className="field">
                   <div className="flbl">Janela observada</div>
-                  <select className="select-sm metric-input" disabled={locked} value={edgeEvidenceWindow} onChange={(e) => setEdgeEvidenceWindow(e.target.value)}>
+                  <select className="select-sm metric-input" disabled={edgLocked} value={edgeEvidenceWindow} onChange={(e) => setEdgeEvidenceWindow(e.target.value)}>
                     <option value="">Selecione</option>
                     {EDGE_EVIDENCE_WINDOWS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                   </select>
@@ -1724,7 +1765,7 @@ export default function NEXOApp() {
               {edgeEvidenceTemplate === "custom" && (
                 <div className="field">
                   <div className="flbl">Evidência específica · modo avançado</div>
-                  <textarea className="ftxt" disabled={locked} rows={3} maxLength={280} value={edgeEvidenceCustom} placeholder="Descreva somente o fato específico que não está no catálogo..." onChange={(e) => setEdgeEvidenceCustom(e.target.value)} />
+                  <textarea className="ftxt" disabled={edgLocked} rows={3} maxLength={280} value={edgeEvidenceCustom} placeholder="Descreva somente o fato específico que não está no catálogo..." onChange={(e) => setEdgeEvidenceCustom(e.target.value)} />
                   <div className="macro-note">Máximo 280 caracteres · o módulo, a base e a janela continuam obrigatórios</div>
                 </div>
               )}
@@ -1732,7 +1773,7 @@ export default function NEXOApp() {
               <div className="subsection-label">Condição observável de expiração · formulário guiado</div>
               <div className="field">
                 <div className="flbl">Gatilho que encerra o edge</div>
-                <select className="select-sm metric-input" disabled={locked} value={edgeExpiryTemplate} onChange={(e) => handleExpiryTemplate(e.target.value)}>
+                <select className="select-sm metric-input" disabled={edgLocked} value={edgeExpiryTemplate} onChange={(e) => handleExpiryTemplate(e.target.value)}>
                   <option value="">Selecione</option>
                   {EDGE_EXPIRY_TEMPLATES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                 </select>
@@ -1744,7 +1785,7 @@ export default function NEXOApp() {
                   <div className="grid3">
                     <div className="field">
                       <div className="flbl">Métrica observada</div>
-                      <select className="select-sm metric-input" disabled={locked} value={edgeExpiryMetric} onChange={(e) => setEdgeExpiryMetric(e.target.value)}>
+                      <select className="select-sm metric-input" disabled={edgLocked} value={edgeExpiryMetric} onChange={(e) => setEdgeExpiryMetric(e.target.value)}>
                         <option value="">Selecione</option>
                         {EDGE_EXPIRY_METRICS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                       </select>
@@ -1752,13 +1793,13 @@ export default function NEXOApp() {
 
                     <div className="field">
                       <div className="flbl">Limite</div>
-                      <input className="finp-sm metric-input" inputMode="decimal" disabled={locked} value={edgeExpiryThreshold} placeholder="Ex.: 17 ou 17,5" onChange={(e) => setEdgeExpiryThreshold(e.target.value)} />
+                      <input className="finp-sm metric-input" inputMode="decimal" disabled={edgLocked} value={edgeExpiryThreshold} placeholder="Ex.: 17 ou 17,5" onChange={(e) => setEdgeExpiryThreshold(e.target.value)} />
                       <div className="macro-note">Valor objetivo do gatilho</div>
                     </div>
 
                     <div className="field">
                       <div className="flbl">Unidade</div>
-                      <select className="select-sm metric-input" disabled={locked} value={edgeExpiryUnit} onChange={(e) => setEdgeExpiryUnit(e.target.value)}>
+                      <select className="select-sm metric-input" disabled={edgLocked} value={edgeExpiryUnit} onChange={(e) => setEdgeExpiryUnit(e.target.value)}>
                         {EDGE_EXPIRY_UNITS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                       </select>
                     </div>
@@ -1767,7 +1808,7 @@ export default function NEXOApp() {
                   <div className="grid2">
                     <div className="field">
                       <div className="flbl">Persistência</div>
-                      <select className="select-sm metric-input" disabled={locked} value={edgeExpiryPersistence} onChange={(e) => setEdgeExpiryPersistence(e.target.value)}>
+                      <select className="select-sm metric-input" disabled={edgLocked} value={edgeExpiryPersistence} onChange={(e) => setEdgeExpiryPersistence(e.target.value)}>
                         {[1, 2, 3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={String(value)}>{value}</option>)}
                       </select>
                       <div className="macro-note">Quantidade necessária para confirmar o gatilho</div>
@@ -1775,7 +1816,7 @@ export default function NEXOApp() {
 
                     <div className="field">
                       <div className="flbl">Período</div>
-                      <select className="select-sm metric-input" disabled={locked} value={edgeExpiryPeriod} onChange={(e) => setEdgeExpiryPeriod(e.target.value)}>
+                      <select className="select-sm metric-input" disabled={edgLocked} value={edgeExpiryPeriod} onChange={(e) => setEdgeExpiryPeriod(e.target.value)}>
                         {EDGE_EXPIRY_PERIODS.map((option) => <option key={option.id} value={option.id}>{option.plural}</option>)}
                       </select>
                     </div>
@@ -1786,7 +1827,7 @@ export default function NEXOApp() {
               {edgeExpiryTemplate === "objective_event" && (
                 <div className="field">
                   <div className="flbl">Evento objetivo</div>
-                  <select className="select-sm metric-input" disabled={locked} value={edgeExpiryEvent} onChange={(e) => setEdgeExpiryEvent(e.target.value)}>
+                  <select className="select-sm metric-input" disabled={edgLocked} value={edgeExpiryEvent} onChange={(e) => setEdgeExpiryEvent(e.target.value)}>
                     <option value="">Selecione</option>
                     {EDGE_EXPIRY_EVENTS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                   </select>
@@ -1801,7 +1842,7 @@ export default function NEXOApp() {
                 <div className="grid2">
                   <div className="field">
                     <div className="flbl">Objeto da confirmação</div>
-                    <select className="select-sm metric-input" disabled={locked} value={edgeDeadlineObject} onChange={(e) => setEdgeDeadlineObject(e.target.value)}>
+                    <select className="select-sm metric-input" disabled={edgLocked} value={edgeDeadlineObject} onChange={(e) => setEdgeDeadlineObject(e.target.value)}>
                       <option value="">Selecione</option>
                       {EDGE_DEADLINE_OBJECTS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                     </select>
@@ -1809,7 +1850,7 @@ export default function NEXOApp() {
 
                   <div className="field">
                     <div className="flbl">Data-limite</div>
-                    <input className="finp-sm metric-input" type="date" disabled={locked} value={edgeDeadlineDate} onChange={(e) => setEdgeDeadlineDate(e.target.value)} />
+                    <input className="finp-sm metric-input" type="date" disabled={edgLocked} value={edgeDeadlineDate} onChange={(e) => setEdgeDeadlineDate(e.target.value)} />
                     <div className="macro-note">Sem confirmação nesta data, o edge expira</div>
                   </div>
                 </div>
@@ -1818,7 +1859,7 @@ export default function NEXOApp() {
               {edgeExpiryTemplate === "custom" && (
                 <div className="field">
                   <div className="flbl">Condição específica · modo avançado</div>
-                  <textarea className="ftxt" disabled={locked} rows={3} maxLength={220} value={edgeExpiryCustom} placeholder="Use métrica + limite + janela, ou evento objetivo..." onChange={(e) => setEdgeExpiryCustom(e.target.value)} />
+                  <textarea className="ftxt" disabled={edgLocked} rows={3} maxLength={220} value={edgeExpiryCustom} placeholder="Use métrica + limite + janela, ou evento objetivo..." onChange={(e) => setEdgeExpiryCustom(e.target.value)} />
                   <div className="macro-note">Máximo 220 caracteres · formulações vagas continuam rejeitadas pelo servidor</div>
                 </div>
               )}
@@ -1927,6 +1968,21 @@ export default function NEXOApp() {
             <div className="reserved-box">
               NÃO APLICÁVEL NESTA FASE · ativos no exterior exigem uma curva soberana e premissas na mesma moeda. O módulo não fará comparação BRL × moeda estrangeira.
             </div>
+          )}
+        </Sec>
+
+        <Sec title="NFI · NEXO Flow Intelligence · F1b">
+          <div className="edg-tools">
+            <span>Consulte a defasagem, os estados da fonte e os limites da leitura causal.</span>
+            <a className="btn-manual" href="/nfi-manual" target="_blank" rel="noreferrer">Abrir mini manual NFI ↗</a>
+          </div>
+          <div className="choice-help">
+            <strong>Leitura automática</strong> · usa o fluxo estrangeiro oficial da B3 com defasagem D+2 e o posiciona no histórico. O usuário não precisa preencher campos; o módulo explica deslocamentos de preço, sem entrar no cálculo de valor intrínseco.
+          </div>
+          {isExternalAsset ? (
+            <div className="reserved-box">NFI INDISPONÍVEL PARA ATIVOS NO EXTERIOR · o fluxo B3 não será aplicado nem substituído por proxy internacional.</div>
+          ) : (
+            <div className="edg-ok-box">NFI AUTOMÁTICO · fonte oficial B3 integrada ao Context Package NMI. A publicação pendente permanece null e nunca é estimada.</div>
           )}
         </Sec>
 

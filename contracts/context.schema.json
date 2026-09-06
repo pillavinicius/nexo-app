@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nexo-app-sable.vercel.app/contracts/context.schema.json",
   "title": "NEXO Context Package",
-  "description": "Contrato oficial do estado macro do NEXO. v1.2 diferencia dado seed de fonte indisponivel, permite null explicito nos campos ainda nao coletados e adiciona proveniencia por observacao. Nenhum null pode ser substituido por valor sintetico.",
+  "description": "Contrato oficial do estado macro do NEXO. v1.3 adiciona o domínio opcional NFI para fluxo oficial B3 sem efeito sobre valuation.",
   "type": "object",
   "required": [
     "contextSchemaVersion",
@@ -158,6 +158,31 @@
             "foreign_net_status": { "type": "string",
               "enum": ["t2_official", "t2_pending", "proxy"],
               "description": "Procedencia do fluxo estrangeiro. t2_pending quando o dado oficial da B3 ainda nao saiu." }
+          }
+        },
+        "flow_intelligence": {
+          "type": "object",
+          "description": "OPCIONAL v1.3. NFI integrado ao NMI; explica deslocamento e nunca decide valuation.",
+          "required": ["version", "status", "janela_dias", "fluxo_liquido_janela_brl", "fluxo_percentil_24m", "fluxo_percentil_disponivel", "pressao", "status_fonte", "explica_deslocamento", "valuation_effect"],
+          "properties": {
+            "version": { "const": "NFI_v1.0" },
+            "status": { "enum": ["ok", "insufficient_history", "pending", "unavailable"] },
+            "janela_dias": { "type": "number", "minimum": 1 },
+            "fluxo_liquido_janela_brl": { "type": ["number", "null"] },
+            "fluxo_parcial_mes_brl": { "type": ["number", "null"] },
+            "fluxo_percentil_24m": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+            "fluxo_percentil_disponivel": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+            "pressao": { "enum": ["compradora", "vendedora", "neutra"] },
+            "status_fonte": { "enum": ["t2_official", "t2_pending", "proxy", "unavailable"] },
+            "explica_deslocamento": { "type": "boolean" },
+            "valuation_effect": { "const": "none" },
+            "history_months": { "type": "integer", "minimum": 0 },
+            "history_complete": { "type": "boolean" },
+            "source_as_of": { "type": ["string", "null"] },
+            "window_reference_date": { "type": ["string", "null"] },
+            "partial_as_of": { "type": ["string", "null"] },
+            "source": { "type": ["string", "null"] },
+            "note": { "type": ["string", "null"] }
           }
         },
         "ratings": {

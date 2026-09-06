@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadHdlCurve } from "../../../lib/nexo/hdl/hdl_repository.mjs";
+import { computeNFI } from "../../../lib/nexo/nfi/nfi_engine.mjs";
+import { loadNfiFlow } from "../../../lib/nexo/nfi/nfi_repository.mjs";
 
 function readMacroStatus() {
   try {
@@ -41,12 +43,14 @@ export async function GET() {
   const macro = readMacroStatus();
   const context = readContext();
   const hdl = loadHdlCurve();
+  const nfiRepository = loadNfiFlow();
+  const nfi = computeNFI({ fluxo: nfiRepository.rows });
 
   const contextReadable =
     typeof context?.contextSchemaVersion === "string" &&
     typeof context?.context_id === "string";
 
-  const ready = macro.available && contextReadable && hdl.ok;
+  const ready = macro.available && contextReadable && hdl.ok && nfiRepository.ok;
   const commit = process.env.VERCEL_GIT_COMMIT_SHA || "local";
 
   return Response.json(
@@ -78,6 +82,18 @@ export async function GET() {
           source: hdl.source,
           sourceStatus: hdl.status,
           error: hdl.error || null,
+        },
+        nfi: {
+          available: nfiRepository.ok,
+          version: nfi.version,
+          status: nfi.status,
+          asOf: nfi.source_as_of,
+          windowReferenceDate: nfi.window_reference_date,
+          historyMonths: nfi.history_months,
+          historyComplete: nfi.history_complete,
+          source: nfi.source,
+          sourceStatus: nfi.status_fonte,
+          error: nfiRepository.error || null,
         },
       },
     },

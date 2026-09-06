@@ -20,6 +20,10 @@ for (const expected of [
   "nexoModules?.HDL",
   "Conclusão HDL no Deep",
   "o módulo não altera score nem veredito",
+  'const isExternalAsset = currentAssetType === "stock-ext" || currentAssetType === "etf-ext"',
+  "const edgLocked = locked || isExternalAsset",
+  "EDG INDISPONÍVEL PARA ATIVOS NO EXTERIOR",
+  'edge_type: "nenhum", edge_status: "nao_declarado"',
 ]) {
   assert.ok(source.includes(expected), `contrato visual HDL ausente: ${expected}`);
 }
@@ -48,4 +52,4 @@ for (const expected of [
   assert.ok(manual.includes(expected), `manual HDL incompleto: ${expected}`);
 }
 
-console.log("HDL UI contract: 31/31 checks passed");
+console.log("HDL UI contract: 35/35 checks passed");
