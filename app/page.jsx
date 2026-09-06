@@ -405,10 +405,20 @@ function TdnAudit({ result, showUnavailable = false }) {
     return showUnavailable ? <Sec title="TDN · Teste de Defesa Nominal"><DetailBlock title="Não aplicável ao ativo" value={tdn.note} /></Sec> : null;
   }
   if (tdn.status !== "ok") {
+    const unclassified = tdn.profile_mode === "unclassified";
+    const incompleteWindows = asArray(tdn.windows).filter((window) => window?.status !== "ok").map((window) => window?.id).filter(Boolean);
+    const missingCount = asArray(tdn.missing).length;
     return showUnavailable ? (
       <Sec title="TDN · Teste de Defesa Nominal">
-        <DetailBlock title="Dados históricos insuficientes" value={tdn.note || "As duas janelas fixas ainda não possuem cobertura documental completa."} />
-        {asArray(tdn.missing).length > 0 && <Note>Lacunas técnicas: {asArray(tdn.missing).join(", ")}</Note>}
+        <DetailBlock
+          title={unclassified ? "TDN ainda não disponível para este ativo" : "Cobertura histórica incompleta"}
+          value={unclassified
+            ? "O ativo ainda não foi incluído na matriz setorial curada do TDN. O restante da análise continua normalmente, sem score artificial para este módulo."
+            : "As duas janelas históricas obrigatórias ainda não possuem cobertura suficiente para produzir um score confiável."}
+          note={!unclassified && missingCount > 0
+            ? `${missingCount} campos históricos pendentes${incompleteWindows.length ? ` · janelas ${incompleteWindows.join(" e ")}` : ""}`
+            : "Aguardando classificação e carga histórica do ativo"}
+        />
       </Sec>
     ) : null;
   }
