@@ -11,6 +11,7 @@ import {
   applyEdgGuardrails,
   buildEdgAnalysisContext,
   computeEDG,
+  EDGE_INSUMOS,
 } from "../../../lib/nexo/edg/edg_engine.mjs";
 import { reconcileFinalVerdictChange } from "../../../lib/nexo/analysis/verdict_transition.mjs";
 import {
@@ -24,6 +25,13 @@ import {
   notApplicableHDL,
 } from "../../../lib/nexo/hdl/hdl_engine.mjs";
 import { loadHdlCurve } from "../../../lib/nexo/hdl/hdl_repository.mjs";
+import {
+  applyNfiToAnalysis,
+  buildNfiPromptContext,
+  computeNFI,
+  notApplicableNFI,
+} from "../../../lib/nexo/nfi/nfi_engine.mjs";
+import { loadNfiFlow } from "../../../lib/nexo/nfi/nfi_repository.mjs";
 
 const SCAN_S =
   '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
@@ -322,13 +330,15 @@ function trimContextForFinal(extraCtx) {
   );
 }
 
-function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, edgContext, hdlContext, analysisHistory = {} }) {
+function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, edgContext, hdlContext, nfiContext, analysisHistory = {} }) {
   const validatedNmiBlock =
     "\n\n--- CONTEXTO MACRO TRANSVERSAL ---\n" + nmiContext;
   const validatedEdgBlock =
     "\n\n--- GOVERNANÇA DE EDGE ---\n" + edgContext;
   const validatedHdlBlock =
     "\n\n--- HDL · HURDLE DO LEVIATÃ ---\n" + hdlContext;
+  const validatedNfiBlock =
+    "\n\n--- NFI · NEXO FLOW INTELLIGENCE ---\n" + nfiContext;
 
   if (phase === "final") {
     return (
@@ -340,6 +350,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
       validatedNmiBlock +
       validatedEdgBlock +
       validatedHdlBlock +
+      validatedNfiBlock +
       "\n\nTarefa:\n" +
       "1. Consolide o Scan, o Deep e os aprofundamentos disponíveis.\n" +
       "2. Identifique riscos novos e agravados.\n" +
@@ -368,6 +379,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
       validatedNmiBlock +
       validatedEdgBlock +
       validatedHdlBlock +
+      validatedNfiBlock +
       "\n\nIMPORTANT: Return ONLY valid JSON. Keep the JSON concise. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
     );
   }
@@ -380,21 +392,27 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
     validatedNmiBlock +
     validatedEdgBlock +
     validatedHdlBlock +
+    validatedNfiBlock +
     "\n\nIMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
   );
 }
 
-function responseWithGovernance(phase, data, edg, hdl, analysisHistory = {}) {
+function responseWithGovernance(phase, data, edg, hdl, nfi, analysisHistory = {}) {
   const integrityChecked = phase === "deep"
     ? reconcileDeepIntegrity(data, analysisHistory)
     : data;
   const withHdl = applyHdlToAnalysis({ phase, result: integrityChecked, hdl });
-  const governed = applyEdgGuardrails({ phase, result: withHdl, edg });
+  const withNfi = applyNfiToAnalysis({ result: withHdl, nfi });
+  const governed = applyEdgGuardrails({ phase, result: withNfi, edg });
   return Response.json(reconcileFinalVerdictChange(phase, governed));
 }
 
 function isHdlApplicableAsset(assetType) {
   return assetType === "acao-br" || assetType === "fii";
+}
+
+function isExternalAsset(assetType) {
+  return assetType === "stock-ext" || assetType === "etf-ext";
 }
 
 function hdlInputError(hdl) {
@@ -512,6 +530,11 @@ export async function POST(req) {
     const systemPrompt = getSystemPrompt(phase, assetType);
     const nmiResult = getLatestContext();
     const nmiContext = buildNmiPromptContext(nmiResult);
+    const nfiRepository = loadNfiFlow();
+    const nfi = isExternalAsset(assetType)
+      ? notApplicableNFI()
+      : nmiResult?.contextPackage?.brazil?.flow_intelligence || computeNFI({ fluxo: nfiRepository.rows });
+    const nfiContext = buildNfiPromptContext(nfi);
     const hdlRepository = loadHdlCurve();
     const hdl = isHdlApplicableAsset(assetType)
       ? computeHDL({
@@ -521,12 +544,20 @@ export async function POST(req) {
         })
       : notApplicableHDL();
     const hdlContext = buildHdlPromptContext(hdl);
-    const edg = computeEDG(edgeLedger);
-    const edgContext = buildEdgAnalysisContext(edg, edgeLedger);
+    const effectiveEdgeLedger = isExternalAsset(assetType)
+      ? { edge_type: "nenhum", edge_status: "nao_declarado" }
+      : edgeLedger;
+    const availableEdgeModules = EDGE_INSUMOS.filter((insumo) => insumo !== "NFI" || nfi.explica_deslocamento === true);
+    const edg = computeEDG(effectiveEdgeLedger, { availableModules: availableEdgeModules });
+    const edgContext = buildEdgAnalysisContext(edg, effectiveEdgeLedger);
+
+    if (effectiveEdgeLedger?.edge_insumo === "NFI" && nfi.explica_deslocamento !== true) {
+      return Response.json({ error: { code: "nfi_edge_unavailable", message: "O NFI só pode lastrear um Edge após confirmar fluxo extremo em 24 meses oficiais completos.", nfi } }, { status: 422 });
+    }
 
     if (
       isHdlApplicableAsset(assetType) &&
-      (phase === "deep" || edgeLedger?.edge_insumo === "HDL") &&
+      (phase === "deep" || effectiveEdgeLedger?.edge_insumo === "HDL") &&
       hdl.status !== "ok"
     ) {
       return hdlInputError(hdl);
@@ -534,7 +565,7 @@ export async function POST(req) {
 
     if (phase === "final" && analysisHistory?.scan) {
       const deterministicFinal = buildDeterministicFinal({ ticker, history: analysisHistory });
-      return responseWithGovernance(phase, deterministicFinal, edg, hdl, analysisHistory);
+      return responseWithGovernance(phase, deterministicFinal, edg, hdl, nfi, analysisHistory);
     }
 
     const userMsg = buildUserMessage({
@@ -545,6 +576,7 @@ export async function POST(req) {
       nmiContext,
       edgContext,
       hdlContext,
+      nfiContext,
       analysisHistory,
     });
 
@@ -562,6 +594,7 @@ export async function POST(req) {
           }),
           edg,
           hdl,
+          nfi,
           analysisHistory
         );
       }
@@ -576,6 +609,7 @@ export async function POST(req) {
           }),
           edg,
           hdl,
+          nfi,
           analysisHistory
         );
       }
@@ -612,6 +646,7 @@ export async function POST(req) {
           }),
           edg,
           hdl,
+          nfi,
           analysisHistory
         );
       }
@@ -626,6 +661,7 @@ export async function POST(req) {
           }),
           edg,
           hdl,
+          nfi,
           analysisHistory
         );
       }
@@ -652,7 +688,7 @@ export async function POST(req) {
       }
     }
 
-    return responseWithGovernance(phase, result.data, edg, hdl, analysisHistory);
+    return responseWithGovernance(phase, result.data, edg, hdl, nfi, analysisHistory);
   } catch (err) {
     return safeError("Erro servidor: " + err.message);
   }

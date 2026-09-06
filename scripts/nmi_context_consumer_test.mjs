@@ -25,7 +25,7 @@ const loadFrom = (filePath) =>
 
 check(result.ok, "carrega pacote canônico válido");
 check(result.status === "available", "pacote real não é seed");
-check(result.meta.compatibility === "exact", "contrato 1.2 é compatível");
+check(result.meta.compatibility === "exact", "contrato 1.3 é compatível");
 check(result.meta.contextId === canonical.context_id, "preserva context_id");
 
 const prompt = buildNmiPromptContext(result);
@@ -123,6 +123,7 @@ try {
     const userMessage = capturedRequests[index].messages[0].content;
     check(userMessage.includes("CONTEXTO NMI VALIDADO"), `${phase} recebe bloco NMI validado`);
     check(userMessage.includes(canonical.context_id), `${phase} recebe o Context ID canônico`);
+    check(userMessage.includes("NFI · NEXO FLOW INTELLIGENCE"), `${phase} recebe o domínio NFI`);
   }
 } finally {
   globalThis.fetch = originalFetch;

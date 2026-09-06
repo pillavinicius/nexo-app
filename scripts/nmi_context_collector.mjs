@@ -202,6 +202,8 @@ export function buildContextPackage({ rawObservations, previous, marketDate, gen
     2
   );
 
+  const preservedNfi = previous?.brazil?.flow_intelligence;
+  const preservedEquity = previous?.brazil?.equity;
   const packageData = {
     contextSchemaVersion: CONTRACT_VERSION,
     context_id: `ctx_${marketDate}_br_close_v${lineage.version}_t0`,
@@ -216,7 +218,9 @@ export function buildContextPackage({ rawObservations, previous, marketDate, gen
       ibge: unavailableWatermark(generatedAt),
       tesouro: unavailableWatermark(generatedAt),
       b3_trades: unavailableWatermark(generatedAt),
-      b3_investor_flow: unavailableWatermark(generatedAt),
+      b3_investor_flow: preservedNfi
+        ? { as_of: preservedNfi.source_as_of || generatedAt, status: "official" }
+        : unavailableWatermark(generatedAt),
       ratings: unavailableWatermark(generatedAt),
     },
     source_observations: observations,
@@ -232,6 +236,8 @@ export function buildContextPackage({ rawObservations, previous, marketDate, gen
       credit_system: {
         credit_gdp: observations.credit_gdp.value,
       },
+      ...(preservedEquity ? { equity: preservedEquity } : {}),
+      ...(preservedNfi ? { flow_intelligence: preservedNfi } : {}),
     },
     regime: classifyRegime(observations),
     quality: {
@@ -317,7 +323,7 @@ function selfTest() {
     marketDate,
     generatedAt: "2026-09-04T15:00:00.000Z",
   });
-  check(packageData.contextSchemaVersion === "1.2", "produtor usa contrato 1.2");
+  check(packageData.contextSchemaVersion === "1.3", "produtor usa contrato 1.3");
   check(packageData.is_seed_mode === false, "pacote real sai do seed mode");
   check(packageData.brazil.macro.selic_target === 14, "Selic preserva percentual");
   check(packageData.brazil.macro.ipca_12m === 4.44, "IPCA preserva percentual");
