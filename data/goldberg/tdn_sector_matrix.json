@@ -1,0 +1,52 @@
+{
+  "version": "TDN_SECTOR_MATRIX_v1.0",
+  "as_of": "2026-09-06",
+  "default_policy": "dados_insuficientes",
+  "asset_classes": {
+    "acao-br": { "eligible": true },
+    "fii": { "eligible": false, "reason": "FIIs permanecem fora do TDN v1.0." },
+    "stock-ext": { "eligible": false, "reason": "Ativos exteriores permanecem fora do TDN v1.0." },
+    "etf-ext": { "eligible": false, "reason": "Ativos exteriores permanecem fora do TDN v1.0." }
+  },
+  "profiles": {
+    "operacional": {
+      "mode": "standard",
+      "label": "Empresa operacional",
+      "observation_lag_years": 0,
+      "required_metrics": ["revenue", "gross_profit", "operating_income", "current_assets", "current_liabilities"]
+    },
+    "utility_regulada": {
+      "mode": "regulated_lag",
+      "label": "Utility regulada",
+      "observation_lag_years": 1,
+      "required_metrics": ["revenue", "gross_profit", "operating_income", "current_assets", "current_liabilities"]
+    },
+    "commodity_exportadora": {
+      "mode": "commodity_fx",
+      "label": "Commodity exportadora",
+      "observation_lag_years": 0,
+      "required_metrics": ["revenue", "gross_profit", "operating_income", "current_assets", "current_liabilities"],
+      "requires_driver_attribution": true
+    },
+    "financeiro": {
+      "mode": "not_applicable",
+      "label": "Banco ou seguradora",
+      "reason": "Margem bruta e capital de giro industriais não são métricas compatíveis com instituições financeiras no TDN v1.0."
+    }
+  },
+  "assets": {
+    "BBAS3": { "profile": "financeiro", "codigo_cvm": "001023" },
+    "BBSE3": { "profile": "financeiro", "codigo_cvm": "023159" },
+    "ITUB4": { "profile": "financeiro", "codigo_cvm": "019348" },
+    "VALE3": { "profile": "commodity_exportadora", "codigo_cvm": "004170" },
+    "PETR4": { "profile": "commodity_exportadora", "codigo_cvm": "009512" },
+    "KLBN4": { "profile": "commodity_exportadora", "codigo_cvm": "012653" },
+    "SUZB3": { "profile": "commodity_exportadora", "codigo_cvm": "013986" },
+    "SBSP3": { "profile": "utility_regulada", "codigo_cvm": "014443" },
+    "SAPR11": { "profile": "utility_regulada", "codigo_cvm": "018627" },
+    "CPLE6": { "profile": "utility_regulada", "codigo_cvm": "014311" },
+    "EQTL3": { "profile": "utility_regulada", "codigo_cvm": "020010" },
+    "WEGE3": { "profile": "operacional", "codigo_cvm": "005410" },
+    "MGLU3": { "profile": "operacional", "codigo_cvm": "022470" }
+  }
+}

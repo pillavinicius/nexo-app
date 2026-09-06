@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexo.app/contracts/tdn-result.schema.json",
+  "title": "NEXO TDN Result v1.0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "status", "ticker", "veredito", "score_nominalidade", "janelas_cobertas", "windows"],
+  "properties": {
+    "version": { "const": "TDN_v1.0" },
+    "status": { "enum": ["ok", "dados_insuficientes", "not_applicable", "unavailable"] },
+    "ticker": { "type": ["string", "null"] },
+    "veredito": { "enum": ["real", "nominal", "misto", "dados_insuficientes", "nao_aplicavel"] },
+    "score_nominalidade": { "type": ["number", "null"], "minimum": 0, "maximum": 5 },
+    "janelas_cobertas": { "type": "integer", "minimum": 0, "maximum": 2 },
+    "profile": { "type": ["string", "null"] },
+    "profile_mode": { "type": ["string", "null"] },
+    "facts_as_of": { "type": ["string", "null"], "format": "date" },
+    "facts_scope": { "enum": ["consolidado", "individual", null] },
+    "windows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status", "baseline_year", "end_year", "ipca_acumulado_pct"],
+        "properties": {
+          "id": { "enum": ["J1", "J2"] },
+          "status": { "enum": ["ok", "incomplete"] },
+          "baseline_year": { "type": "integer" },
+          "end_year": { "type": "integer" },
+          "ipca_acumulado_pct": { "type": ["number", "null"] },
+          "revenue_real_growth_pct": { "type": ["number", "null"] },
+          "gross_margin_change_pp": { "type": ["number", "null"] },
+          "operating_margin_change_pp": { "type": ["number", "null"] },
+          "working_capital_ratio_change_pp": { "type": ["number", "null"] },
+          "score": { "type": ["number", "null"], "minimum": 0, "maximum": 5 }
+        }
+      }
+    }
+  }
+}

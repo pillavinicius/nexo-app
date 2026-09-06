@@ -7,7 +7,7 @@ import { join } from "node:path";
 import PDFDocument from "pdfkit";
 
 import { reconcileDeepIntegrity } from "../../lib/nexo/analysis/reclassification_integrity.mjs";
-import { applyBibliotecaAudit, buildBibliotecaPromptContext, deriveExpectedDeepGaps } from "../../lib/nexo/biblioteca/context.mjs";
+import { applyBibliotecaAudit, buildBibliotecaPromptContext, deriveExpectedDeepGaps, selectBibliotecaDocuments } from "../../lib/nexo/biblioteca/context.mjs";
 import { extractHtmlText, parseDocument, parsePendingDocuments, selectRelevantPdfContent } from "../../lib/nexo/biblioteca/document_parser.mjs";
 import { ingestUserSource, isPrivateAddress, validatePublicHttpsUrl } from "../../lib/nexo/biblioteca/url_ingestion.mjs";
 
@@ -37,6 +37,13 @@ const relevantLongPdf = selectRelevantPdfContent(longPages, [{ page: 66, rows: [
 assert.match(relevantLongPdf.texto, /New NPL pessoa física 5,2%/);
 assert.deepEqual(relevantLongPdf.relevantPageNumbers, [66]);
 assert.equal(relevantLongPdf.tabelas[0].page, 66);
+
+const rankedDocuments = selectBibliotecaDocuments([
+  ...Array.from({ length: 7 }, (_, index) => ({ dedup_key: `cvm_ipe:${index}`, fonte: "cvm_ipe", titulo: `Documento ${index}`, texto_corrido: "Conteúdo societário genérico." })),
+  { dedup_key: "ri:npl", fonte: "ri", titulo: "Análise do Desempenho 2T26", texto_corrido: "New NPL por carteira: PF, PJ e Agro; inadimplência detalhada." },
+], ["inadimplência por carteira NPL"]);
+assert.equal(rankedDocuments[0].document.dedup_key, "ri:npl", "fonte RI pertinente deve superar o corte dos seis documentos");
+assert.deepEqual(rankedDocuments[0].matches.map((match) => match.gap), ["inadimplência por carteira NPL"]);
 
 const updates = [];
 const pendingResult = await parsePendingDocuments({ repository: {
@@ -69,6 +76,7 @@ assert.equal(withoutLibrary.nexoModules.BIBLIOTECA.requires_user_source, true);
 assert.equal(withLibrary.score_revisado, 22, "documento válido pode lastrear ajuste explícito");
 assert.equal(withLibrary.veredito_final, "COMPRAR");
 assert.equal(withLibrary.nexoModules.BIBLIOTECA.requires_user_source, false);
+assert.deepEqual(withLibrary.nexoModules.BIBLIOTECA.documents_consulted, ["cvm_ipe:doc-1"]);
 
 const governedScanGaps = [
   "Inadimplência por segmento (rural vs. varejo vs. grandes empresas)",
@@ -116,6 +124,10 @@ assert.equal(ingested.inserted, true);
 assert.equal(stored[0].fonte, "ri");
 assert.match(stored[0].texto, /Guidance confirmado/);
 assert.equal(stored[0].metadata.raw_binary_persisted, false);
+
+const repositorySource = await readFile(join(process.cwd(), "lib", "nexo", "biblioteca", "repository.mjs"), "utf8");
+assert.ok(repositorySource.includes("metadata_json->>'requested_ticker'"), "fonte RI deve sobreviver a migração de emissor provisório");
+assert.ok(repositorySource.includes("ORDER BY (d.fonte = 'ri') DESC"), "fonte RI deve ser priorizada entre candidatos");
 
 const page = await readFile(join(process.cwd(), "app", "page.jsx"), "utf8");
 assert.ok(!page.includes("Link RI / Dados Oficiais"), "campo RI inicial precisa ser removido");

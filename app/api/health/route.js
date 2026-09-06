@@ -10,6 +10,7 @@ import { bibliotecaDatabaseHealth } from "../../../lib/nexo/biblioteca/database.
 import { createDatabaseClient } from "../../../lib/nexo/biblioteca/database.mjs";
 import { createBibliotecaRepository } from "../../../lib/nexo/biblioteca/repository.mjs";
 import { B3_PARSER_VERSION } from "../../../lib/nexo/biblioteca/document_parser.mjs";
+import { loadTdnSectorMatrix, loadVersionedTdnFacts } from "../../../lib/nexo/tdn/tdn_repository.mjs";
 
 function readMacroStatus() {
   try {
@@ -134,6 +135,8 @@ export async function GET() {
   const hdl = loadHdlCurve();
   const nfiRepository = loadNfiFlow();
   const nfi = computeNFI({ fluxo: nfiRepository.rows });
+  const tdnMatrix = loadTdnSectorMatrix();
+  const tdnFacts = loadVersionedTdnFacts();
   const bibliotecaB0 = readBibliotecaB0();
   const bibliotecaB1 = await bibliotecaDatabaseHealth();
   const bibliotecaB2 = await readBibliotecaB2(bibliotecaB1);
@@ -143,7 +146,8 @@ export async function GET() {
     typeof context?.contextSchemaVersion === "string" &&
     typeof context?.context_id === "string";
 
-  const ready = macro.available && contextReadable && hdl.ok && nfiRepository.ok;
+  const tdnReady = Object.keys(tdnMatrix?.assets || {}).length > 0 && (tdnFacts?.facts || []).length > 0;
+  const ready = macro.available && contextReadable && hdl.ok && nfiRepository.ok && tdnReady;
   const commit = process.env.VERCEL_GIT_COMMIT_SHA || "local";
 
   return Response.json(
@@ -187,6 +191,14 @@ export async function GET() {
           source: nfi.source,
           sourceStatus: nfi.status_fonte,
           error: nfiRepository.error || null,
+        },
+        tdn: {
+          available: tdnReady,
+          version: tdnFacts?.version || null,
+          matrixVersion: tdnMatrix?.version || null,
+          assets: Object.keys(tdnMatrix?.assets || {}).length,
+          facts: (tdnFacts?.facts || []).length,
+          asOf: tdnFacts?.as_of || null,
         },
         bibliotecaB0,
         bibliotecaB1,

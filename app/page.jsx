@@ -398,6 +398,60 @@ function NfiAudit({ result, showUnavailable = false }) {
   );
 }
 
+function TdnAudit({ result, showUnavailable = false }) {
+  const tdn = result?.nexoModules?.TDN;
+  if (!tdn) return null;
+  if (tdn.status === "not_applicable") {
+    return showUnavailable ? <Sec title="TDN · Teste de Defesa Nominal"><DetailBlock title="Não aplicável ao ativo" value={tdn.note} /></Sec> : null;
+  }
+  if (tdn.status !== "ok") {
+    const unclassified = tdn.profile_mode === "unclassified";
+    const incompleteWindows = asArray(tdn.windows).filter((window) => window?.status !== "ok").map((window) => window?.id).filter(Boolean);
+    const missingCount = asArray(tdn.missing).length;
+    return showUnavailable ? (
+      <Sec title="TDN · Teste de Defesa Nominal">
+        <DetailBlock
+          title={unclassified ? "TDN ainda não disponível para este ativo" : "Cobertura histórica incompleta"}
+          value={unclassified
+            ? "O ativo ainda não foi incluído na matriz setorial curada do TDN. O restante da análise continua normalmente, sem score artificial para este módulo."
+            : "As duas janelas históricas obrigatórias ainda não possuem cobertura suficiente para produzir um score confiável."}
+          note={!unclassified && missingCount > 0
+            ? `${missingCount} campos históricos pendentes${incompleteWindows.length ? ` · janelas ${incompleteWindows.join(" e ")}` : ""}`
+            : "Aguardando classificação e carga histórica do ativo"}
+        />
+      </Sec>
+    ) : null;
+  }
+  const verdictLabels = { real: "DEFESA REAL", nominal: "DEFESA NOMINAL", misto: "MISTO" };
+  return (
+    <Sec title="TDN · Teste de Defesa Nominal">
+      <div className="edg-tools">
+        <span>Entenda janelas, perfis setoriais e limites de interpretação.</span>
+        <a className="btn-manual" href="/tdn-manual" target="_blank" rel="noreferrer">
+          Abrir mini manual TDN ↗
+        </a>
+      </div>
+      <div className="grid3">
+        <MetricCard title="Classificação" value={verdictLabels[tdn.veredito] || asText(tdn.veredito).toUpperCase()} note={asText(tdn.profile_label)} />
+        <MetricCard title="Score de defesa" value={`${displayNumber(tdn.score_nominalidade)} / 5`} note={`${asText(tdn.janelas_cobertas)} de 2 janelas completas`} />
+        <MetricCard title="Mecanismo observado" value={asText(tdn.protection_mechanism).replaceAll("_", " ")} note={`Fatos até ${asText(tdn.facts_as_of)}`} />
+      </div>
+      {asArray(tdn.windows).map((window) => (
+        <DetailBlock
+          key={window.id}
+          title={`${asText(window.id)} · ${asText(window.label)}`}
+          value={`Receita real ${displayNumber(window.revenue_real_growth_pct)}% · margem bruta ${displayNumber(window.gross_margin_change_pp)} p.p. · margem operacional ${displayNumber(window.operating_margin_change_pp)} p.p.`}
+          note={`IPCA acumulado ${displayNumber(window.ipca_acumulado_pct)}% · capital de giro/receita ${displayNumber(window.working_capital_ratio_change_pp)} p.p. · score ${displayNumber(window.score)}/5`}
+        />
+      ))}
+      {result?.tdn_conclusao && <DetailBlock title="Conclusão TDN no Deep" value={result.tdn_conclusao} />}
+      {tdn.note && <div className="warn-box">{tdn.note}</div>}
+      {result?.tdn_integrity?.complete === false && <div className="warn-box">TDN INCOMPLETO · a interpretação obrigatória não foi retornada, mas os números permaneceram preservados.</div>}
+      <div className="edg-audit-note">{asText(tdn.version)} · DFP/CVM {asText(tdn.facts_scope)} com fatos point-in-time · não altera score nem veredito global automaticamente.</div>
+    </Sec>
+  );
+}
+
 function BibliotecaAudit({ result }) {
   const library = result?.nexoModules?.BIBLIOTECA;
   if (!library || library.status === "not_applicable") return null;
@@ -411,6 +465,7 @@ function BibliotecaAudit({ result }) {
         <MetricCard title="Lacunas abertas" value={asText(open.length)} note={open.length ? "Exigem fonte complementar" : "Nenhuma fonte adicional exigida"} />
       </div>
       {asArray(library.documents_used).map((id, index) => <DetailBlock key={`bib-doc-${index}`} title={`Evidência ${index + 1}`} value={id} />)}
+      {asArray(library.documents_consulted).filter((id) => !asArray(library.documents_used).includes(id)).map((id, index) => <DetailBlock key={`bib-consulted-${index}`} title={`Fonte consultada ${index + 1}`} value={id} note="Disponível ao Deep; não citada como evidência conclusiva" />)}
       {open.map((gap, index) => <DetailBlock key={`bib-gap-${index}`} title={`Lacuna aberta ${index + 1}`} value={gap} />)}
       <div className="edg-audit-note">A Biblioteca fornece evidências; score e veredito só mudam por ajuste novo, explícito e reconciliado pelo servidor.</div>
     </Sec>
@@ -453,6 +508,7 @@ function ScanReport({ r }) {
       {lacunas.length > 0 && <Sec title="Lacunas para o Deep">{lacunas.map((l, i) => <DetailBlock key={i} title={"Lacuna " + (i + 1)} value={l} />)}</Sec>}
       <HdlAudit result={r} />
       <NfiAudit result={r} />
+      <TdnAudit result={r} showUnavailable />
       <EdgAudit result={r} />
     </div>
   );
@@ -548,6 +604,7 @@ function DeepReport({ r, showClassicValuations = false }) {
       {steps.length > 0 && <Sec title="Próximos Passos">{steps.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
       <HdlAudit result={r} showUnavailable />
       <NfiAudit result={r} showUnavailable />
+      <TdnAudit result={r} showUnavailable />
       <BibliotecaAudit result={r} />
       <EdgAudit result={r} />
     </div>
@@ -605,6 +662,7 @@ function FinalReport({ r }) {
       {passos.length > 0 && <Sec title="Próximos Passos">{passos.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
       <HdlAudit result={r} showUnavailable />
       <NfiAudit result={r} showUnavailable />
+      <TdnAudit result={r} showUnavailable />
       <EdgAudit result={r} />
     </div>
   );
