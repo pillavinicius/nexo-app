@@ -7,6 +7,8 @@ import { loadHdlCurve } from "../../../lib/nexo/hdl/hdl_repository.mjs";
 import { computeNFI } from "../../../lib/nexo/nfi/nfi_engine.mjs";
 import { loadNfiFlow } from "../../../lib/nexo/nfi/nfi_repository.mjs";
 import { bibliotecaDatabaseHealth } from "../../../lib/nexo/biblioteca/database.mjs";
+import { createDatabaseClient } from "../../../lib/nexo/biblioteca/database.mjs";
+import { createBibliotecaRepository } from "../../../lib/nexo/biblioteca/repository.mjs";
 
 function readMacroStatus() {
   try {
@@ -78,6 +80,37 @@ function readBibliotecaB0() {
   }
 }
 
+async function readBibliotecaB2(b1) {
+  if (!b1.available) return { available: false, version: "BIB_B2_v1.0", status: "database_unavailable" };
+  try {
+    const repository = createBibliotecaRepository(createDatabaseClient());
+    const [latestRun, documents] = await Promise.all([
+      repository.latestIngestionRun(),
+      repository.countDocuments({ fonte: "cvm_ipe" }),
+    ]);
+    return {
+      available: latestRun?.status === "ok" && latestRun?.dedup_provada === true,
+      version: "BIB_B2_v1.0",
+      status: latestRun?.status || "not_run",
+      source: "cvm_ipe",
+      documents,
+      latestRun: latestRun ? {
+        runId: latestRun.run_id,
+        completedAt: latestRun.concluido_em,
+        discovered: latestRun.descobertos,
+        alreadyExisting: latestRun.ja_existentes,
+        downloaded: latestRun.baixados,
+        inserted: latestRun.inseridos,
+        failures: latestRun.falhas,
+        bytesDownloaded: Number(latestRun.bytes_baixados || 0),
+        dedupProven: latestRun.dedup_provada,
+      } : null,
+    };
+  } catch {
+    return { available: false, version: "BIB_B2_v1.0", status: "unavailable" };
+  }
+}
+
 export async function GET() {
   const macro = readMacroStatus();
   const context = readContext();
@@ -86,6 +119,7 @@ export async function GET() {
   const nfi = computeNFI({ fluxo: nfiRepository.rows });
   const bibliotecaB0 = readBibliotecaB0();
   const bibliotecaB1 = await bibliotecaDatabaseHealth();
+  const bibliotecaB2 = await readBibliotecaB2(bibliotecaB1);
 
   const contextReadable =
     typeof context?.contextSchemaVersion === "string" &&
@@ -138,6 +172,7 @@ export async function GET() {
         },
         bibliotecaB0,
         bibliotecaB1,
+        bibliotecaB2,
       },
     },
     {
