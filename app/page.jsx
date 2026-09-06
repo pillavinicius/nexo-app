@@ -402,7 +402,7 @@ function TdnAudit({ result, showUnavailable = false }) {
   const tdn = result?.nexoModules?.TDN;
   if (!tdn) return null;
   if (tdn.status === "not_applicable") {
-    return showUnavailable ? <Sec title="TDN · Teste de Defesa Nominal"><DetailBlock title="Não aplicável nesta fase" value={tdn.note} /></Sec> : null;
+    return showUnavailable ? <Sec title="TDN · Teste de Defesa Nominal"><DetailBlock title="Não aplicável ao ativo" value={tdn.note} /></Sec> : null;
   }
   if (tdn.status !== "ok") {
     return showUnavailable ? (
@@ -492,7 +492,7 @@ function ScanReport({ r }) {
       {lacunas.length > 0 && <Sec title="Lacunas para o Deep">{lacunas.map((l, i) => <DetailBlock key={i} title={"Lacuna " + (i + 1)} value={l} />)}</Sec>}
       <HdlAudit result={r} />
       <NfiAudit result={r} />
-      {r?.nexoModules?.EDG?.edge_insumo === "TDN" && <TdnAudit result={r} />}
+      <TdnAudit result={r} showUnavailable />
       <EdgAudit result={r} />
     </div>
   );

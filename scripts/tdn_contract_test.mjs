@@ -41,6 +41,18 @@ check(utility.veredito !== commodity.veredito, "calibração setorial discrimina
 
 const bank = await calculate("BBAS3");
 check(bank.status === "not_applicable", "banco não recebe métrica industrial artificial");
+const bankScan = applyTdnToAnalysis({
+  phase: "scan",
+  result: {
+    lacunas_deep: [
+      "TDN inconclusivo por ausência de receita e ativos circulantes.",
+      "Como evoluíram NIM, inadimplência e provisões?",
+    ],
+  },
+  tdn: bank,
+});
+check(bankScan.lacunas_deep.length === 1, "lacuna TDN indevida é removida para banco");
+check(bankScan.lacunas_deep[0].includes("inadimplência"), "lacuna bancária legítima é preservada");
 const external = await calculate("MSFT", "stock-ext");
 check(external.status === "not_applicable", "ativo exterior permanece fora do TDN v1");
 const unknown = await calculate("XXXX3");

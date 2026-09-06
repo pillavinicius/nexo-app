@@ -8,6 +8,7 @@ const route = readFileSync(new URL("../app/api/analyze/route.js", import.meta.ur
 for (const token of ["function TdnAudit", "TDN · Teste de Defesa Nominal", "tdn_conclusao", "point-in-time"]) {
   assert.ok(page.includes(token), `Tela deve conter ${token}`);
 }
+assert.ok(page.includes("<TdnAudit result={r} showUnavailable />"), "Scan deve exibir inclusive TDN não aplicável");
 for (const token of ["function writeTdn", "writeTdn(writer, deep", "writeTdn(writer, final"]) {
   assert.ok(pdf.includes(token), `PDF deve conter ${token}`);
 }
