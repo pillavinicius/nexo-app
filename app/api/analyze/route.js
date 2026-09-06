@@ -17,15 +17,22 @@ import {
   buildDeterministicFinal,
   reconcileDeepIntegrity,
 } from "../../../lib/nexo/analysis/reclassification_integrity.mjs";
+import {
+  applyHdlToAnalysis,
+  buildHdlPromptContext,
+  computeHDL,
+  notApplicableHDL,
+} from "../../../lib/nexo/hdl/hdl_engine.mjs";
+import { loadHdlCurve } from "../../../lib/nexo/hdl/hdl_repository.mjs";
 
 const SCAN_S =
   '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
 
 const DEEP_S =
-  '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":""}],"lacunas":[{"q":"","r":""}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"valuations_classicos":[{"modelo":"Graham|Peter Lynch|Buffett moderno|Bazin","valor_justo":"","metodologia":"","premissas":""}],"zona":"","besst":"","desconto":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
+  '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":""}],"lacunas":[{"q":"","r":""}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"valuations_classicos":[{"modelo":"Graham|Peter Lynch|Buffett moderno|Bazin","valor_justo":"","metodologia":"","premissas":""}],"zona":"","besst":"","desconto":"","hdl_conclusao":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
 
 const DEEP_INTEGRITY_RULES =
-  " Score original must reproduce the previous stage score. Only include ajustes_score for NEW evidence found in this Deep; never penalize a risk already counted in the previous stage. Each adjustment must use a 0-5 dimension score and explain the new evidence. The server will ignore your arithmetic and calculate the total from the adjustments. BESST must be 15-25% below the convergence zone.";
+  " Score original must reproduce the previous stage score. Only include ajustes_score for NEW evidence found in this Deep; never penalize a risk already counted in the previous stage. Each adjustment must use a 0-5 dimension score and explain the new evidence. The server will ignore your arithmetic and calculate the total from the adjustments. BESST must be 15-25% below the convergence zone. hdl_conclusao is mandatory for Brazilian assets and must interpret the immutable server-calculated HDL values; never recalculate them.";
 
 const FINAL_S =
   '{"ticker":"","classificacao_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR|VETADO","veredito_anterior":"","veredito_reclassificado":"","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","mudanca_veredito":"MANTEVE|MELHOROU|PIOROU","riscos_incorporados":[{"descricao":"","impacto_score":"","severidade":"ALTO|MEDIO|BAIXO"}],"ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":""}],"tese_final":"","preco_final":{"zona_convergencia":"","besst":"","margem_seguranca":"","observacao":""},"conclusao":"","proximos_passos":[""]}';
@@ -209,6 +216,8 @@ function fallbackDeepJSON({ ticker, rawText, parseError }) {
     zona: "N/D",
     besst: "N/D",
     desconto: "N/D",
+    hdl_conclusao:
+      "O HDL foi calculado pelo servidor, mas a interpretação específica não pôde ser concluída porque a resposta analítica veio inválida.",
     macro: [
       {
         s: "Erro técnico de estrutura",
@@ -313,11 +322,13 @@ function trimContextForFinal(extraCtx) {
   );
 }
 
-function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, edgContext, analysisHistory = {} }) {
+function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, edgContext, hdlContext, analysisHistory = {} }) {
   const validatedNmiBlock =
     "\n\n--- CONTEXTO MACRO TRANSVERSAL ---\n" + nmiContext;
   const validatedEdgBlock =
     "\n\n--- GOVERNANÇA DE EDGE ---\n" + edgContext;
+  const validatedHdlBlock =
+    "\n\n--- HDL · HURDLE DO LEVIATÃ ---\n" + hdlContext;
 
   if (phase === "final") {
     return (
@@ -328,6 +339,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
       trimContextForFinal(extraCtx || "") +
       validatedNmiBlock +
       validatedEdgBlock +
+      validatedHdlBlock +
       "\n\nTarefa:\n" +
       "1. Consolide o Scan, o Deep e os aprofundamentos disponíveis.\n" +
       "2. Identifique riscos novos e agravados.\n" +
@@ -355,6 +367,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
       JSON.stringify(analyticalBaseline || {}, null, 2) +
       validatedNmiBlock +
       validatedEdgBlock +
+      validatedHdlBlock +
       "\n\nIMPORTANT: Return ONLY valid JSON. Keep the JSON concise. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
     );
   }
@@ -366,16 +379,41 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
     (extraCtx ? "\nFocus: " + extraCtx : "") +
     validatedNmiBlock +
     validatedEdgBlock +
+    validatedHdlBlock +
     "\n\nIMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
   );
 }
 
-function responseWithEdg(phase, data, edg, analysisHistory = {}) {
+function responseWithGovernance(phase, data, edg, hdl, analysisHistory = {}) {
   const integrityChecked = phase === "deep"
     ? reconcileDeepIntegrity(data, analysisHistory)
     : data;
-  const governed = applyEdgGuardrails({ phase, result: integrityChecked, edg });
+  const withHdl = applyHdlToAnalysis({ phase, result: integrityChecked, hdl });
+  const governed = applyEdgGuardrails({ phase, result: withHdl, edg });
   return Response.json(reconcileFinalVerdictChange(phase, governed));
+}
+
+function isHdlApplicableAsset(assetType) {
+  return assetType === "acao-br" || assetType === "fii";
+}
+
+function hdlInputError(hdl) {
+  const messages = {
+    hdl_input_required: "Informe a TIR real esperada e o horizonte para executar o Deep.",
+    hdl_input_invalid: "Os valores do HDL são inválidos. Use TIR real maior que -100% e horizonte positivo.",
+    hdl_curve_unavailable: "A curva soberana HDL está indisponível. O Deep foi bloqueado para não estimar dados ausentes.",
+    hdl_extrapolation_forbidden: `O horizonte excede o maior vértice oficial disponível (${hdl?.curve_max_vertex_years || "—"} anos). Extrapolação não é permitida.`,
+  };
+  return Response.json(
+    {
+      error: {
+        code: hdl?.error_code || "hdl_incomplete",
+        message: messages[hdl?.error_code] || "HDL incompleto.",
+        hdl,
+      },
+    },
+    { status: 422 }
+  );
 }
 
 async function requestStructuredAnalysis({ phase, systemPrompt, userMsg }) {
@@ -437,7 +475,16 @@ async function requestStructuredAnalysis({ phase, systemPrompt, userMsg }) {
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { phase, assetType, ticker, scanSummary, extraCtx, edgeLedger, analysisHistory = {} } = body;
+    const {
+      phase,
+      assetType,
+      ticker,
+      scanSummary,
+      extraCtx,
+      edgeLedger,
+      hdlInput = {},
+      analysisHistory = {},
+    } = body;
 
     if (!phase || !assetType) {
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -465,12 +512,29 @@ export async function POST(req) {
     const systemPrompt = getSystemPrompt(phase, assetType);
     const nmiResult = getLatestContext();
     const nmiContext = buildNmiPromptContext(nmiResult);
+    const hdlRepository = loadHdlCurve();
+    const hdl = isHdlApplicableAsset(assetType)
+      ? computeHDL({
+          tir_esperada_pct: hdlInput?.tir_esperada_pct,
+          horizonte_anos: hdlInput?.horizonte_anos,
+          curva: hdlRepository.curve,
+        })
+      : notApplicableHDL();
+    const hdlContext = buildHdlPromptContext(hdl);
     const edg = computeEDG(edgeLedger);
     const edgContext = buildEdgAnalysisContext(edg, edgeLedger);
 
+    if (
+      isHdlApplicableAsset(assetType) &&
+      (phase === "deep" || edgeLedger?.edge_insumo === "HDL") &&
+      hdl.status !== "ok"
+    ) {
+      return hdlInputError(hdl);
+    }
+
     if (phase === "final" && analysisHistory?.scan) {
       const deterministicFinal = buildDeterministicFinal({ ticker, history: analysisHistory });
-      return responseWithEdg(phase, deterministicFinal, edg, analysisHistory);
+      return responseWithGovernance(phase, deterministicFinal, edg, hdl, analysisHistory);
     }
 
     const userMsg = buildUserMessage({
@@ -480,6 +544,7 @@ export async function POST(req) {
       extraCtx,
       nmiContext,
       edgContext,
+      hdlContext,
       analysisHistory,
     });
 
@@ -488,7 +553,7 @@ export async function POST(req) {
     if (!modelResult.ok) {
       if (modelResult.kind === "api") return safeError(modelResult.error);
       if (phase === "deep") {
-        return responseWithEdg(
+        return responseWithGovernance(
           phase,
           fallbackDeepJSON({
             ticker,
@@ -496,12 +561,13 @@ export async function POST(req) {
             parseError: modelResult.error,
           }),
           edg,
+          hdl,
           analysisHistory
         );
       }
 
       if (phase === "final") {
-        return responseWithEdg(
+        return responseWithGovernance(
           phase,
           fallbackFinalJSON({
             ticker,
@@ -509,6 +575,7 @@ export async function POST(req) {
             parseError: modelResult.error,
           }),
           edg,
+          hdl,
           analysisHistory
         );
       }
@@ -536,7 +603,7 @@ export async function POST(req) {
 
     if (!result.ok) {
       if (phase === "deep") {
-        return responseWithEdg(
+        return responseWithGovernance(
           phase,
           fallbackDeepJSON({
             ticker,
@@ -544,12 +611,13 @@ export async function POST(req) {
             parseError: result.error,
           }),
           edg,
+          hdl,
           analysisHistory
         );
       }
 
       if (phase === "final") {
-        return responseWithEdg(
+        return responseWithGovernance(
           phase,
           fallbackFinalJSON({
             ticker,
@@ -557,6 +625,7 @@ export async function POST(req) {
             parseError: result.error,
           }),
           edg,
+          hdl,
           analysisHistory
         );
       }
@@ -566,7 +635,24 @@ export async function POST(req) {
       );
     }
 
-    return responseWithEdg(phase, result.data, edg, analysisHistory);
+    if (phase === "deep" && hdl.status === "ok") {
+      const semanticCheck = applyHdlToAnalysis({ phase, result: result.data, hdl });
+      if (semanticCheck?.hdl_integrity?.complete === false) {
+        const semanticRetry = await requestStructuredAnalysis({
+          phase,
+          systemPrompt,
+          userMsg:
+            userMsg +
+            "\n\nA resposta anterior não completou hdl_conclusao. Gere novamente o JSON completo. Interprete os valores HDL imutáveis e, se o alfa for zero ou negativo, reconheça explicitamente que não supera o soberano ou justifique a manutenção da tese. Não altere os números HDL.",
+        });
+        if (semanticRetry.ok) {
+          const retried = parseModelJSON(semanticRetry.rawText);
+          if (retried.ok) result = retried;
+        }
+      }
+    }
+
+    return responseWithGovernance(phase, result.data, edg, hdl, analysisHistory);
   } catch (err) {
     return safeError("Erro servidor: " + err.message);
   }

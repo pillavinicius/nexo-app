@@ -7,8 +7,12 @@ const nextConfig = {
     "/api/health": [
       "./data/nexo_macro.csv",
       "./data/context/latest.json",
+      "./data/goldberg/hdl_curva.csv",
     ],
-    "/api/analyze": ["./data/context/latest.json"],
+    "/api/analyze": [
+      "./data/context/latest.json",
+      "./data/goldberg/hdl_curva.csv",
+    ],
     "/api/nmi/context/latest": ["./data/context/latest.json"],
     "/api/export/pdf": ["./node_modules/pdfkit/js/data/*.afm"],
   },

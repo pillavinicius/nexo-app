@@ -53,6 +53,21 @@ jobs:
       - name: Integracao EDG no Scan Deep e Final
         run: node scripts/edg_api_integration_test.mjs
 
+      # GATE F1a - HDL calcula a disputa contra a curva soberana sem emitir veredito.
+      - name: Self-tests e integracao do HDL
+        run: |
+          NEXO_SELFTEST=1 node lib/nexo/hdl/hdl_engine.mjs
+          NEXO_SELFTEST=1 node lib/nexo/hdl/hdl_repository.mjs
+          NEXO_SELFTEST=1 node scripts/collectors/hdl_collector.mjs
+          node scripts/hdl_api_integration_test.mjs
+          node scripts/hdl_ui_contract_test.mjs
+
+      - name: Conferir curva HDL versionada
+        run: |
+          test -s contracts/hdl-result.schema.json || { echo "Contrato HDL ausente"; exit 1; }
+          test -s data/goldberg/hdl_curva.csv || { echo "Curva HDL ausente ou vazia"; exit 1; }
+          head -n 1 data/goldberg/hdl_curva.csv | grep -Fx "data_ref,vertice_anos,taxa_real_pct,fonte,status"
+
       - name: Resiliencia HTTP e reparo da resposta da Estacao 3
         run: node scripts/analysis_response_resilience_test.mjs
 

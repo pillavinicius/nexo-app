@@ -178,3 +178,45 @@ em `~/.config/gh/hosts.yml` — não exponha em captura de tela).
 - Regenerar a chave da API Anthropic (`sk-ant-...`) — apareceu em prints
 - Regenerar a chave do FRED — apareceu em prints
 - Credencial do `gh` em texto puro no Cloud Shell — risco aceito, não exibir
+
+---
+
+## 8. Atualizar a curva HDL (ANBIMA)
+
+O HDL usa a ETTJ IPCA oficial como hurdle soberano real. O coletor roda somente
+no Cloud Shell e o app/Vercel lê o CSV versionado.
+Referência operacional: `https://www.anbima.com.br/informacoes/est-termo/CZ.asp`.
+
+```bash
+cd ~/nexo-app
+git pull origin main
+npm run test:hdl
+npm run test:hdl:collector
+node scripts/collectors/hdl_collector.mjs --refresh
+git diff data/goldberg/hdl_curva.csv
+```
+
+O `--refresh` busca a data oficial mais recente, substitui somente chaves com a
+mesma combinação `data_ref + vertice_anos` e preserva as curvas históricas.
+Não exige chave de API.
+
+Antes de publicar, rode:
+
+```bash
+npm run test:hdl:integration
+npm run test:hdl:ui
+git add data/goldberg/hdl_curva.csv
+git commit -m "Atualiza curva HDL ANBIMA"
+git push origin main
+```
+
+Validação pós-deploy em `/api/health`:
+
+- `data.hdl.available: true`;
+- `data.hdl.source: "anbima_ettj"`;
+- `data.hdl.sourceStatus: "official"`;
+- `data.hdl.vertices > 1`.
+
+Se a curva não estiver disponível, o Deep de ativos brasileiros deve ficar
+bloqueado. Nunca preencha uma taxa sintética e nunca extrapole além do maior
+vértice oficial.
