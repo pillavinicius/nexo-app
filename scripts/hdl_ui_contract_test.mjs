@@ -4,9 +4,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("../app/page.jsx", import.meta.url), "utf8");
+const manual = readFileSync(new URL("../app/hdl-manual/page.jsx", import.meta.url), "utf8");
 
 for (const expected of [
   "HDL · Hurdle do Leviatã · F1a",
+  "Abrir mini manual HDL ↗",
+  'href="/hdl-manual"',
   "TIR real esperada · % a.a.",
   "Horizonte · anos",
   "hdlExpectedRealReturn",
@@ -26,4 +29,23 @@ assert.match(source, /setHdlExpectedRealReturn\(""\)/);
 assert.match(source, /setHdlHorizonYears\(""\)/);
 assert.match(source, /NÃO APLICÁVEL NESTA FASE/);
 
-console.log("HDL UI contract: 15/15 checks passed");
+for (const expected of [
+  "Como aplicar o Hurdle do Leviatã",
+  "Aplicação por classe e perfil econômico",
+  "Ações maduras",
+  "Bancos e seguradoras",
+  "Cíclicas e commodities",
+  "Empresas de crescimento",
+  "FIIs",
+  "Ativos internacionais",
+  "Leitura conforme o cenário macro",
+  "Evite dupla contagem",
+  "Sem extrapolação",
+  "O Scan continua permitido; o Deep brasileiro fica bloqueado.",
+  "ALFA PRÓXIMO DE ZERO",
+  "não altera score ou veredito de forma automática",
+]) {
+  assert.ok(manual.includes(expected), `manual HDL incompleto: ${expected}`);
+}
+
+console.log("HDL UI contract: 31/31 checks passed");
