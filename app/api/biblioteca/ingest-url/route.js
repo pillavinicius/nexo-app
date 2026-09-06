@@ -18,7 +18,8 @@ const ERROR_MESSAGES = {
   biblioteca_source_network_unavailable: "Não foi possível acessar o endereço informado. Confirme se o documento está público e tente novamente.",
   biblioteca_source_asset_lookup_failed: "Não foi possível associar a fonte ao ativo desta análise.",
   biblioteca_source_download_failed: "O servidor não conseguiu baixar o documento público informado.",
-  biblioteca_source_parse_failed: "O documento foi baixado, mas não pôde ser interpretado dentro do limite do servidor.",
+  biblioteca_source_parse_failed: "O documento foi baixado, mas não pôde ser interpretado.",
+  biblioteca_source_parser_runtime_unavailable: "O leitor de PDF não está disponível neste processamento. Tente novamente em instantes.",
   biblioteca_source_database_failed: "O documento foi processado, mas a Biblioteca não conseguiu gravá-lo. Tente novamente.",
 };
 

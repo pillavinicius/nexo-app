@@ -27,6 +27,7 @@ const pdf = await makePdf("Documento oficial NEXO B3");
 const parsedPdf = await parseDocument({ content: pdf, formato: "pdf" });
 assert.equal(parsedPdf.status, "ok");
 assert.match(parsedPdf.texto, /Documento oficial NEXO B3/);
+assert.ok(globalThis.pdfjsWorker?.WorkerMessageHandler, "worker do pdf.js deve ser registrado explicitamente para o bundle serverless");
 
 const longPages = Array.from({ length: 80 }, (_, index) => ({
   number: index + 1,
@@ -122,6 +123,8 @@ assert.ok(page.includes("Fonte oficial para fechar as lacunas · obrigatório"))
 assert.ok(page.includes('fetch("/api/biblioteca/ingest-url"'));
 assert.ok(page.includes("gaps: asArray(bibliotecaAudit?.lacunas_abertas)"));
 assert.ok(page.includes('role="alert">Erro na fonte:'));
+const parserSource = await readFile(join(process.cwd(), "lib", "nexo", "biblioteca", "document_parser.mjs"), "utf8");
+assert.ok(parserSource.includes('import("pdfjs-dist/legacy/build/pdf.worker.mjs")'), "bundle precisa rastrear o worker do PDF explicitamente");
 const migration = await readFile(join(process.cwd(), "db", "migrations", "003_biblioteca_b3.sql"), "utf8");
 for (const token of ["parser_version", "data_parse", "003_biblioteca_b3"]) assert.ok(migration.includes(token));
 
