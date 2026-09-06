@@ -49,6 +49,12 @@ import {
   triggerPdfDownload,
   writePdfToHandle,
 } from "../lib/ui/pdf_delivery.mjs";
+import {
+  ANALYSIS_VIEW,
+  analysisViewLabel,
+  buildAnalysisTabs,
+  latestDeepViewId,
+} from "../lib/ui/analysis_navigation.mjs";
 
 const EDGE_TYPE_LABELS = Object.freeze({
   nenhum: "Nenhum edge declarado",
@@ -671,11 +677,18 @@ export default function NEXOApp() {
   const [followQ, setFollowQ] = useState("");
   const [followUrl, setFollowUrl] = useState("");
   const [ended, setEnded] = useState(false);
+  const [activeView, setActiveView] = useState(ANALYSIS_VIEW.SETUP);
+  const [hdlGuideActive, setHdlGuideActive] = useState(false);
 
   const abortRef = useRef(null);
   const assetAbortRef = useRef(null);
   const macroAbortRef = useRef(null);
   const supplementalAbortRef = useRef(null);
+  const pageTopRef = useRef(null);
+  const hdlSectionRef = useRef(null);
+  const hdlReturnInputRef = useRef(null);
+  const hdlHorizonInputRef = useRef(null);
+  const deepActionRef = useRef(null);
 
   const hasScan = !!scanResult;
   const hasDeep = !!deepResult;
@@ -687,13 +700,14 @@ export default function NEXOApp() {
   const hdlApplies = currentAssetType === "acao-br" || currentAssetType === "fii";
   const hdlReturnNumber = localizedNumber(hdlExpectedRealReturn);
   const hdlHorizonNumber = localizedNumber(hdlHorizonYears);
+  const hdlReturnReady = hdlReturnNumber !== null && hdlReturnNumber > -100;
+  const hdlHorizonReady =
+    hdlHorizonNumber !== null &&
+    hdlHorizonNumber >= HDL_MIN_HORIZON_YEARS &&
+    hdlHorizonNumber <= HDL_MAX_HORIZON_YEARS;
   const hdlInputReady =
     !hdlApplies ||
-    (hdlReturnNumber !== null &&
-      hdlReturnNumber > -100 &&
-      hdlHorizonNumber !== null &&
-      hdlHorizonNumber >= HDL_MIN_HORIZON_YEARS &&
-      hdlHorizonNumber <= HDL_MAX_HORIZON_YEARS);
+    (hdlReturnReady && hdlHorizonReady);
   const hdlLocked =
     loading || hasDeep || hasFinal || ended || (hasScan && edgeInsumo === "HDL");
   const edgLocked = locked || isExternalAsset;
@@ -793,6 +807,56 @@ export default function NEXOApp() {
   const canFollow = hasDeep && !loading && !hasFinal && !ended && (
     needsUserSource ? isValidHttpsUrl(followUrl) : Boolean(followQ.trim())
   );
+  const analysisTabs = buildAnalysisTabs({
+    hasScan,
+    hasDeep,
+    deepAddsCount: deepAdds.length,
+    hasFinal,
+    loadingKind,
+  });
+  const currentDeepView = latestDeepViewId(deepAdds.length);
+  const activeDeepIndex = /^deep-(\d+)$/.test(activeView)
+    ? Number(activeView.replace("deep-", ""))
+    : null;
+  const activeDeepResult = activeDeepIndex === 0
+    ? deepResult
+    : activeDeepIndex > 0
+    ? deepAdds[activeDeepIndex - 1]
+    : null;
+  const latestAnalysis = finalResult || latestDeep || scanResult;
+  const latestVerdict = finalResult?.classificacao_final || latestDeep?.veredito_final || scanResult?.veredito || "—";
+  const latestScore = finalResult?.score_revisado ?? latestDeep?.score_revisado ?? scanResult?.score_total ?? null;
+
+  function navigateAnalysis(view) {
+    const tab = analysisTabs.find((item) => item.id === view);
+    if (!tab?.enabled || loading) return;
+    setActiveView(view);
+    window.requestAnimationFrame(() => {
+      pageTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function openHdlFromDeep() {
+    setHdlGuideActive(true);
+    setActiveView(ANALYSIS_VIEW.SETUP);
+    window.requestAnimationFrame(() => {
+      hdlSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      window.setTimeout(() => {
+        const target = !hdlReturnReady ? hdlReturnInputRef.current : hdlHorizonInputRef.current;
+        target?.focus();
+      }, 350);
+    });
+  }
+
+  function returnToDeepAction() {
+    if (!hdlInputReady) return;
+    setHdlGuideActive(false);
+    setActiveView(ANALYSIS_VIEW.SCAN);
+    window.requestAnimationFrame(() => {
+      deepActionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      window.setTimeout(() => deepActionRef.current?.focus(), 350);
+    });
+  }
 
   useEffect(() => {
     void loadMacro();
@@ -974,6 +1038,8 @@ export default function NEXOApp() {
     setFollowQ("");
     setFollowUrl("");
     setEnded(false);
+    setActiveView(ANALYSIS_VIEW.SETUP);
+    setHdlGuideActive(false);
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
@@ -1164,6 +1230,7 @@ export default function NEXOApp() {
     setFinalResult(null);
     setEnded(false);
     setPhase("scan_running");
+    setActiveView(ANALYSIS_VIEW.SCAN);
 
     try {
       const r = await callAPI("scan");
@@ -1171,6 +1238,7 @@ export default function NEXOApp() {
       if (r?.ticker_invalido) {
         setError("Ticker não encontrado: " + ticker.trim().toUpperCase());
         setPhase("scan_done");
+        setActiveView(ANALYSIS_VIEW.SETUP);
       } else {
         setScanResult(r);
         setPhase("scan_done");
@@ -1178,6 +1246,7 @@ export default function NEXOApp() {
     } catch (e) {
       if (e?.name !== "AbortError") setError(e?.message || "Erro desconhecido");
       setPhase("scan_done");
+      setActiveView(ANALYSIS_VIEW.SETUP);
     } finally {
       setLoading(false);
       setLoadingKind("");
@@ -1192,6 +1261,8 @@ export default function NEXOApp() {
     setLoadingKind("deep");
     setError("");
     setPhase("deep_running");
+    setActiveView(ANALYSIS_VIEW.DEEP_MAIN);
+    setHdlGuideActive(false);
 
     try {
       const r = await callAPI("deep", "", { scan: scanResult });
@@ -1200,6 +1271,7 @@ export default function NEXOApp() {
     } catch (e) {
       if (e?.name !== "AbortError") setError(e?.message || "Erro desconhecido");
       setPhase("scan_done");
+      setActiveView(ANALYSIS_VIEW.SCAN);
     } finally {
       setLoading(false);
       setLoadingKind("");
@@ -1242,6 +1314,7 @@ export default function NEXOApp() {
         deepAdds,
       });
       setDeepAdds((prev) => [...prev, r]);
+      setActiveView(`deep-${deepAdds.length + 1}`);
       setFollowQ("");
       setFollowUrl("");
       setPhase("deep_done");
@@ -1261,6 +1334,7 @@ export default function NEXOApp() {
     setLoadingKind("final");
     setError("");
     setPhase("final_running");
+    setActiveView(ANALYSIS_VIEW.FINAL);
 
     try {
       const contexto =
@@ -1290,6 +1364,7 @@ export default function NEXOApp() {
     } catch (e) {
       if (e?.name !== "AbortError") setError(e?.message || "Erro desconhecido");
       setPhase(hasDeep ? "deep_done" : "scan_done");
+      setActiveView(hasDeep ? currentDeepView : ANALYSIS_VIEW.SCAN);
     } finally {
       setLoading(false);
       setLoadingKind("");
@@ -1443,6 +1518,20 @@ export default function NEXOApp() {
     .btn-deep{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:9px 20px;background:transparent;border:1px solid #A8A8B8;color:#A8A8B8;cursor:pointer;border-radius:2px;flex:1}
     .btn-cl,.btn-end{font-family:'JetBrains Mono',monospace;font-size:9px;color:#6A5C3A;background:transparent;border:1px solid #2A2318;padding:9px 13px;cursor:pointer;letter-spacing:1px;text-transform:uppercase;border-radius:2px}
     .btn-end{border-color:#C9A84C;color:#C9A84C}
+    .analysis-shell{scroll-margin-top:12px}
+    .analysis-nav{display:flex;gap:6px;overflow-x:auto;padding:2px 0 9px;margin-bottom:8px;scrollbar-width:thin;scrollbar-color:#6A5C3A #1E1A0E}
+    .analysis-tab{flex:0 0 auto;min-width:108px;border:1px solid #2A2318;background:rgba(201,168,76,.02);color:#6A5C3A;padding:9px 12px;border-radius:2px;font-family:'JetBrains Mono',monospace;font-size:8px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;white-space:nowrap}
+    .analysis-tab.active{border-color:#C9A84C;color:#E8D5A3;background:rgba(201,168,76,.1)}
+    .analysis-tab.complete:not(.active){border-color:#4A3E28;color:#A89060}
+    .analysis-tab:disabled{opacity:.28!important}
+    .analysis-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;border:1px solid #2A2318;background:rgba(201,168,76,.025);padding:8px;margin-bottom:12px}
+    .analysis-summary-item{min-width:0;padding:4px 6px;font-family:'JetBrains Mono',monospace}
+    .analysis-summary-label{font-size:7px;color:#4A3E28;letter-spacing:1px;text-transform:uppercase;margin-bottom:3px}
+    .analysis-summary-value{font-size:9px;color:#A89060;line-height:1.4;overflow-wrap:anywhere}
+    .hdl-route{scroll-margin-top:12px}
+    .route-box{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid rgba(210,160,60,.3);background:rgba(210,160,60,.06);padding:10px 12px;margin:10px 0}
+    .route-copy{font-family:'JetBrains Mono',monospace;font-size:9px;color:#D2A03C;line-height:1.5}
+    .btn-route{flex:0 0 auto;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:9px 13px;background:transparent;border:1px solid #D2A03C;color:#D2A03C;cursor:pointer;border-radius:2px}
     .output{border:1px solid #2A2318;padding:20px 16px;margin-bottom:8px;min-height:120px;position:relative;overflow-x:hidden}
     .out-lbl{position:absolute;top:-1px;left:12px;font-family:'JetBrains Mono',monospace;font-size:8px;color:#6A5C3A;background:#131008;padding:0 6px;letter-spacing:1.5px;text-transform:uppercase}
     .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:140px;gap:8px;opacity:.2}
@@ -1458,14 +1547,14 @@ export default function NEXOApp() {
     .fc{font-family:'JetBrains Mono',monospace;font-size:7.5px;color:#3A3020;letter-spacing:.8px;display:flex;align-items:center;gap:4px}
     .fd{width:4px;height:4px;border-radius:50%;flex-shrink:0}
     button:disabled,input:disabled,textarea:disabled,select:disabled{opacity:.3!important;cursor:not-allowed!important}
-    @media(max-width:600px){.quads,.grid2,.grid3{grid-template-columns:1fr}.actions,.decision-actions,.follow-actions,.edg-tools{flex-direction:column;align-items:stretch}.btn-deep,.btn-scan,.btn-cl,.btn-end,.btn-manual{width:100%;text-align:center}.metric-input.select-sm{font-size:11px;letter-spacing:0}.field{padding-left:12px;padding-right:12px}}
+    @media(max-width:600px){.quads,.grid2,.grid3{grid-template-columns:1fr}.analysis-summary{grid-template-columns:1fr 1fr}.actions,.decision-actions,.follow-actions,.edg-tools,.route-box{flex-direction:column;align-items:stretch}.btn-deep,.btn-scan,.btn-cl,.btn-end,.btn-manual,.btn-route{width:100%;text-align:center}.analysis-tab{min-width:92px;padding:9px 10px}.metric-input.select-sm{font-size:11px;letter-spacing:0}.field{padding-left:12px;padding-right:12px}}
   `;
 
   return (
     <>
       <style>{CSS}</style>
 
-      <div className="app">
+      <div className="app" ref={pageTopRef}>
         <header className="hdr">
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div className="logo-box">NEXO</div>
@@ -1488,6 +1577,47 @@ export default function NEXOApp() {
             <div key={t.l} className="type-card"><span style={{ fontSize: 13 }}>{t.i}</span>{t.l}</div>
           ))}
         </div>
+
+        <div className="analysis-shell">
+          <nav className="analysis-nav" aria-label="Etapas da análise NEXO">
+            {analysisTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`analysis-tab${activeView === tab.id ? " active" : ""}${tab.enabled ? " complete" : ""}`}
+                disabled={!tab.enabled || loading}
+                aria-current={activeView === tab.id ? "page" : undefined}
+                onClick={() => navigateAnalysis(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
+          {(hasScan || loading) && (
+            <div className="analysis-summary">
+              <div className="analysis-summary-item">
+                <div className="analysis-summary-label">Ativo</div>
+                <div className="analysis-summary-value">{ticker.trim().toUpperCase() || "—"} · {currentAssetType}</div>
+              </div>
+              <div className="analysis-summary-item">
+                <div className="analysis-summary-label">Página atual</div>
+                <div className="analysis-summary-value">{analysisViewLabel(activeView, deepAdds.length)}</div>
+              </div>
+              <div className="analysis-summary-item">
+                <div className="analysis-summary-label">Scan</div>
+                <div className="analysis-summary-value">{scanResult ? `${asText(scanResult.veredito)} · ${asText(scanResult.score_total)}/${asText(scanResult.score_max || 30)}` : "Em processamento"}</div>
+              </div>
+              <div className="analysis-summary-item">
+                <div className="analysis-summary-label">Última saída</div>
+                <div className="analysis-summary-value">{latestAnalysis ? `${asText(latestVerdict)}${latestScore !== null ? ` · ${asText(latestScore)}/30` : ""}` : "Aguardando"}</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {activeView === ANALYSIS_VIEW.SETUP && (
+          <>
 
         <div className="help-box">
           <div className="help-title">Como usar o NEXO App</div>
@@ -1952,6 +2082,7 @@ export default function NEXOApp() {
           <textarea className="ftxt" disabled={locked} rows={2} value={extraCtx} placeholder="Foco em KPI específico, tese, dúvida pontual..." onChange={(e) => setExtraCtx(e.target.value)} />
         </div>
 
+        <div ref={hdlSectionRef} className="hdl-route">
         <Sec title="HDL · Hurdle do Leviatã · F1a">
           <div className="edg-tools">
             <span>Consulte as condições por classe de ativo, cenário macro e limites de interpretação.</span>
@@ -1969,6 +2100,7 @@ export default function NEXOApp() {
                 <div className="field">
                   <div className="flbl">TIR real esperada · % a.a.</div>
                   <input
+                    ref={hdlReturnInputRef}
                     className="finp-sm metric-input"
                     inputMode="decimal"
                     disabled={hdlLocked}
@@ -1982,6 +2114,7 @@ export default function NEXOApp() {
                 <div className="field">
                   <div className="flbl">Horizonte · anos</div>
                   <input
+                    ref={hdlHorizonInputRef}
                     className="finp-sm metric-input"
                     inputMode="decimal"
                     disabled={hdlLocked}
@@ -1999,6 +2132,12 @@ export default function NEXOApp() {
                   ? "HDL OBRIGATÓRIO NO SCAN · este módulo foi escolhido como insumo do Edge."
                   : "HDL OBRIGATÓRIO NO DEEP · o Scan pode ser concluído antes do preenchimento."}
               </div>
+              {hdlGuideActive && hdlInputReady && (
+                <div className="route-box">
+                  <div className="route-copy">HDL validado. O Deep está desbloqueado e pronto para execução.</div>
+                  <button type="button" className="btn-route" onClick={returnToDeepAction}>Voltar para executar o Deep →</button>
+                </div>
+              )}
             </>
           ) : (
             <div className="reserved-box">
@@ -2006,6 +2145,7 @@ export default function NEXOApp() {
             </div>
           )}
         </Sec>
+        </div>
 
         <Sec title="NFI · NEXO Flow Intelligence · F1b">
           <div className="edg-tools">
@@ -2025,8 +2165,10 @@ export default function NEXOApp() {
         <div className="actions">
           {loading && loadingKind !== "final" && <button className="btn-cl" onClick={resetToInitial}>Cancelar</button>}
           <button className="btn-scan" onClick={handleScan} disabled={!canScan}>{loadingKind === "scan" ? "Analisando..." : "Scan NEXO →"}</button>
-          <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>{loadingKind === "deep" ? "Analisando..." : "Deep NEXO"}</button>
+          {hasScan && hdlGuideActive && <button className="btn-deep" onClick={returnToDeepAction} disabled={!hdlInputReady}>Voltar ao Deep</button>}
         </div>
+
+        {activeView === ANALYSIS_VIEW.SETUP && error && <div className="err-box">Erro: {error}</div>}
 
         {!canScan && !locked && (
           <div className="scan-hint">
@@ -2038,8 +2180,11 @@ export default function NEXOApp() {
           <div className="scan-hint">Para habilitar o Deep: {deepBlockReason}</div>
         )}
 
-        <div className="output">
-          <span className="out-lbl">{hasFinal ? "Reclassificação Final" : hasDeep || deepAdds.length > 0 ? "Deep NEXO" : "Scan NEXO"}</span>
+          </>
+        )}
+
+        {activeView !== ANALYSIS_VIEW.SETUP && <div className="output">
+          <span className="out-lbl">{analysisViewLabel(activeView, deepAdds.length)}</span>
 
           {!hasScan && !hasDeep && deepAdds.length === 0 && !hasFinal && !loading && !error && !ended && (
             <div className="empty"><div className="empty-g">⬡</div><div className="empty-t">Aguardando análise</div></div>
@@ -2048,21 +2193,26 @@ export default function NEXOApp() {
           {loading && <div className="loading-r">{loadingKind === "macro" ? "Atualizando dados macro..." : loadingKind === "final" ? "Gerando Reclassificação Final NEXO..." : loadingKind === "follow" ? "Aprofundando Deep NEXO..." : loadingKind === "deep" ? "Processando Deep NEXO..." : "Processando Scan NEXO..."}</div>}
           {error && <div className="err-box">Erro: {error}</div>}
 
-          {hasScan && <Sec title="Resultado Scan"><ScanReport r={scanResult} /></Sec>}
+          {activeView === ANALYSIS_VIEW.SCAN && hasScan && <Sec title="Resultado Scan"><ScanReport r={scanResult} /></Sec>}
 
-          {hasScan && !hasDeep && !hasFinal && !isVeto && !ended && (
+          {activeView === ANALYSIS_VIEW.SCAN && hasScan && !hasDeep && !hasFinal && !isVeto && !ended && (
             <div className="decision-box">
               <div className="decision-title">Próxima etapa</div>
-              {deepBlockReason && <div className="scan-hint">Para rodar o Deep: {deepBlockReason}</div>}
+              {deepBlockReason && (
+                <div className="route-box">
+                  <div className="route-copy">Para rodar o Deep: {deepBlockReason}</div>
+                  <button type="button" className="btn-route" onClick={openHdlFromDeep}>Preencher HDL →</button>
+                </div>
+              )}
               <div className="decision-actions">
-                <button className="btn-deep" onClick={handleDeep} disabled={!canDeep}>Rodar NEXO Deep →</button>
+                <button ref={deepActionRef} className="btn-deep" onClick={handleDeep} disabled={!canDeep}>Rodar NEXO Deep →</button>
                 <button className="btn-end" onClick={handleFinal} disabled={!canFinalize}>Finalizar e Reclassificar</button>
                 {loadingKind !== "final" && <button className="btn-cl" onClick={resetToInitial}>Reset e nova análise</button>}
               </div>
             </div>
           )}
 
-          {hasScan && isVeto && !hasFinal && !ended && (
+          {activeView === ANALYSIS_VIEW.SCAN && hasScan && isVeto && !hasFinal && !ended && (
             <div className="decision-box">
               <div className="decision-title">Ativo vetado no Scan</div>
               <div className="decision-actions">
@@ -2072,15 +2222,15 @@ export default function NEXOApp() {
             </div>
           )}
 
-          {hasDeep && <div style={{ marginTop: 24 }}><Sec title="Resultado Deep Principal"><DeepReport r={deepResult} showClassicValuations={classicValuations === "SIM"} /></Sec></div>}
-
-          {deepAdds.length > 0 && deepAdds.map((d, i) => (
-            <div key={i} style={{ marginTop: 26 }}>
-              <Sec title={"Resultado Deep Aprofundado " + (i + 1)}><DeepReport r={d} showClassicValuations={classicValuations === "SIM"} /></Sec>
+          {activeDeepResult && (
+            <div style={{ marginTop: 8 }}>
+              <Sec title={activeDeepIndex === 0 ? "Resultado Deep Principal" : `Resultado Deep Aprofundado ${activeDeepIndex}`}>
+                <DeepReport r={activeDeepResult} showClassicValuations={classicValuations === "SIM"} />
+              </Sec>
             </div>
-          ))}
+          )}
 
-          {hasDeep && !hasFinal && !ended && (
+          {activeView === currentDeepView && hasDeep && !hasFinal && !ended && (
             <div className="follow-box">
               <div className="follow-title">Aprofundamento Pós-Deep</div>
 
@@ -2106,15 +2256,15 @@ export default function NEXOApp() {
             </div>
           )}
 
-          {hasFinal && <div style={{ marginTop: 28 }}><Sec title="Resultado Final Reclassificado"><FinalReport r={finalResult} /></Sec></div>}
+          {activeView === ANALYSIS_VIEW.FINAL && hasFinal && <div style={{ marginTop: 8 }}><Sec title="Resultado Final Reclassificado"><FinalReport r={finalResult} /></Sec></div>}
 
-          {ended && hasFinal && (
+          {activeView === ANALYSIS_VIEW.FINAL && ended && hasFinal && (
             <div className="ended-box">
               Análise finalizada · Reclassificação concluída
             </div>
           )}
 
-          {ended && hasFinal && (
+          {activeView === ANALYSIS_VIEW.FINAL && ended && hasFinal && (
             <div className="decision-actions" style={{ marginTop: 12 }}>
               <button className="btn-end" onClick={handleExportPDF} disabled={pdfLoading}>
                 {pdfLoading ? "Gerando PDF..." : "Exportar PDF"}
@@ -2122,8 +2272,8 @@ export default function NEXOApp() {
               <button className="btn-cl" onClick={resetToInitial} disabled={pdfLoading}>Nova análise</button>
             </div>
           )}
-          {pdfError && <div className="err-box">Erro na exportação: {pdfError}</div>}
-        </div>
+          {activeView === ANALYSIS_VIEW.FINAL && pdfError && <div className="err-box">Erro na exportação: {pdfError}</div>}
+        </div>}
 
         <div className="footer">
           {[{ c: "#C9A84C", t: "Liq. min. R$300k BR" }, { c: "#A8A8B8", t: "ADV min. US$1M Ext" }, { c: "#C87070", t: "0B: nota 1=veto" }, { c: "#E8D5A3", t: "BESST: 15-25% abaixo" }, { c: "#6A5C3A", t: "Beta v3.0" }].map((c, i) => (
