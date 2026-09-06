@@ -32,15 +32,20 @@ import {
   notApplicableNFI,
 } from "../../../lib/nexo/nfi/nfi_engine.mjs";
 import { loadNfiFlow } from "../../../lib/nexo/nfi/nfi_repository.mjs";
+import {
+  applyBibliotecaAudit,
+  buildBibliotecaPromptContext,
+  loadBibliotecaContext,
+} from "../../../lib/nexo/biblioteca/context.mjs";
 
 const SCAN_S =
   '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
 
 const DEEP_S =
-  '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":""}],"lacunas":[{"q":"","r":""}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"valuations_classicos":[{"modelo":"Graham|Peter Lynch|Buffett moderno|Bazin","valor_justo":"","metodologia":"","premissas":""}],"zona":"","besst":"","desconto":"","hdl_conclusao":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
+  '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":"","fonte_nova":""}],"lacunas":[{"q":"","r":""}],"lacunas_documentais":[{"lacuna":"","status":"resolvida|aberta","evidencia_documental":["source:id"]}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"valuations_classicos":[{"modelo":"Graham|Peter Lynch|Buffett moderno|Bazin","valor_justo":"","metodologia":"","premissas":""}],"zona":"","besst":"","desconto":"","hdl_conclusao":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
 
 const DEEP_INTEGRITY_RULES =
-  " Score original must reproduce the previous stage score. Only include ajustes_score for NEW evidence found in this Deep; never penalize a risk already counted in the previous stage. Each adjustment must use a 0-5 dimension score and explain the new evidence. The server will ignore your arithmetic and calculate the total from the adjustments. BESST must be 15-25% below the convergence zone. hdl_conclusao is mandatory for Brazilian assets and must interpret the immutable server-calculated HDL values; never recalculate them.";
+  " Score original must reproduce the previous stage score. Only include ajustes_score for NEW evidence found in this Deep; never penalize a risk already counted in the previous stage. Each adjustment must use a 0-5 dimension score, explain the new evidence and cite its exact Biblioteca document ID in fonte_nova when documentary. The server will ignore your arithmetic and calculate the total from the adjustments. Fill lacunas_documentais for every investigated gap: resolved requires at least one exact available document ID; otherwise mark open. BESST must be 15-25% below the convergence zone. hdl_conclusao is mandatory for Brazilian assets and must interpret the immutable server-calculated HDL values; never recalculate them.";
 
 const FINAL_S =
   '{"ticker":"","classificacao_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR|VETADO","veredito_anterior":"","veredito_reclassificado":"","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","mudanca_veredito":"MANTEVE|MELHOROU|PIOROU","riscos_incorporados":[{"descricao":"","impacto_score":"","severidade":"ALTO|MEDIO|BAIXO"}],"ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":""}],"tese_final":"","preco_final":{"zona_convergencia":"","besst":"","margem_seguranca":"","observacao":""},"conclusao":"","proximos_passos":[""]}';
@@ -330,7 +335,7 @@ function trimContextForFinal(extraCtx) {
   );
 }
 
-function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, edgContext, hdlContext, nfiContext, analysisHistory = {} }) {
+function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, edgContext, hdlContext, nfiContext, bibliotecaContext, analysisHistory = {} }) {
   const validatedNmiBlock =
     "\n\n--- CONTEXTO MACRO TRANSVERSAL ---\n" + nmiContext;
   const validatedEdgBlock =
@@ -339,6 +344,9 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
     "\n\n--- HDL · HURDLE DO LEVIATÃ ---\n" + hdlContext;
   const validatedNfiBlock =
     "\n\n--- NFI · NEXO FLOW INTELLIGENCE ---\n" + nfiContext;
+  const validatedBibliotecaBlock = phase === "deep"
+    ? "\n\n--- BIBLIOTECA VIVA · EVIDÊNCIAS DOCUMENTAIS ---\n" + (bibliotecaContext || "Indisponível.")
+    : "";
 
   if (phase === "final") {
     return (
@@ -351,6 +359,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
       validatedEdgBlock +
       validatedHdlBlock +
       validatedNfiBlock +
+      validatedBibliotecaBlock +
       "\n\nTarefa:\n" +
       "1. Consolide o Scan, o Deep e os aprofundamentos disponíveis.\n" +
       "2. Identifique riscos novos e agravados.\n" +
@@ -380,6 +389,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
       validatedEdgBlock +
       validatedHdlBlock +
       validatedNfiBlock +
+      validatedBibliotecaBlock +
       "\n\nIMPORTANT: Return ONLY valid JSON. Keep the JSON concise. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
     );
   }
@@ -393,15 +403,17 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
     validatedEdgBlock +
     validatedHdlBlock +
     validatedNfiBlock +
+    validatedBibliotecaBlock +
     "\n\nIMPORTANT: Return ONLY valid JSON. Do NOT use markdown. Do NOT use code fences. Do NOT explain. Do NOT write text outside the JSON object."
   );
 }
 
-function responseWithGovernance(phase, data, edg, hdl, nfi, analysisHistory = {}) {
+function responseWithGovernance(phase, data, edg, hdl, nfi, analysisHistory = {}, biblioteca = null) {
   const integrityChecked = phase === "deep"
-    ? reconcileDeepIntegrity(data, analysisHistory)
+    ? reconcileDeepIntegrity(data, analysisHistory, { documentIds: biblioteca?.documentIds || [] })
     : data;
-  const withHdl = applyHdlToAnalysis({ phase, result: integrityChecked, hdl });
+  const withBiblioteca = phase === "deep" ? applyBibliotecaAudit(integrityChecked, biblioteca) : integrityChecked;
+  const withHdl = applyHdlToAnalysis({ phase, result: withBiblioteca, hdl });
   const withNfi = applyNfiToAnalysis({ result: withHdl, nfi });
   const governed = applyEdgGuardrails({ phase, result: withNfi, edg });
   return Response.json(reconcileFinalVerdictChange(phase, governed));
@@ -550,6 +562,10 @@ export async function POST(req) {
     const availableEdgeModules = EDGE_INSUMOS.filter((insumo) => insumo !== "NFI" || nfi.explica_deslocamento === true);
     const edg = computeEDG(effectiveEdgeLedger, { availableModules: availableEdgeModules });
     const edgContext = buildEdgAnalysisContext(edg, effectiveEdgeLedger);
+    const biblioteca = phase === "deep" && !isExternalAsset(assetType)
+      ? await loadBibliotecaContext({ ticker })
+      : { available: false, status: isExternalAsset(assetType) ? "not_applicable" : "not_requested", documents: [], documentIds: [] };
+    const bibliotecaContext = buildBibliotecaPromptContext(biblioteca);
 
     if (effectiveEdgeLedger?.edge_insumo === "NFI" && nfi.explica_deslocamento !== true) {
       return Response.json({ error: { code: "nfi_edge_unavailable", message: "O NFI só pode lastrear um Edge após confirmar fluxo extremo em 24 meses oficiais completos.", nfi } }, { status: 422 });
@@ -577,6 +593,7 @@ export async function POST(req) {
       edgContext,
       hdlContext,
       nfiContext,
+      bibliotecaContext,
       analysisHistory,
     });
 
@@ -595,7 +612,8 @@ export async function POST(req) {
           edg,
           hdl,
           nfi,
-          analysisHistory
+          analysisHistory,
+          biblioteca
         );
       }
 
@@ -610,7 +628,8 @@ export async function POST(req) {
           edg,
           hdl,
           nfi,
-          analysisHistory
+          analysisHistory,
+          biblioteca
         );
       }
 
@@ -647,7 +666,8 @@ export async function POST(req) {
           edg,
           hdl,
           nfi,
-          analysisHistory
+          analysisHistory,
+          biblioteca
         );
       }
 
@@ -688,7 +708,7 @@ export async function POST(req) {
       }
     }
 
-    return responseWithGovernance(phase, result.data, edg, hdl, nfi, analysisHistory);
+    return responseWithGovernance(phase, result.data, edg, hdl, nfi, analysisHistory, biblioteca);
   } catch (err) {
     return safeError("Erro servidor: " + err.message);
   }
