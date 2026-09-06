@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { loadHdlCurve } from "../../../lib/nexo/hdl/hdl_repository.mjs";
 import { computeNFI } from "../../../lib/nexo/nfi/nfi_engine.mjs";
 import { loadNfiFlow } from "../../../lib/nexo/nfi/nfi_repository.mjs";
+import { bibliotecaDatabaseHealth } from "../../../lib/nexo/biblioteca/database.mjs";
 
 function readMacroStatus() {
   try {
@@ -84,6 +85,7 @@ export async function GET() {
   const nfiRepository = loadNfiFlow();
   const nfi = computeNFI({ fluxo: nfiRepository.rows });
   const bibliotecaB0 = readBibliotecaB0();
+  const bibliotecaB1 = await bibliotecaDatabaseHealth();
 
   const contextReadable =
     typeof context?.contextSchemaVersion === "string" &&
@@ -135,6 +137,7 @@ export async function GET() {
           error: nfiRepository.error || null,
         },
         bibliotecaB0,
+        bibliotecaB1,
       },
     },
     {
