@@ -398,6 +398,45 @@ function NfiAudit({ result, showUnavailable = false }) {
   );
 }
 
+function TdnAudit({ result, showUnavailable = false }) {
+  const tdn = result?.nexoModules?.TDN;
+  if (!tdn) return null;
+  if (tdn.status === "not_applicable") {
+    return showUnavailable ? <Sec title="TDN · Teste de Defesa Nominal"><DetailBlock title="Não aplicável nesta fase" value={tdn.note} /></Sec> : null;
+  }
+  if (tdn.status !== "ok") {
+    return showUnavailable ? (
+      <Sec title="TDN · Teste de Defesa Nominal">
+        <DetailBlock title="Dados históricos insuficientes" value={tdn.note || "As duas janelas fixas ainda não possuem cobertura documental completa."} />
+        {asArray(tdn.missing).length > 0 && <Note>Lacunas técnicas: {asArray(tdn.missing).join(", ")}</Note>}
+      </Sec>
+    ) : null;
+  }
+  const verdictLabels = { real: "DEFESA REAL", nominal: "DEFESA NOMINAL", misto: "MISTO" };
+  return (
+    <Sec title="TDN · Teste de Defesa Nominal">
+      <div className="edg-tools"><span>Entenda janelas, perfis setoriais e limites de interpretação.</span><a href="/tdn-manual" target="_blank" rel="noreferrer">Abrir mini manual →</a></div>
+      <div className="grid3">
+        <MetricCard title="Classificação" value={verdictLabels[tdn.veredito] || asText(tdn.veredito).toUpperCase()} note={asText(tdn.profile_label)} />
+        <MetricCard title="Score de defesa" value={`${displayNumber(tdn.score_nominalidade)} / 5`} note={`${asText(tdn.janelas_cobertas)} de 2 janelas completas`} />
+        <MetricCard title="Mecanismo observado" value={asText(tdn.protection_mechanism).replaceAll("_", " ")} note={`Fatos até ${asText(tdn.facts_as_of)}`} />
+      </div>
+      {asArray(tdn.windows).map((window) => (
+        <DetailBlock
+          key={window.id}
+          title={`${asText(window.id)} · ${asText(window.label)}`}
+          value={`Receita real ${displayNumber(window.revenue_real_growth_pct)}% · margem bruta ${displayNumber(window.gross_margin_change_pp)} p.p. · margem operacional ${displayNumber(window.operating_margin_change_pp)} p.p.`}
+          note={`IPCA acumulado ${displayNumber(window.ipca_acumulado_pct)}% · capital de giro/receita ${displayNumber(window.working_capital_ratio_change_pp)} p.p. · score ${displayNumber(window.score)}/5`}
+        />
+      ))}
+      {result?.tdn_conclusao && <DetailBlock title="Conclusão TDN no Deep" value={result.tdn_conclusao} />}
+      {tdn.note && <div className="warn-box">{tdn.note}</div>}
+      {result?.tdn_integrity?.complete === false && <div className="warn-box">TDN INCOMPLETO · a interpretação obrigatória não foi retornada, mas os números permaneceram preservados.</div>}
+      <div className="edg-audit-note">{asText(tdn.version)} · DFP/CVM {asText(tdn.facts_scope)} com fatos point-in-time · não altera score nem veredito global automaticamente.</div>
+    </Sec>
+  );
+}
+
 function BibliotecaAudit({ result }) {
   const library = result?.nexoModules?.BIBLIOTECA;
   if (!library || library.status === "not_applicable") return null;
@@ -453,6 +492,7 @@ function ScanReport({ r }) {
       {lacunas.length > 0 && <Sec title="Lacunas para o Deep">{lacunas.map((l, i) => <DetailBlock key={i} title={"Lacuna " + (i + 1)} value={l} />)}</Sec>}
       <HdlAudit result={r} />
       <NfiAudit result={r} />
+      {r?.nexoModules?.EDG?.edge_insumo === "TDN" && <TdnAudit result={r} />}
       <EdgAudit result={r} />
     </div>
   );
@@ -548,6 +588,7 @@ function DeepReport({ r, showClassicValuations = false }) {
       {steps.length > 0 && <Sec title="Próximos Passos">{steps.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
       <HdlAudit result={r} showUnavailable />
       <NfiAudit result={r} showUnavailable />
+      <TdnAudit result={r} showUnavailable />
       <BibliotecaAudit result={r} />
       <EdgAudit result={r} />
     </div>
@@ -605,6 +646,7 @@ function FinalReport({ r }) {
       {passos.length > 0 && <Sec title="Próximos Passos">{passos.map((p, i) => <DetailBlock key={i} title={"Passo " + (i + 1)} value={p} />)}</Sec>}
       <HdlAudit result={r} showUnavailable />
       <NfiAudit result={r} showUnavailable />
+      <TdnAudit result={r} showUnavailable />
       <EdgAudit result={r} />
     </div>
   );

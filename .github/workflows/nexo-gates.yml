@@ -68,6 +68,23 @@ jobs:
           test -s data/goldberg/hdl_curva.csv || { echo "Curva HDL ausente ou vazia"; exit 1; }
           head -n 1 data/goldberg/hdl_curva.csv | grep -Fx "data_ref,vertice_anos,taxa_real_pct,fonte,status"
 
+      # GATE F2 - TDN mede defesa nominal em janelas fixas sem mover o veredito sozinho.
+      - name: Self-tests e contratos do TDN
+        run: |
+          NEXO_SELFTEST=1 node lib/nexo/tdn/tdn_engine.mjs
+          NEXO_SELFTEST=1 node lib/nexo/tdn/tdn_repository.mjs
+          NEXO_SELFTEST=1 node scripts/collectors/tdn_collector.mjs
+          node scripts/tdn_contract_test.mjs
+          node scripts/tdn_api_integration_test.mjs
+          node scripts/tdn_ui_contract_test.mjs
+
+      - name: Conferir base histórica TDN versionada
+        run: |
+          test -s contracts/tdn-result.schema.json || { echo "Contrato TDN ausente"; exit 1; }
+          test -s data/goldberg/tdn_sector_matrix.json || { echo "Matriz TDN ausente"; exit 1; }
+          test -s data/goldberg/tdn_fatos.json || { echo "Fatos históricos TDN ausentes"; exit 1; }
+          test -s db/migrations/004_tdn_historical_facts.sql || { echo "Migração point-in-time TDN ausente"; exit 1; }
+
       - name: Resiliencia HTTP e reparo da resposta da Estacao 3
         run: node scripts/analysis_response_resilience_test.mjs
 

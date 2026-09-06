@@ -13,4 +13,5 @@ if (!configuration.configured) {
   await import("./migrate.mjs");
   await import("./b2_bootstrap.mjs");
   await import("./b3_bootstrap.mjs");
+  await import("../tdn_bootstrap.mjs");
 }

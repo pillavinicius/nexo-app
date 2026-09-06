@@ -3,6 +3,21 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { renderNexoReportPdf } from "../lib/reporting/nexo_pdf_report.mjs";
 
+const tdnFixture = {
+  version: "TDN_v1.0",
+  status: "ok",
+  veredito: "misto",
+  score_nominalidade: 3.44,
+  profile_label: "Empresa operacional",
+  facts_scope: "consolidado",
+  protection_mechanism: "repasse_operacional",
+  facts_as_of: "2024-03-20",
+  windows: [
+    { id: "J1", label: "Estresse inflacionário 2015–2016", score: 2.5, revenue_real_growth_pct: -2, gross_margin_change_pp: -1, operating_margin_change_pp: -2, ipca_acumulado_pct: 17.63, working_capital_ratio_change_pp: 1 },
+    { id: "J2", label: "Choque inflacionário 2021–2022", score: 4.38, revenue_real_growth_pct: 5, gross_margin_change_pp: 0, operating_margin_change_pp: -1, ipca_acumulado_pct: 16.43, working_capital_ratio_change_pp: 0 },
+  ],
+};
+
 const fixture = {
   generatedAt: "2026-09-05T14:00:00.000Z",
   ticker: "TEST3",
@@ -71,6 +86,7 @@ const fixture = {
       besst_previous_value: "R$ 36,50",
     },
     hdl_conclusao: "O alfa esperado supera o soberano, condicionado à manutenção das premissas operacionais.",
+    tdn_conclusao: "As duas janelas mostram defesa mista, sem alteração automática da classificação global.",
     hdl_integrity: { complete: true },
     nexoModules: {
       HDL: {
@@ -87,6 +103,7 @@ const fixture = {
         selection_method: "exact_vertex",
         vertices_base_anos: [5],
       },
+      TDN: tdnFixture,
     },
     macro: [{ s: "Juros altos", i: "Pressão moderada sobre múltiplos" }],
     catalisadores: [{ d: "Eficiência", impacto: "Positivo", p: "12 a 18 meses" }],
@@ -114,6 +131,7 @@ const fixture = {
     preco_final: { zona_convergencia: "R$ 39,00 a R$ 43,00", besst: "R$ 29,25 a R$ 36,55", margem_seguranca: "15%", observacao: "Faixa de referência, não decisão automática." },
     conclusao: "Manter em acompanhamento até que a evidência observável confirme a tese.",
     hdl_conclusao: "O alfa esperado supera o soberano, condicionado à manutenção das premissas operacionais.",
+    tdn_conclusao: "As duas janelas mostram defesa mista, sem alteração automática da classificação global.",
     hdl_integrity: { complete: true },
     nexoModules: {
       HDL: {
@@ -130,6 +148,7 @@ const fixture = {
         selection_method: "exact_vertex",
         vertices_base_anos: [5],
       },
+      TDN: tdnFixture,
     },
     proximos_passos: ["Revisar o próximo balanço.", "Atualizar o contrato de edge."],
   },
