@@ -8,6 +8,7 @@ const nextConfig = {
       "./data/nexo_macro.csv",
       "./data/context/latest.json",
       "./data/goldberg/hdl_curva.csv",
+      "./data/biblioteca/b0_formatos_2025_2026.json",
     ],
     "/api/analyze": [
       "./data/context/latest.json",
