@@ -1876,6 +1876,12 @@ export default function NEXOApp() {
         </div>
 
         <Sec title="HDL · Hurdle do Leviatã · F1a">
+          <div className="edg-tools">
+            <span>Consulte as condições por classe de ativo, cenário macro e limites de interpretação.</span>
+            <a className="btn-manual" href="/hdl-manual" target="_blank" rel="noreferrer">
+              Abrir mini manual HDL ↗
+            </a>
+          </div>
           <div className="choice-help">
             <strong>O que o HDL mede</strong> · compara a TIR real esperada do ativo com a taxa real soberana ANBIMA no mesmo horizonte. Ele responde se o prêmio esperado supera o Tesouro; não calcula valuation, score ou veredito.
           </div>
