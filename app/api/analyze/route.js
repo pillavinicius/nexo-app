@@ -593,8 +593,9 @@ export async function POST(req) {
     );
     const edg = computeEDG(effectiveEdgeLedger, { availableModules: availableEdgeModules });
     const edgContext = buildEdgAnalysisContext(edg, effectiveEdgeLedger);
+    const bibliotecaGaps = phase === "deep" ? deriveExpectedDeepGaps(analysisHistory, analysisIntent?.userFocus) : [];
     const biblioteca = phase === "deep" && !isExternalAsset(assetType)
-      ? await loadBibliotecaContext({ ticker })
+      ? await loadBibliotecaContext({ ticker, gaps: bibliotecaGaps })
       : { available: false, status: isExternalAsset(assetType) ? "not_applicable" : "not_requested", documents: [], documentIds: [] };
     const bibliotecaContext = buildBibliotecaPromptContext(biblioteca);
 
