@@ -15,8 +15,10 @@ O documento pertence ao emissor. Uma consulta por ticker resolve primeiro o emis
 
 1. Criar um projeto Postgres no Neon pela integração da Vercel.
 2. Disponibilizar `DATABASE_URL` nos ambientes Preview e Production.
-3. Aplicar `npm run migrate:biblioteca` uma vez em cada banco.
+3. Gerar um novo deploy. O `prebuild` exige a conexão na Vercel e aplica a migração idempotente.
 4. Confirmar `data.bibliotecaB1.status = ready` em `/api/health`.
+
+Também é possível aplicar manualmente com `npm run migrate:biblioteca`. Fora da Vercel, um build sem `DATABASE_URL` não tenta acessar banco algum; dentro da Vercel, a ausência da variável ou uma migração inválida interrompe o deploy.
 
 A aplicação nunca expõe a string de conexão. Sem configuração, o estado é `not_configured`; com conexão sem migração, `migration_required`; falhas permanecem `unavailable`.
 

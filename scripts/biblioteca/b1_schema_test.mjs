@@ -7,6 +7,7 @@ import { BIBLIOTECA_SCHEMA_VERSION, bibliotecaDatabaseHealth, databaseConfigurat
 import { createBibliotecaRepository, normalizeTicker } from "../../lib/nexo/biblioteca/repository.mjs";
 
 const migration = readFileSync(new URL("../../db/migrations/001_biblioteca_b1.sql", import.meta.url), "utf8");
+const conditionalMigration = readFileSync(new URL("./migrate_if_configured.mjs", import.meta.url), "utf8");
 for (const token of [
   "CREATE SCHEMA IF NOT EXISTS biblioteca",
   "biblioteca.emissores",
@@ -17,6 +18,8 @@ for (const token of [
   "documentos_fonte_id_unico",
   "idx_documentos_issuer_data",
 ]) assert.ok(migration.includes(token), `migração sem ${token}`);
+assert.ok(conditionalMigration.includes("process.env.VERCEL"), "deploy precisa exigir conexão configurada");
+assert.ok(conditionalMigration.includes('await import("./migrate.mjs")'), "deploy precisa aplicar a migração");
 
 assert.equal(databaseConfiguration({}).configured, false);
 assert.equal(databaseConfiguration({ DATABASE_URL: "postgresql://example/db" }).configured, true);

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/biblioteca/migrate_if_configured.mjs",
     "build": "next build",
     "start": "next start",
     "test:nmi": "NEXO_SELFTEST=1 node lib/nmi/nexo_context_validator.mjs",
