@@ -676,6 +676,7 @@ export default function NEXOApp() {
 
   const [followQ, setFollowQ] = useState("");
   const [followUrl, setFollowUrl] = useState("");
+  const [followError, setFollowError] = useState("");
   const [ended, setEnded] = useState(false);
   const [activeView, setActiveView] = useState(ANALYSIS_VIEW.SETUP);
   const [hdlGuideActive, setHdlGuideActive] = useState(false);
@@ -689,6 +690,7 @@ export default function NEXOApp() {
   const hdlReturnInputRef = useRef(null);
   const hdlHorizonInputRef = useRef(null);
   const deepActionRef = useRef(null);
+  const followErrorRef = useRef(null);
 
   const hasScan = !!scanResult;
   const hasDeep = !!deepResult;
@@ -1037,6 +1039,7 @@ export default function NEXOApp() {
     setPdfLoading(false);
     setFollowQ("");
     setFollowUrl("");
+    setFollowError("");
     setEnded(false);
     setActiveView(ANALYSIS_VIEW.SETUP);
     setHdlGuideActive(false);
@@ -1285,14 +1288,21 @@ export default function NEXOApp() {
     setLoading(true);
     setLoadingKind("follow");
     setError("");
+    setFollowError("");
 
+    let importedSource = null;
     try {
-      let importedSource = null;
       if (needsUserSource) {
         const importResponse = await fetch("/api/biblioteca/ingest-url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ticker: ticker.trim().toUpperCase(), assetType: currentAssetType, url: followUrl.trim() }),
+          body: JSON.stringify({
+            ticker: ticker.trim().toUpperCase(),
+            assetType: currentAssetType,
+            url: followUrl.trim(),
+            focus: followQ.trim(),
+            gaps: asArray(bibliotecaAudit?.lacunas_abertas),
+          }),
         });
         const imported = await readApiJsonResponse(importResponse);
         if (!importResponse.ok || !imported?.ok) throw new Error(imported?.error?.message || "Não foi possível importar a fonte para a Biblioteca Viva.");
@@ -1317,9 +1327,16 @@ export default function NEXOApp() {
       setActiveView(`deep-${deepAdds.length + 1}`);
       setFollowQ("");
       setFollowUrl("");
+      setFollowError("");
       setPhase("deep_done");
     } catch (e) {
-      if (e?.name !== "AbortError") setError(e?.message || "Erro desconhecido");
+      if (e?.name !== "AbortError") {
+        const message = importedSource
+          ? `A fonte foi importada, mas o novo Deep não pôde ser concluído: ${e?.message || "erro desconhecido"}`
+          : e?.message || "Não foi possível importar essa fonte para a Biblioteca Viva.";
+        setFollowError(message);
+        window.requestAnimationFrame(() => followErrorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+      }
     } finally {
       setLoading(false);
       setLoadingKind("");
@@ -2240,6 +2257,7 @@ export default function NEXOApp() {
                   <input className="finp-sm" disabled={loading} value={followUrl} placeholder="https://ri.empresa.com.br/documento.pdf" onChange={(e) => setFollowUrl(e.target.value)} />
                   <div className="macro-note">Ao aprofundar, o documento será validado, importado e processado na Biblioteca deste ativo.</div>
                   {followUrl.trim() && !isValidHttpsUrl(followUrl) && <div className="scan-hint">Informe um endereço HTTPS válido.</div>}
+                  {followError && <div ref={followErrorRef} className="err-box" role="alert">Erro na fonte: {followError}</div>}
                 </div>
               )}
 
