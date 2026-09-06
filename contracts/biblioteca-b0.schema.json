@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexo-app-sable.vercel.app/contracts/biblioteca-b0.schema.json",
+  "title": "NEXO Biblioteca Viva B0",
+  "type": "object",
+  "required": ["version", "generated_at", "source", "years", "methodology", "dataset_rows", "sample_requested", "sample_completed", "distribution", "decision_b3", "sample"],
+  "properties": {
+    "version": { "const": "BIB_B0_v1.0" },
+    "source": { "const": "CVM_IPE" },
+    "years": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 2003 } },
+    "dataset_rows": { "type": "integer", "minimum": 0 },
+    "sample_requested": { "type": "integer", "minimum": 0 },
+    "sample_completed": { "type": "integer", "minimum": 0 },
+    "distribution": {
+      "type": "object",
+      "required": ["detected_format", "declared_format", "content_type", "non_pdf_share", "header_magic_mismatches", "content_type_magic_mismatches"]
+    },
+    "decision_b3": {
+      "type": "object",
+      "required": ["html_xml_branch_required", "office_branch_required", "primary_text_parser", "table_parser"]
+    },
+    "sample": { "type": "array" }
+  }
+}

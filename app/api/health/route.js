@@ -39,12 +39,51 @@ function readContext() {
   }
 }
 
+function readBibliotecaB0() {
+  try {
+    const report = JSON.parse(
+      readFileSync(
+        join(process.cwd(), "data", "biblioteca", "b0_formatos_2025_2026.json"),
+        "utf8"
+      )
+    );
+    return {
+      available: report?.version === "BIB_B0_v1.0" && report?.sample_completed > 0,
+      version: report?.version || null,
+      generatedAt: report?.generated_at || null,
+      years: report?.years || [],
+      datasetRows: report?.dataset_rows || 0,
+      sampleCompleted: report?.sample_completed || 0,
+      sampleFailed: report?.sample_failed || 0,
+      categoriesSampled: report?.categories_sampled || 0,
+      detectedFormats: report?.distribution?.detected_format || {},
+      contentTypeMagicMismatches: report?.distribution?.content_type_magic_mismatches || 0,
+      decisionB3: report?.decision_b3 || null,
+    };
+  } catch {
+    return {
+      available: false,
+      version: null,
+      generatedAt: null,
+      years: [],
+      datasetRows: 0,
+      sampleCompleted: 0,
+      sampleFailed: 0,
+      categoriesSampled: 0,
+      detectedFormats: {},
+      contentTypeMagicMismatches: 0,
+      decisionB3: null,
+    };
+  }
+}
+
 export async function GET() {
   const macro = readMacroStatus();
   const context = readContext();
   const hdl = loadHdlCurve();
   const nfiRepository = loadNfiFlow();
   const nfi = computeNFI({ fluxo: nfiRepository.rows });
+  const bibliotecaB0 = readBibliotecaB0();
 
   const contextReadable =
     typeof context?.contextSchemaVersion === "string" &&
@@ -95,6 +134,7 @@ export async function GET() {
           sourceStatus: nfi.status_fonte,
           error: nfiRepository.error || null,
         },
+        bibliotecaB0,
       },
     },
     {
