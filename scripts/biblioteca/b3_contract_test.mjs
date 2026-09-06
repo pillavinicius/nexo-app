@@ -7,7 +7,7 @@ import { join } from "node:path";
 import PDFDocument from "pdfkit";
 
 import { reconcileDeepIntegrity } from "../../lib/nexo/analysis/reclassification_integrity.mjs";
-import { applyBibliotecaAudit, buildBibliotecaPromptContext } from "../../lib/nexo/biblioteca/context.mjs";
+import { applyBibliotecaAudit, buildBibliotecaPromptContext, deriveExpectedDeepGaps } from "../../lib/nexo/biblioteca/context.mjs";
 import { extractHtmlText, parseDocument, parsePendingDocuments, selectRelevantPdfContent } from "../../lib/nexo/biblioteca/document_parser.mjs";
 import { ingestUserSource, isPrivateAddress, validatePublicHttpsUrl } from "../../lib/nexo/biblioteca/url_ingestion.mjs";
 
@@ -68,6 +68,30 @@ assert.equal(withoutLibrary.nexoModules.BIBLIOTECA.requires_user_source, true);
 assert.equal(withLibrary.score_revisado, 22, "documento válido pode lastrear ajuste explícito");
 assert.equal(withLibrary.veredito_final, "COMPRAR");
 assert.equal(withLibrary.nexoModules.BIBLIOTECA.requires_user_source, false);
+
+const governedScanGaps = [
+  "Inadimplência por segmento (rural vs. varejo vs. grandes empresas)",
+  "Metodologia de cálculo do ROIC e reconciliação com dados do balanço",
+];
+const inconsistentDeep = {
+  lacunas: [
+    { q: "O ROIC é real ou artefato metodológico?", r: "A métrica não é adequada para bancos." },
+    { q: "A política de dividendos foi cumprida?", r: "Sim." },
+  ],
+  lacunas_documentais: [
+    { lacuna: governedScanGaps[0], status: "aberta", evidencia_documental: [] },
+    { lacuna: governedScanGaps[1], status: "aberta", evidencia_documental: [] },
+    { lacuna: "Política de dividendos", status: "resolvida", evidencia_documental: ["cvm_ipe:doc-1"] },
+  ],
+};
+const expectedGaps = deriveExpectedDeepGaps({ scan: { lacunas_deep: governedScanGaps } });
+const governedDeep = applyBibliotecaAudit(inconsistentDeep, context, { expectedGaps });
+assert.deepEqual(governedDeep.lacunas_documentais.map((gap) => gap.lacuna), governedScanGaps);
+assert.equal(governedDeep.lacunas_documentais.length, 2, "Deep não pode inventar uma terceira lacuna");
+assert.equal(governedDeep.lacunas.length, 2, "respostas devem obedecer ao escopo do Scan");
+assert.match(governedDeep.lacunas[1].r, /métrica não é adequada/, "resposta válida do ROIC deve ser preservada");
+assert.deepEqual(governedDeep.nexoModules.BIBLIOTECA.discarded_new_gaps, ["Política de dividendos"]);
+assert.deepEqual(deriveExpectedDeepGaps({ scan: { lacunas_deep: governedScanGaps }, deep: governedDeep }, "Confirmar New NPL"), [...governedScanGaps, "Confirmar New NPL"]);
 console.log("SIMULAÇÃO B3 · sem Biblioteca: MONITORAR 21/30 · com Biblioteca: COMPRAR 22/30");
 
 for (const address of ["127.0.0.1", "10.1.2.3", "192.168.1.2", "::1", "fd00::1"]) assert.equal(isPrivateAddress(address), true);

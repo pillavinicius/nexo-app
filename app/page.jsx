@@ -1174,7 +1174,7 @@ export default function NEXOApp() {
     setEdgeExpiryCustom("");
   }
 
-  async function callAPI(ph, overrideCtx = "", analysisHistory = {}) {
+  async function callAPI(ph, overrideCtx = "", analysisHistory = {}, analysisIntent = {}) {
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -1212,6 +1212,7 @@ export default function NEXOApp() {
           horizonte_anos: hdlHorizonYears,
         },
         analysisHistory,
+        analysisIntent,
       }),
     });
 
@@ -1322,7 +1323,7 @@ export default function NEXOApp() {
         scan: scanResult,
         deep: deepResult,
         deepAdds,
-      });
+      }, { kind: "follow_up", userFocus: followQ.trim() });
       setDeepAdds((prev) => [...prev, r]);
       setActiveView(`deep-${deepAdds.length + 1}`);
       setFollowQ("");
@@ -1478,8 +1479,9 @@ export default function NEXOApp() {
   const CSS = `
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Inter:wght@300;400;500;600&display=swap');
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{background:#131008;color:#D4C9A8;font-family:'Inter',sans-serif;min-height:100vh}
-    .app{max-width:960px;margin:0 auto;padding:0 16px 48px;overflow-x:hidden}
+    html,body{background:#131008;min-height:100%;overflow-x:hidden;overscroll-behavior-y:none}
+    body{color:#D4C9A8;font-family:'Inter',sans-serif;min-height:100dvh}
+    .app{max-width:960px;min-height:100dvh;margin:0 auto;padding:0 16px 16px;overflow-x:hidden;display:flex;flex-direction:column}
     .hdr{border-bottom:1px solid #2A2318;padding:10px 0 8px;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
     .logo-box{font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:#E8D5A3;letter-spacing:3px}
     .logo-s{font-family:'JetBrains Mono',monospace;font-size:9px;color:#4A3E28;letter-spacing:2.5px;text-transform:uppercase}
@@ -1560,7 +1562,7 @@ export default function NEXOApp() {
     .decision-title,.follow-title{font-family:'JetBrains Mono',monospace;font-size:9px;color:#C9A84C;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
     .decision-actions,.follow-actions{display:flex;gap:8px;margin-top:10px}
     .ended-box{margin-top:16px;padding:12px 14px;border:1px solid #2A2318;background:rgba(201,168,76,.04);font-family:'JetBrains Mono',monospace;font-size:10px;color:#C9A84C;letter-spacing:1px;text-transform:uppercase}
-    .footer{display:flex;gap:12px;flex-wrap:wrap;padding:10px 0 0;border-top:1px solid #1E1A0E;margin-top:4px}
+    .footer{display:flex;gap:12px;flex-wrap:wrap;padding:10px 0 max(4px,env(safe-area-inset-bottom));border-top:1px solid #1E1A0E;margin-top:auto}
     .fc{font-family:'JetBrains Mono',monospace;font-size:7.5px;color:#3A3020;letter-spacing:.8px;display:flex;align-items:center;gap:4px}
     .fd{width:4px;height:4px;border-radius:50%;flex-shrink:0}
     button:disabled,input:disabled,textarea:disabled,select:disabled{opacity:.3!important;cursor:not-allowed!important}

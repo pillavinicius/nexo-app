@@ -43,4 +43,6 @@ for (const token of [
 ]) assert.ok(page.includes(token), `contrato visual ausente: ${token}`);
 
 assert.ok(page.includes("activeDeepResult"), "cada página Deep deve renderizar somente seu próprio resultado");
+assert.ok(page.includes("min-height:100dvh"), "a página deve ocupar o viewport sem deixar cauda vazia após o rodapé");
+assert.ok(page.includes("margin-top:auto"), "o rodapé deve encostar no fim do viewport em páginas curtas");
 console.log("B3.1 navegação Scan/Deep/Reclassificação e desvio HDL: OK");
