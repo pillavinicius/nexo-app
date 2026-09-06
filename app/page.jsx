@@ -415,7 +415,12 @@ function TdnAudit({ result, showUnavailable = false }) {
   const verdictLabels = { real: "DEFESA REAL", nominal: "DEFESA NOMINAL", misto: "MISTO" };
   return (
     <Sec title="TDN · Teste de Defesa Nominal">
-      <div className="edg-tools"><span>Entenda janelas, perfis setoriais e limites de interpretação.</span><a href="/tdn-manual" target="_blank" rel="noreferrer">Abrir mini manual →</a></div>
+      <div className="edg-tools">
+        <span>Entenda janelas, perfis setoriais e limites de interpretação.</span>
+        <a className="btn-manual" href="/tdn-manual" target="_blank" rel="noreferrer">
+          Abrir mini manual TDN ↗
+        </a>
+      </div>
       <div className="grid3">
         <MetricCard title="Classificação" value={verdictLabels[tdn.veredito] || asText(tdn.veredito).toUpperCase()} note={asText(tdn.profile_label)} />
         <MetricCard title="Score de defesa" value={`${displayNumber(tdn.score_nominalidade)} / 5`} note={`${asText(tdn.janelas_cobertas)} de 2 janelas completas`} />
