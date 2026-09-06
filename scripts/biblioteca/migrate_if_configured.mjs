@@ -11,4 +11,5 @@ if (!configuration.configured) {
   console.log("Biblioteca B1: migração ignorada fora da Vercel sem DATABASE_URL");
 } else {
   await import("./migrate.mjs");
+  await import("./b2_bootstrap.mjs");
 }

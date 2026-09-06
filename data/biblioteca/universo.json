@@ -1,0 +1,19 @@
+{
+  "version": "BIB_UNIVERSE_v1.0",
+  "as_of": "2026-09-06",
+  "source": "cvm_ipe",
+  "years": [2026],
+  "assets": [
+    {
+      "ticker": "BBAS3",
+      "issuer_id": "cvm:1023",
+      "nome": "BANCO DO BRASIL S.A.",
+      "cnpj": "00000000000191",
+      "codigo_cvm": "1023",
+      "classe": "acao-br",
+      "mercado": "B3",
+      "categorias": ["Fato Relevante"],
+      "desde": "2026-08-01"
+    }
+  ]
+}
