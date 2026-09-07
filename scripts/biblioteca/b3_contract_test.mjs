@@ -142,6 +142,13 @@ assert.equal(governedDeep.lacunas.length, 2, "respostas devem obedecer ao escopo
 assert.match(governedDeep.lacunas[1].r, /métrica não é adequada/, "resposta válida do ROIC deve ser preservada");
 assert.deepEqual(governedDeep.nexoModules.BIBLIOTECA.discarded_new_gaps, ["Política de dividendos"]);
 assert.deepEqual(deriveExpectedDeepGaps({ scan: { lacunas_deep: governedScanGaps }, deep: governedDeep }, "Confirmar New NPL"), [...governedScanGaps, "Confirmar New NPL"]);
+
+const partiallyAnswered = applyBibliotecaAudit({
+  lacunas: [{ q: "Política de dividendos e payout 2026–2027", r: "Parcialmente resolvida: o JCP foi confirmado, mas o payout explícito não foi declarado nos documentos disponíveis." }],
+  lacunas_documentais: [{ lacuna: "Política de dividendos e payout 2026–2027", status: "resolvida", evidencia_documental: ["cvm_ipe:doc-1"] }],
+}, context, { expectedGaps: ["Política de dividendos e payout 2026–2027"] });
+assert.equal(partiallyAnswered.lacunas_documentais[0].status, "aberta", "evidência parcial não pode encerrar uma lacuna composta");
+assert.equal(partiallyAnswered.nexoModules.BIBLIOTECA.requires_user_source, true);
 console.log("SIMULAÇÃO B3 · sem Biblioteca: MONITORAR 21/30 · com Biblioteca: COMPRAR 22/30");
 
 for (const address of ["127.0.0.1", "10.1.2.3", "192.168.1.2", "::1", "fd00::1"]) assert.equal(isPrivateAddress(address), true);
