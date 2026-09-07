@@ -149,7 +149,9 @@ const partiallyAnswered = applyBibliotecaAudit({
   lacunas: [{ q: "Política de dividendos e payout 2026–2027", r: "Parcialmente resolvida: o JCP foi confirmado, mas o payout explícito não foi declarado nos documentos disponíveis." }],
   lacunas_documentais: [{ lacuna: "Política de dividendos e payout 2026–2027", status: "resolvida", evidencia_documental: ["cvm_ipe:doc-1"] }],
 }, context, { expectedGaps: ["Política de dividendos e payout 2026–2027"] });
-assert.equal(partiallyAnswered.lacunas_documentais[0].status, "aberta", "evidência parcial não pode encerrar uma lacuna composta");
+assert.equal(partiallyAnswered.lacunas_documentais[0].status, "parcial", "evidência parcial deve ser distinguida de lacuna sem resposta");
+assert.deepEqual(partiallyAnswered.nexoModules.BIBLIOTECA.lacunas_parciais, ["Política de dividendos e payout 2026–2027"]);
+assert.deepEqual(partiallyAnswered.nexoModules.BIBLIOTECA.lacunas_abertas, ["Política de dividendos e payout 2026–2027"], "lacuna parcial continua no escopo do próximo aprofundamento");
 assert.equal(partiallyAnswered.nexoModules.BIBLIOTECA.requires_user_source, true);
 console.log("SIMULAÇÃO B3 · sem Biblioteca: MONITORAR 21/30 · com Biblioteca: COMPRAR 22/30");
 

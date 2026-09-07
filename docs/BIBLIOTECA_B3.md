@@ -10,7 +10,7 @@ O B3 transforma documentos em evidência rastreável. A B3.2 separa definitivame
 4. O Deep pesquisa o índice pela lacuna, recupera no máximo doze chunks e respeita orçamento total de 28 mil caracteres.
 5. O documento integral nunca entra no prompt; somente os menores trechos suficientes são enviados.
 6. Se um índice antigo ainda não foi reprocessado, o fallback por documento permanece disponível e é explicitamente auditado.
-7. Cada lacuna é classificada como `resolvida` ou `aberta`.
+7. Cada lacuna é classificada como `resolvida`, `parcial` ou `aberta`; a parcial permanece no escopo do aprofundamento sem parecer ausência total de evidência.
 8. Uma lacuna só é resolvida quando cita um `dedup_key` realmente presente no contexto.
 9. Ajustes de score que aleguem documento inexistente são descartados pelo servidor.
 
