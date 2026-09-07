@@ -153,6 +153,22 @@ assert.equal(partiallyAnswered.lacunas_documentais[0].status, "parcial", "evidê
 assert.deepEqual(partiallyAnswered.nexoModules.BIBLIOTECA.lacunas_parciais, ["Política de dividendos e payout 2026–2027"]);
 assert.deepEqual(partiallyAnswered.nexoModules.BIBLIOTECA.lacunas_abertas, ["Política de dividendos e payout 2026–2027"], "lacuna parcial continua no escopo do próximo aprofundamento");
 assert.equal(partiallyAnswered.nexoModules.BIBLIOTECA.requires_user_source, true);
+
+const retrievalReconciled = applyBibliotecaAudit({
+  lacunas: [{ q: "NPL por carteira", r: "NPL Agro 1,37%, PF 8,41% e PJ 3,18%, com cobertura agro de 145,9%." }],
+  lacunas_documentais: [{ lacuna: "NPL por carteira", status: "aberta", evidencia_documental: [] }],
+}, {
+  ...context,
+  documents: [{
+    id: "ri:npl-full", trust: "user_supplied", matchedGaps: ["NPL por carteira"],
+    text: "NPL Agro 1,37%. INAD+90d PF 8,41%. INAD+90d PJ 3,18%. Cobertura New NPL agro 145,9%.",
+    chunks: [{ id: "ri:npl-full#00001" }],
+  }],
+  documentIds: ["ri:npl-full"],
+  chunkIds: ["ri:npl-full#00001"],
+}, { expectedGaps: ["NPL por carteira"] });
+assert.equal(retrievalReconciled.lacunas_documentais[0].status, "resolvida", "servidor deve reconciliar evidência numérica presente nos chunks mesmo sem ID repetido pela IA");
+assert.deepEqual(retrievalReconciled.nexoModules.BIBLIOTECA.documents_used, ["ri:npl-full"]);
 console.log("SIMULAÇÃO B3 · sem Biblioteca: MONITORAR 21/30 · com Biblioteca: COMPRAR 22/30");
 
 for (const address of ["127.0.0.1", "10.1.2.3", "192.168.1.2", "::1", "fd00::1"]) assert.equal(isPrivateAddress(address), true);
