@@ -7,8 +7,9 @@ import { join } from "node:path";
 import PDFDocument from "pdfkit";
 
 import { reconcileDeepIntegrity } from "../../lib/nexo/analysis/reclassification_integrity.mjs";
-import { applyBibliotecaAudit, buildBibliotecaPromptContext, deriveExpectedDeepGaps, selectBibliotecaDocuments } from "../../lib/nexo/biblioteca/context.mjs";
-import { extractHtmlText, parseDocument, parsePendingDocuments, selectRelevantPdfContent } from "../../lib/nexo/biblioteca/document_parser.mjs";
+import { applyBibliotecaAudit, buildBibliotecaPromptContext, deriveExpectedDeepGaps, loadBibliotecaContext, selectBibliotecaChunks, selectBibliotecaDocuments } from "../../lib/nexo/biblioteca/context.mjs";
+import { buildDocumentChunks, extractHtmlText, parseDocument, parsePendingDocuments, selectRelevantPdfContent } from "../../lib/nexo/biblioteca/document_parser.mjs";
+import { createBibliotecaRepository } from "../../lib/nexo/biblioteca/repository.mjs";
 import { ingestUserSource, isPrivateAddress, validatePublicHttpsUrl } from "../../lib/nexo/biblioteca/url_ingestion.mjs";
 
 function makePdf(text) {
@@ -27,6 +28,8 @@ const pdf = await makePdf("Documento oficial NEXO B3");
 const parsedPdf = await parseDocument({ content: pdf, formato: "pdf" });
 assert.equal(parsedPdf.status, "ok");
 assert.match(parsedPdf.texto, /Documento oficial NEXO B3/);
+assert.equal(parsedPdf.pageCount, 1);
+assert.ok(parsedPdf.chunkCount >= 1);
 assert.ok(globalThis.pdfjsWorker?.WorkerMessageHandler, "worker do pdf.js deve ser registrado explicitamente para o bundle serverless");
 
 const longPages = Array.from({ length: 80 }, (_, index) => ({
@@ -45,21 +48,56 @@ const rankedDocuments = selectBibliotecaDocuments([
 assert.equal(rankedDocuments[0].document.dedup_key, "ri:npl", "fonte RI pertinente deve superar o corte dos seis documentos");
 assert.deepEqual(rankedDocuments[0].matches.map((match) => match.gap), ["inadimplência por carteira NPL"]);
 
+const fullChunks = buildDocumentChunks([{ number: 58, text: `${"Contexto financeiro geral. ".repeat(100)} New NPL por carteira: PF 5,2%, PJ 3,1% e Agro 2,4%.` }]);
+assert.ok(fullChunks.length > 1, "página extensa deve ser dividida em chunks rastreáveis");
+const selectedChunks = selectBibliotecaChunks([
+  { chunk_id: "ri:npl#00000", dedup_key: "ri:npl", fonte: "ri", titulo: "Análise 2T26", pagina_inicio: 58, pagina_fim: 58, texto: "New NPL por carteira PF, PJ e Agro; inadimplência detalhada." },
+  { chunk_id: "cvm:generic#00000", dedup_key: "cvm:generic", fonte: "cvm_ipe", titulo: "Ata", pagina_inicio: 1, pagina_fim: 1, texto: "Pauta societária genérica." },
+], ["inadimplência por carteira NPL"]);
+assert.equal(selectedChunks[0].chunk.chunk_id, "ri:npl#00000");
+
+const selectiveContext = await loadBibliotecaContext({
+  ticker: "BBAS3",
+  gaps: ["inadimplência por carteira NPL"],
+  client: { async query(sql) {
+    if (sql.includes("WITH asset_documents")) return [{
+      dedup_key: "ri:npl", fonte: "ri", categoria: "Release", titulo: "Análise do Desempenho 2T26",
+      data_documento: "2026-08-14", url_origem: "https://ri.exemplo/npl.pdf", parser_version: "BIB_B3_2_PARSER_v2.0",
+      chunk_id: "ri:npl#00042", ordem: 42, pagina_inicio: 58, pagina_fim: 58,
+      secao: "New NPL", texto: "New NPL por carteira PF, PJ e Agro; inadimplência detalhada.", tamanho_caracteres: 64,
+      tabelas_json: [{ page: 58, rows: [["New NPL", "PF", "5,2%"]] }], search_rank: 0.91,
+    }];
+    if (sql.includes("count(DISTINCT d.dedup_key)")) return [{ total: 9, indexed: 8 }];
+    throw new Error(`SQL inesperado: ${sql.slice(0, 50)}`);
+  } },
+});
+assert.equal(selectiveContext.retrievalMode, "selective_chunks");
+assert.deepEqual(selectiveContext.inventory, { total: 9, indexed: 8 });
+assert.deepEqual(selectiveContext.chunkIds, ["ri:npl#00042"]);
+assert.match(selectiveContext.documents[0].text, /Páginas 58/);
+
 const updates = [];
+const pendingIndexes = [];
 const pendingResult = await parsePendingDocuments({ repository: {
   async listPendingDocuments() { return [{ dedup_key: "cvm_ipe:1", formato: "html", conteudo_binario: Buffer.from("<p>Evidência oficial</p>"), hash_conteudo: "a".repeat(64) }]; },
   async updateParseState(value) { updates.push(value); },
+  async replaceDocumentIndex(value) { pendingIndexes.push(value); return { pages: value.pages.length, chunks: value.chunks.length }; },
 } });
 assert.deepEqual(pendingResult, { discovered: 1, parsed: 1, unsupported: 0, failed: 0 });
 assert.equal(updates[0].status, "ok");
+assert.equal(pendingIndexes[0].pages.length, 1, "parse pendente deve criar índice integral");
 
 const context = {
   available: true,
   status: "ready",
   documentIds: ["cvm_ipe:doc-1"],
-  documents: [{ id: "cvm_ipe:doc-1", date: "2026-08-19", title: "Fato Relevante", text: "A companhia confirmou a evidência nova." }],
+  chunkIds: ["cvm_ipe:doc-1#00000"],
+  inventory: { total: 9, indexed: 8 },
+  retrievalMode: "selective_chunks",
+  documents: [{ id: "cvm_ipe:doc-1", date: "2026-08-19", title: "Fato Relevante", text: "A companhia confirmou a evidência nova.", chunks: [{ id: "cvm_ipe:doc-1#00000" }] }],
 };
 assert.match(buildBibliotecaPromptContext(context), /cvm_ipe:doc-1/);
+assert.match(buildBibliotecaPromptContext(context), /9 documento\(s\) no acervo; 1 fonte\(s\) e 1 trecho\(s\)/);
 const baseline = { scan: { score_total: 21, score_max: 30, score_dimensoes: [{ nome: "Qualidade de earnings", nota: 3 }] } };
 const candidate = {
   ticker: "BBAS3", veredito_final: "COMPRAR", zona: "R$ 20 a R$ 22", besst: "R$ 15 a R$ 18",
@@ -77,6 +115,9 @@ assert.equal(withLibrary.score_revisado, 22, "documento válido pode lastrear aj
 assert.equal(withLibrary.veredito_final, "COMPRAR");
 assert.equal(withLibrary.nexoModules.BIBLIOTECA.requires_user_source, false);
 assert.deepEqual(withLibrary.nexoModules.BIBLIOTECA.documents_consulted, ["cvm_ipe:doc-1"]);
+assert.equal(withLibrary.nexoModules.BIBLIOTECA.documents_available, 9, "contagem deve refletir o acervo, não só o contexto enviado");
+assert.equal(withLibrary.nexoModules.BIBLIOTECA.documents_indexed, 8);
+assert.deepEqual(withLibrary.nexoModules.BIBLIOTECA.chunks_consulted, ["cvm_ipe:doc-1#00000"]);
 
 const governedScanGaps = [
   "Inadimplência por segmento (rural vs. varejo vs. grandes empresas)",
@@ -108,6 +149,8 @@ await assert.rejects(() => validatePublicHttpsUrl("http://ri.exemplo.com/doc.pdf
 await assert.rejects(() => validatePublicHttpsUrl("https://localhost/doc.pdf", { lookupImpl: async () => [{ address: "127.0.0.1" }] }), /private_forbidden/);
 
 const stored = [];
+const raw = [];
+const indexes = [];
 const ingested = await ingestUserSource({
   ticker: "BBAS3",
   sourceUrl: "https://ri.exemplo.com/documento",
@@ -116,14 +159,39 @@ const ingested = await ingestUserSource({
   repository: {
     async findAssetByTicker() { return { ticker: "BBAS3", issuer_id: "cvm:1023" }; },
     async findByDedupKey() { return null; },
+    async upsertRawDocument(value) { raw.push(value); return { inserted: true }; },
     async upsertParsedDocument(value) { stored.push(value); return { inserted: true }; },
+    async replaceDocumentIndex(value) { indexes.push(value); return { pages: value.pages.length, chunks: value.chunks.length }; },
   },
   now: () => new Date("2026-09-06T12:00:00Z"),
 });
 assert.equal(ingested.inserted, true);
 assert.equal(stored[0].fonte, "ri");
 assert.match(stored[0].texto, /Guidance confirmado/);
-assert.equal(stored[0].metadata.raw_binary_persisted, false);
+assert.equal(stored[0].metadata.raw_binary_persisted, true);
+assert.equal(raw[0].conteudo.toString("utf8").includes("Guidance confirmado"), true, "binário integral deve ser preservado");
+assert.equal(indexes[0].pages.length, 1);
+assert.ok(indexes[0].chunks.length >= 1);
+assert.equal(ingested.rawBinaryPersisted, true);
+
+const binaryParts = [];
+const partitionRepository = createBibliotecaRepository({ async query(sql, params = []) {
+  if (sql.includes("INSERT INTO biblioteca.documentos")) return [{ inserted: true, dedup_key: params[0] }];
+  if (sql.includes("DELETE FROM biblioteca.documento_binario_partes")) return [];
+  if (sql.includes("INSERT INTO biblioteca.documento_binario_partes")) {
+    binaryParts.push({ order: params[1], bytes: Buffer.from(params[2], "base64"), size: params[3], hash: params[4] });
+    return [];
+  }
+  throw new Error(`SQL binário inesperado: ${sql.slice(0, 60)}`);
+} });
+const largeBinary = Buffer.alloc(1_200_000, 7);
+const partitioned = await partitionRepository.upsertRawDocument({
+  dedupKey: "ri:partition-test", issuerId: "cvm:1023", fonte: "ri", sourceDocumentId: "partition-test",
+  formato: "pdf", urlOrigem: "https://ri.exemplo/large.pdf", conteudo: largeBinary,
+  hashConteudo: "b".repeat(64), metadata: { raw_binary_persisted: true },
+});
+assert.equal(partitioned.document.binary_parts, 3, "binário grande deve ser particionado abaixo do limite HTTP");
+assert.deepEqual(Buffer.concat(binaryParts.sort((a, b) => a.order - b.order).map((part) => part.bytes)), largeBinary);
 
 const repositorySource = await readFile(join(process.cwd(), "lib", "nexo", "biblioteca", "repository.mjs"), "utf8");
 assert.ok(repositorySource.includes("metadata_json->>'requested_ticker'"), "fonte RI deve sobreviver a migração de emissor provisório");
@@ -139,5 +207,7 @@ const parserSource = await readFile(join(process.cwd(), "lib", "nexo", "bibliote
 assert.ok(parserSource.includes('import("pdfjs-dist/legacy/build/pdf.worker.mjs")'), "bundle precisa rastrear o worker do PDF explicitamente");
 const migration = await readFile(join(process.cwd(), "db", "migrations", "003_biblioteca_b3.sql"), "utf8");
 for (const token of ["parser_version", "data_parse", "003_biblioteca_b3"]) assert.ok(migration.includes(token));
+const selectiveMigration = await readFile(join(process.cwd(), "db", "migrations", "005_biblioteca_b3_2.sql"), "utf8");
+for (const token of ["biblioteca.documento_binario_partes", "biblioteca.documento_paginas", "biblioteca.documento_chunks", "search_vector", "005_biblioteca_b3_2"]) assert.ok(selectiveMigration.includes(token));
 
 console.log("Biblioteca B3 parser/context/link fallback: OK");

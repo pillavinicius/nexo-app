@@ -117,12 +117,19 @@ async function readBibliotecaB3(b1) {
   if (!b1.available) return { available: false, version: B3_PARSER_VERSION, status: "database_unavailable" };
   try {
     const repository = createBibliotecaRepository(createDatabaseClient());
-    const counts = await repository.parseStatusCounts();
+    const [counts, index] = await Promise.all([repository.parseStatusCounts(), repository.indexStats()]);
     return {
-      available: Number(counts.ok || 0) > 0,
+      available: Number(counts.ok || 0) > 0 && Number(index.indexed_documents || 0) > 0,
       version: B3_PARSER_VERSION,
-      status: Number(counts.falhou || 0) > 0 ? "degraded" : Number(counts.ok || 0) > 0 ? "ready" : "empty",
+      status: Number(counts.falhou || 0) > 0 ? "degraded" : Number(index.indexed_documents || 0) > 0 ? "ready" : "index_pending",
       documents: counts,
+      preservation: {
+        documents: Number(index.documents || 0),
+        rawDocuments: Number(index.raw_documents || 0),
+        indexedDocuments: Number(index.indexed_documents || 0),
+        pages: Number(index.pages || 0),
+        chunks: Number(index.chunks || 0),
+      },
     };
   } catch {
     return { available: false, version: B3_PARSER_VERSION, status: "unavailable" };

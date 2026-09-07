@@ -460,14 +460,14 @@ function BibliotecaAudit({ result }) {
   return (
     <Sec title="Biblioteca Viva · Evidências do Deep">
       <div className="grid3">
-        <MetricCard title="Documentos disponíveis" value={asText(library.documents_available || 0)} note={asText(library.version)} />
+        <MetricCard title="Documentos no acervo" value={asText(library.documents_available || 0)} note={`${asText(library.documents_indexed || 0)} indexados · ${asArray(library.chunks_consulted).length} trechos consultados`} />
         <MetricCard title="Lacunas resolvidas" value={asText(resolved.length)} note="Com documento oficial identificado" />
         <MetricCard title="Lacunas abertas" value={asText(open.length)} note={open.length ? "Exigem fonte complementar" : "Nenhuma fonte adicional exigida"} />
       </div>
       {asArray(library.documents_used).map((id, index) => <DetailBlock key={`bib-doc-${index}`} title={`Evidência ${index + 1}`} value={id} />)}
       {asArray(library.documents_consulted).filter((id) => !asArray(library.documents_used).includes(id)).map((id, index) => <DetailBlock key={`bib-consulted-${index}`} title={`Fonte consultada ${index + 1}`} value={id} note="Disponível ao Deep; não citada como evidência conclusiva" />)}
       {open.map((gap, index) => <DetailBlock key={`bib-gap-${index}`} title={`Lacuna aberta ${index + 1}`} value={gap} />)}
-      <div className="edg-audit-note">A Biblioteca fornece evidências; score e veredito só mudam por ajuste novo, explícito e reconciliado pelo servidor.</div>
+      <div className="edg-audit-note">{asText(library.version)} · fonte integral preservada · recuperação {library.retrieval_mode === "selective_chunks" ? "seletiva por lacuna" : "compatível com índice anterior"} · score e veredito só mudam por ajuste novo e reconciliado.</div>
     </Sec>
   );
 }
