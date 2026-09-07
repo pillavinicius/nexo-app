@@ -51,10 +51,12 @@ assert.deepEqual(rankedDocuments[0].matches.map((match) => match.gap), ["inadimp
 const fullChunks = buildDocumentChunks([{ number: 58, text: `${"Contexto financeiro geral. ".repeat(100)} New NPL por carteira: PF 5,2%, PJ 3,1% e Agro 2,4%.` }]);
 assert.ok(fullChunks.length > 1, "página extensa deve ser dividida em chunks rastreáveis");
 const selectedChunks = selectBibliotecaChunks([
+  { chunk_id: "ri:cost#00000", dedup_key: "ri:cost", fonte: "ri", titulo: "Análise 2T26", pagina_inicio: 52, pagina_fim: 52, texto: "Despesa com perda esperada e custo do crédito por segmento: agronegócio e pessoa física." },
   { chunk_id: "ri:npl#00000", dedup_key: "ri:npl", fonte: "ri", titulo: "Análise 2T26", pagina_inicio: 58, pagina_fim: 58, texto: "New NPL por carteira PF, PJ e Agro; inadimplência detalhada." },
   { chunk_id: "cvm:generic#00000", dedup_key: "cvm:generic", fonte: "cvm_ipe", titulo: "Ata", pagina_inicio: 1, pagina_fim: 1, texto: "Pauta societária genérica." },
 ], ["inadimplência por carteira NPL"]);
 assert.equal(selectedChunks[0].chunk.chunk_id, "ri:npl#00000");
+assert.equal(selectedChunks[1].chunk.chunk_id, "ri:cost#00000", "conceito correlato pode complementar, mas não superar o trecho NPL exato");
 
 const selectiveContext = await loadBibliotecaContext({
   ticker: "BBAS3",
