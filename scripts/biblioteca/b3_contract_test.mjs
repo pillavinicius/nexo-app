@@ -7,8 +7,8 @@ import { join } from "node:path";
 import PDFDocument from "pdfkit";
 
 import { reconcileDeepIntegrity } from "../../lib/nexo/analysis/reclassification_integrity.mjs";
-import { applyBibliotecaAudit, buildBibliotecaPromptContext, deriveExpectedDeepGaps, loadBibliotecaContext, selectBibliotecaChunks, selectBibliotecaDocuments } from "../../lib/nexo/biblioteca/context.mjs";
-import { buildDocumentChunks, extractHtmlText, parseDocument, parsePendingDocuments, selectRelevantPdfContent } from "../../lib/nexo/biblioteca/document_parser.mjs";
+import { applyBibliotecaAudit, buildBibliotecaPromptContext, deriveExpectedDeepGaps, findBibliotecaMetricConflicts, formatBibliotecaTables, loadBibliotecaContext, selectBibliotecaChunks, selectBibliotecaDocuments } from "../../lib/nexo/biblioteca/context.mjs";
+import { buildDocumentChunks, extractHtmlText, extractTableRows, parseDocument, parsePendingDocuments, selectRelevantPdfContent } from "../../lib/nexo/biblioteca/document_parser.mjs";
 import { createBibliotecaRepository } from "../../lib/nexo/biblioteca/repository.mjs";
 import { ingestUserSource, isPrivateAddress, validatePublicHttpsUrl } from "../../lib/nexo/biblioteca/url_ingestion.mjs";
 
@@ -31,6 +31,19 @@ assert.match(parsedPdf.texto, /Documento oficial NEXO B3/);
 assert.equal(parsedPdf.pageCount, 1);
 assert.ok(parsedPdf.chunkCount >= 1);
 assert.ok(globalThis.pdfjsWorker?.WorkerMessageHandler, "worker do pdf.js deve ser registrado explicitamente para o bundle serverless");
+
+const alignedTable = extractTableRows([
+  { str: "Cost of Credit", transform: [1, 0, 0, 1, 20, 250.3] },
+  { str: "65", transform: [1, 0, 0, 1, 220, 246.3] },
+  { str: "70", transform: [1, 0, 0, 1, 260, 246.3] },
+  { str: "R$ 37.3bn", transform: [1, 0, 0, 1, 390, 247.4] },
+  { str: "Adjusted Net Income", transform: [1, 0, 0, 1, 20, 170.1] },
+  { str: "18", transform: [1, 0, 0, 1, 220, 167.0] },
+  { str: "22", transform: [1, 0, 0, 1, 260, 167.0] },
+  { str: "R$ 7.3bn", transform: [1, 0, 0, 1, 390, 168.6] },
+], 4);
+assert.deepEqual(alignedTable[0].rows[0], ["Cost of Credit", "65", "70", "R$ 37.3bn"], "fragmentos com pequenas variações de baseline devem permanecer na mesma linha da tabela");
+assert.deepEqual(alignedTable[0].rows[1], ["Adjusted Net Income", "18", "22", "R$ 7.3bn"]);
 
 const longPages = Array.from({ length: 80 }, (_, index) => ({
   number: index + 1,
@@ -64,7 +77,7 @@ const selectiveContext = await loadBibliotecaContext({
   client: { async query(sql) {
     if (sql.includes("WITH asset_documents")) return [{
       dedup_key: "ri:npl", fonte: "ri", categoria: "Release", titulo: "Análise do Desempenho 2T26",
-      data_documento: "2026-08-14", url_origem: "https://ri.exemplo/npl.pdf", parser_version: "BIB_B3_2_PARSER_v2.0",
+      data_documento: "2026-08-14", url_origem: "https://ri.exemplo/npl.pdf", parser_version: "BIB_B3_2_PARSER_v2.1",
       chunk_id: "ri:npl#00042", ordem: 42, pagina_inicio: 58, pagina_fim: 58,
       secao: "New NPL", texto: "New NPL por carteira PF, PJ e Agro; inadimplência detalhada.", tamanho_caracteres: 64,
       tabelas_json: [{ page: 58, rows: [["New NPL", "PF", "5,2%"]] }], search_rank: 0.91,
@@ -100,6 +113,12 @@ const context = {
 };
 assert.match(buildBibliotecaPromptContext(context), /cvm_ipe:doc-1/);
 assert.match(buildBibliotecaPromptContext(context), /9 documento\(s\) no acervo; 1 fonte\(s\) e 1 trecho\(s\)/);
+const tablePrompt = formatBibliotecaTables([{ page: 4, rows: [
+  ["Adjusted Net Income", "18", "and", "22", "R$", "7.3", "bn"],
+  ["R$", "37.3", "bn"],
+] }]);
+assert.match(tablePrompt, /Adjusted Net Income/);
+assert.doesNotMatch(tablePrompt, /37\.3/, "linha numérica órfã não deve entrar no contexto autoritativo");
 const baseline = { scan: { score_total: 21, score_max: 30, score_dimensoes: [{ nome: "Qualidade de earnings", nota: 3 }] } };
 const candidate = {
   ticker: "BBAS3", veredito_final: "COMPRAR", zona: "R$ 20 a R$ 22", besst: "R$ 15 a R$ 18",
@@ -153,6 +172,39 @@ assert.equal(partiallyAnswered.lacunas_documentais[0].status, "parcial", "evidê
 assert.deepEqual(partiallyAnswered.nexoModules.BIBLIOTECA.lacunas_parciais, ["Política de dividendos e payout 2026–2027"]);
 assert.deepEqual(partiallyAnswered.nexoModules.BIBLIOTECA.lacunas_abertas, ["Política de dividendos e payout 2026–2027"], "lacuna parcial continua no escopo do próximo aprofundamento");
 assert.equal(partiallyAnswered.nexoModules.BIBLIOTECA.requires_user_source, true);
+assert.match(partiallyAnswered.lacunas[0].r, /^Parcialmente resolvida\./, "texto exibido deve reproduzir o status governado");
+
+const numericPartial = applyBibliotecaAudit({
+  lacunas: [{
+    q: "Guidance de lucro e payout para 2026–2027",
+    r: "Parcialmente resolvida para 2026. Lucro ajustado de R$ 7,3 bi no semestre, guidance de R$ 18–22 bi e payout de 30%; faltam metas explícitas para 2027.",
+  }],
+  lacunas_documentais: [{ lacuna: "Guidance de lucro e payout para 2026–2027", status: "parcial", evidencia_documental: [] }],
+}, {
+  ...context,
+  documents: [{
+    id: "ri:bbas3-guidance", trust: "user_supplied", matchedGaps: ["Guidance de lucro e payout para 2026–2027"],
+    text: "Adjusted Net Income R$ 7.3bn in 1H26. Guidance 2026 R$18 to R$22bn. Payout 30%.",
+    tables: [], chunks: [{ id: "ri:bbas3-guidance#00001" }],
+  }],
+  documentIds: ["ri:bbas3-guidance"],
+}, { expectedGaps: ["Guidance de lucro e payout para 2026–2027"] });
+assert.equal(numericPartial.lacunas_documentais[0].status, "parcial", "valores monetários e ranges devem reconciliar evidência parcial, não apenas percentuais");
+assert.match(numericPartial.lacunas[0].r, /^Parcialmente resolvida\. Lucro ajustado/, "prefixo antigo não pode contradizer o status final");
+
+const metricContext = {
+  available: true,
+  documents: [{ id: "ri:bbas3-2t26", tables: [{ page: 4, rows: [
+    ["Cost of Credit", "65", "and", "70", "R$", "37.3", "bn"],
+    ["Adjusted Net Income", "18", "and", "22", "R$", "7.3", "bn"],
+  ] }] }],
+};
+assert.equal(findBibliotecaMetricConflicts({
+  lacunas: [{ r: "O lucro líquido ajustado foi de R$ 37,3 bi, dentro da banda de 65% a 70%." }],
+}, metricContext).length, 1, "valores da linha de custo do crédito não podem ser atribuídos ao lucro ajustado");
+assert.deepEqual(findBibliotecaMetricConflicts({
+  lacunas: [{ r: "O lucro líquido ajustado foi de R$ 7,3 bi, com guidance entre R$ 18 bi e R$ 22 bi." }],
+}, metricContext), [], "associação correta da linha deve passar pelo guardrail");
 
 const retrievalReconciled = applyBibliotecaAudit({
   lacunas: [{ q: "NPL por carteira", r: "NPL Agro 1,37%, PF 8,41% e PJ 3,18%, com cobertura agro de 145,9%." }],

@@ -42,6 +42,7 @@ import {
   applyBibliotecaAudit,
   buildBibliotecaPromptContext,
   deriveExpectedDeepGaps,
+  findBibliotecaMetricConflicts,
   loadBibliotecaContext,
 } from "../../../lib/nexo/biblioteca/context.mjs";
 
@@ -741,18 +742,36 @@ export async function POST(req) {
       const semanticCheck = applyTdnToAnalysis({ phase, result: hdlCheck, tdn });
       const hdlIncomplete = hdl.status === "ok" && semanticCheck?.hdl_integrity?.complete === false;
       const tdnIncomplete = tdn.status === "ok" && semanticCheck?.tdn_integrity?.complete === false;
-      if (hdlIncomplete || tdnIncomplete) {
+      const metricConflicts = findBibliotecaMetricConflicts(result.data, biblioteca);
+      if (hdlIncomplete || tdnIncomplete || metricConflicts.length) {
+        const semanticCorrection = hdlIncomplete || tdnIncomplete
+          ? "A resposta anterior não completou hdl_conclusao e/ou tdn_conclusao."
+          : "A resposta anterior falhou na validação de associação entre métricas e valores.";
+        const metricCorrection = metricConflicts.length
+          ? ` A Biblioteca também bloqueou associações entre métricas e valores de linhas diferentes: ${JSON.stringify(metricConflicts)}. Corrija essas associações usando exclusivamente os valores da mesma linha estruturada; se a associação não estiver comprovada, marque a lacuna como parcial ou aberta.`
+          : "";
         const semanticRetry = await requestStructuredAnalysis({
           phase,
           systemPrompt,
           userMsg:
             userMsg +
-            "\n\nA resposta anterior não completou hdl_conclusao e/ou tdn_conclusao. Gere novamente o JSON completo. Preencha hdl_conclusao quando o HDL estiver válido e tdn_conclusao quando o TDN estiver válido. Interprete apenas os valores imutáveis fornecidos pelo servidor; não recalcule números e não altere score ou veredito global automaticamente.",
+            `\n\n${semanticCorrection} Gere novamente o JSON completo. Preencha hdl_conclusao quando o HDL estiver válido e tdn_conclusao quando o TDN estiver válido. Interprete apenas os valores imutáveis fornecidos pelo servidor; não recalcule números e não altere score ou veredito global automaticamente.` +
+            metricCorrection,
         });
         if (semanticRetry.ok) {
           const retried = parseModelJSON(semanticRetry.rawText);
           if (retried.ok) result = retried;
         }
+      }
+      const remainingMetricConflicts = findBibliotecaMetricConflicts(result.data, biblioteca);
+      if (remainingMetricConflicts.length) {
+        return Response.json({
+          error: {
+            code: "biblioteca_metric_conflict",
+            message: "A Biblioteca detectou valores associados à métrica errada. O Deep foi bloqueado para não salvar uma análise contaminada; execute novamente.",
+            conflicts: remainingMetricConflicts,
+          },
+        }, { status: 422 });
       }
     }
 
