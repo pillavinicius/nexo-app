@@ -16,6 +16,7 @@ import {
 import { reconcileFinalVerdictChange } from "../../../lib/nexo/analysis/verdict_transition.mjs";
 import {
   buildDeterministicFinal,
+  extractReferencePrice,
   reconcileDeepIntegrity,
 } from "../../../lib/nexo/analysis/reclassification_integrity.mjs";
 import {
@@ -53,7 +54,7 @@ const DEEP_S =
   '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":"","fonte_nova":""}],"lacunas":[{"q":"","r":""}],"lacunas_documentais":[{"lacuna":"","status":"resolvida|parcial|aberta","evidencia_documental":["source:id"]}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"valuations_classicos":[{"modelo":"Graham|Peter Lynch|Buffett moderno|Bazin","valor_justo":"","metodologia":"","premissas":""}],"zona":"","besst":"","desconto":"","hdl_conclusao":"","tdn_conclusao":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
 
 const DEEP_INTEGRITY_RULES =
-  " Score original must reproduce the previous stage score. Only include ajustes_score for NEW evidence found in this Deep; never penalize a risk already counted in the previous stage. Each adjustment must use a 0-5 dimension score, explain the new evidence and cite its exact Biblioteca document ID in fonte_nova when documentary. The server will ignore your arithmetic and calculate the total from the adjustments. Fill lacunas_documentais for every investigated gap: resolved requires evidence for every requested component; use partial when at least one component is supported but another remains missing; use open when there is no sufficient answer. Every resolved or partial gap must cite at least one exact available document ID. BESST must be 15-25% below the convergence zone. hdl_conclusao is mandatory for Brazilian assets and must interpret the immutable server-calculated HDL values; never recalculate them. When the server supplies a valid TDN, tdn_conclusao is mandatory and must interpret it without recalculating any metric. TDN never changes the global score or verdict automatically.";
+  " Score original must reproduce the previous stage score. Only include ajustes_score for NEW evidence found in this Deep; never penalize a risk already counted in the previous stage. Each adjustment must use a 0-5 dimension score, explain the new evidence and cite its exact Biblioteca document ID in fonte_nova when documentary. The server will ignore your arithmetic and calculate the total from the adjustments. Fill lacunas_documentais for every investigated gap: resolved requires evidence for every requested component; use partial when at least one component is supported but another remains missing; use open when there is no sufficient answer. Referencing a figure or table without retrieving the requested values is partial, never resolved. Every resolved or partial gap must cite at least one exact available document ID. BESST must be 15-25% below the convergence zone. hdl_conclusao is mandatory for Brazilian assets and must interpret the immutable server-calculated HDL values; never recalculate them. When the server supplies a valid TDN, tdn_conclusao is mandatory and must interpret it without recalculating any metric. TDN never changes the global score or verdict automatically.";
 
 const FINAL_S =
   '{"ticker":"","classificacao_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR|VETADO","veredito_anterior":"","veredito_reclassificado":"","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","mudanca_veredito":"MANTEVE|MELHOROU|PIOROU","riscos_incorporados":[{"descricao":"","impacto_score":"","severidade":"ALTO|MEDIO|BAIXO"}],"ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":""}],"tese_final":"","preco_final":{"zona_convergencia":"","besst":"","margem_seguranca":"","observacao":""},"conclusao":"","proximos_passos":[""]}';
@@ -427,7 +428,10 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
 
 function responseWithGovernance(phase, data, edg, hdl, nfi, tdn, analysisHistory = {}, biblioteca = null, analysisIntent = {}) {
   const integrityChecked = phase === "deep"
-    ? reconcileDeepIntegrity(data, analysisHistory, { documentIds: biblioteca?.documentIds || [] })
+    ? reconcileDeepIntegrity(data, analysisHistory, {
+        documentIds: biblioteca?.documentIds || [],
+        referencePrice: analysisIntent?.referencePrice,
+      })
     : data;
   const expectedGaps = phase === "deep" ? deriveExpectedDeepGaps(analysisHistory, analysisIntent?.userFocus) : [];
   const withBiblioteca = phase === "deep" ? applyBibliotecaAudit(integrityChecked, biblioteca, { expectedGaps }) : integrityChecked;
@@ -535,6 +539,10 @@ export async function POST(req) {
       analysisHistory = {},
       analysisIntent = {},
     } = body;
+    const governedAnalysisIntent = {
+      ...(analysisIntent && typeof analysisIntent === "object" ? analysisIntent : {}),
+      referencePrice: extractReferencePrice(extraCtx),
+    };
 
     if (!phase || !assetType) {
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -594,7 +602,7 @@ export async function POST(req) {
     );
     const edg = computeEDG(effectiveEdgeLedger, { availableModules: availableEdgeModules });
     const edgContext = buildEdgAnalysisContext(edg, effectiveEdgeLedger);
-    const bibliotecaGaps = phase === "deep" ? deriveExpectedDeepGaps(analysisHistory, analysisIntent?.userFocus) : [];
+    const bibliotecaGaps = phase === "deep" ? deriveExpectedDeepGaps(analysisHistory, governedAnalysisIntent.userFocus) : [];
     const biblioteca = phase === "deep" && !isExternalAsset(assetType)
       ? await loadBibliotecaContext({ ticker, gaps: bibliotecaGaps })
       : { available: false, status: isExternalAsset(assetType) ? "not_applicable" : "not_requested", documents: [], documentIds: [] };
@@ -633,7 +641,7 @@ export async function POST(req) {
       tdnContext,
       bibliotecaContext,
       analysisHistory,
-      analysisIntent,
+      analysisIntent: governedAnalysisIntent,
     });
 
     let modelResult = await requestStructuredAnalysis({ phase, systemPrompt, userMsg });
@@ -654,7 +662,7 @@ export async function POST(req) {
           tdn,
           analysisHistory,
           biblioteca,
-          analysisIntent
+          governedAnalysisIntent
         );
       }
 
@@ -672,7 +680,7 @@ export async function POST(req) {
           tdn,
           analysisHistory,
           biblioteca,
-          analysisIntent
+          governedAnalysisIntent
         );
       }
 
@@ -712,7 +720,7 @@ export async function POST(req) {
           tdn,
           analysisHistory,
           biblioteca,
-          analysisIntent
+          governedAnalysisIntent
         );
       }
 
@@ -775,7 +783,7 @@ export async function POST(req) {
       }
     }
 
-    return responseWithGovernance(phase, result.data, edg, hdl, nfi, tdn, analysisHistory, biblioteca, analysisIntent);
+    return responseWithGovernance(phase, result.data, edg, hdl, nfi, tdn, analysisHistory, biblioteca, governedAnalysisIntent);
   } catch (err) {
     return safeError("Erro servidor: " + err.message);
   }

@@ -192,6 +192,50 @@ const numericPartial = applyBibliotecaAudit({
 assert.equal(numericPartial.lacunas_documentais[0].status, "parcial", "valores monetários e ranges devem reconciliar evidência parcial, não apenas percentuais");
 assert.match(numericPartial.lacunas[0].r, /^Parcialmente resolvida\. Lucro ajustado/, "prefixo antigo não pode contradizer o status final");
 
+const reportSevenGaps = [
+  "Composição detalhada da inadimplência por carteira e evolução trimestral das provisões",
+  "Estrutura de reprecificação do passivo e sensibilidade do NII",
+];
+const reportSevenCandidate = {
+  ticker: "BBAS3",
+  veredito_final: "MONITORAR",
+  zona: "R$ 24,00 – R$ 27,00",
+  besst: "R$ 19,50",
+  desconto: "Preço atual R$ 22,45 está dentro da zona; BESST tem desconto de 20,4%.",
+  ajustes_score: [],
+  lacunas: [
+    {
+      q: reportSevenGaps[0],
+      r: "Resolvida. Dados de provisões consolidadas por trimestre não estão explicitamente recuperados nos trechos disponíveis.",
+    },
+    {
+      q: reportSevenGaps[1],
+      r: "Resolvida. Entretanto, valores numéricos de sensibilidade do NII e a composição quantitativa dos passivos não foram recuperados nos trechos disponíveis; os dados específicos não constam nos excertos injetados.",
+    },
+  ],
+  lacunas_documentais: reportSevenGaps.map((lacuna) => ({
+    lacuna,
+    status: "resolvida",
+    evidencia_documental: ["ri:bbas3-2t26"],
+  })),
+};
+const reportSevenGoverned = reconcileDeepIntegrity(reportSevenCandidate, {
+  scan: { score_total: 17, score_max: 30 },
+}, { documentIds: ["ri:bbas3-2t26"], referencePrice: 22.45 });
+const reportSevenAudit = applyBibliotecaAudit(reportSevenGoverned, {
+  ...context,
+  documents: [{ id: "ri:bbas3-2t26", trust: "user_supplied", text: "Relatório 2T26", matchedGaps: reportSevenGaps }],
+  documentIds: ["ri:bbas3-2t26"],
+}, { expectedGaps: reportSevenGaps });
+assert.deepEqual(reportSevenAudit.lacunas_documentais.map((gap) => gap.status), ["parcial", "parcial"], "as duas respostas do relatório 7 admitem componentes ausentes e não podem ser resolvidas");
+assert.deepEqual(reportSevenAudit.nexoModules.BIBLIOTECA.lacunas_resolvidas, []);
+assert.deepEqual(reportSevenAudit.nexoModules.BIBLIOTECA.lacunas_parciais, reportSevenGaps);
+assert.ok(reportSevenAudit.lacunas.every((answer) => answer.r.startsWith("Parcialmente resolvida.")));
+assert.equal(reportSevenAudit.score_revisado, 17);
+assert.match(reportSevenAudit.desconto, /6,46% abaixo do piso/);
+assert.match(reportSevenAudit.desconto, /18,75% abaixo do piso/);
+assert.doesNotMatch(reportSevenAudit.desconto, /20,4%|está dentro da zona/);
+
 const metricContext = {
   available: true,
   documents: [{ id: "ri:bbas3-2t26", tables: [{ page: 4, rows: [

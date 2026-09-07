@@ -58,6 +58,7 @@ try {
       phase: "deep",
       assetType: "acao-br",
       ticker: "BBAS3",
+      extraCtx: "- Moeda selecionada: BRL\n- Valor atual/cota atual: 20,00\n",
       edgeLedger: activeEdge,
       hdlInput: { tir_esperada_pct: 6.5, horizonte_anos: 5 },
       analysisHistory: { scan },
@@ -75,6 +76,9 @@ try {
   assert.equal(deep.ajustes_score[0].antes, 4);
   assert.equal(deep.ajustes_score[0].depois, 3);
   assert.equal(deep.besst, "R$ 14,25 a R$ 17,85");
+  assert.match(deep.desconto, /Preço atual R\$ 20,00 está dentro da zona de convergência/);
+  assert.equal(deep.integridade_analise.price_narrative_status, "server_calculated");
+  assert.equal(deep.integridade_analise.reference_price, 20);
 
   globalThis.fetch = async () => {
     throw new Error("A finalização determinística não pode chamar a IA.");

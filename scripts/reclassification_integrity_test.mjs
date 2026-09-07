@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import {
   buildDeterministicFinal,
+  extractReferencePrice,
   reconcileBesst,
   reconcileDeepIntegrity,
+  reconcilePriceNarrative,
   RECLASSIFICATION_INTEGRITY_VERSION,
 } from "../lib/nexo/analysis/reclassification_integrity.mjs";
 
@@ -66,4 +68,31 @@ const validBesst = reconcileBesst({ zone: "USD 100.00 - USD 110.00", besst: "USD
 assert.equal(validBesst.status, "valid");
 assert.equal(validBesst.corrected, false);
 
-console.log("reclassification integrity: 26/26 checks passed");
+const referencePrice = extractReferencePrice("- Moeda selecionada: BRL\n- Valor atual/cota atual: 22,45\n");
+assert.equal(referencePrice, 22.45);
+const priceNarrative = reconcilePriceNarrative({
+  zone: "R$ 24,00 – R$ 27,00",
+  besst: "R$ 19,50",
+  referencePrice,
+  previousNarrative: "Preço dentro da zona; desconto de 20,4%.",
+});
+assert.equal(priceNarrative.status, "server_calculated");
+assert.equal(priceNarrative.current_position, "below_zone");
+assert.match(priceNarrative.value, /6,46% abaixo do piso/);
+assert.match(priceNarrative.value, /16,85% abaixo do teto/);
+assert.match(priceNarrative.value, /18,75% abaixo do piso/);
+assert.doesNotMatch(priceNarrative.value, /20,4%|dentro da zona de convergência/);
+
+const reportSevenDeep = reconcileDeepIntegrity({
+  ticker: "BBAS3",
+  veredito_final: "MONITORAR",
+  zona: "R$ 24,00 – R$ 27,00",
+  besst: "R$ 19,50",
+  desconto: "Preço atual R$ 22,45 está dentro da zona de convergência.",
+  ajustes_score: [],
+}, { scan }, { referencePrice });
+assert.match(reportSevenDeep.desconto, /acima do BESST e abaixo da zona de convergência/);
+assert.equal(reportSevenDeep.integridade_analise.price_narrative_status, "server_calculated");
+assert.equal(reportSevenDeep.integridade_analise.reference_price, 22.45);
+
+console.log("reclassification integrity: deterministic score, BESST and price narrative checks passed");
