@@ -199,7 +199,12 @@ const reportSevenGaps = [
 const reportSevenCandidate = {
   ticker: "BBAS3",
   veredito_final: "MONITORAR",
+  preco: [
+    { c: "C1", vj: "R$ 24,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 24, multiplo: 1 } },
+    { c: "C2", vj: "R$ 27,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 27, multiplo: 1 } },
+  ],
   zona: "R$ 24,00 – R$ 27,00",
+  zona_calc: { camadas_incluidas: ["C1", "C2"], justificativa_exclusoes: "" },
   besst: "R$ 19,50",
   desconto: "Preço atual R$ 22,45 está dentro da zona; BESST tem desconto de 20,4%.",
   ajustes_score: [],
@@ -233,7 +238,8 @@ assert.deepEqual(reportSevenAudit.nexoModules.BIBLIOTECA.lacunas_parciais, repor
 assert.ok(reportSevenAudit.lacunas.every((answer) => answer.r.startsWith("Parcialmente resolvida.")));
 assert.equal(reportSevenAudit.score_revisado, 17);
 assert.match(reportSevenAudit.desconto, /6,46% abaixo do piso/);
-assert.match(reportSevenAudit.desconto, /18,75% abaixo do piso/);
+assert.match(reportSevenAudit.desconto, /15,00% e 25,00% abaixo do piso/);
+assert.match(reportSevenAudit.desconto, /acima do BESST e abaixo da zona de convergência/);
 assert.doesNotMatch(reportSevenAudit.desconto, /20,4%|está dentro da zona/);
 
 const metricContext = {
@@ -241,6 +247,10 @@ const metricContext = {
   documents: [{ id: "ri:bbas3-2t26", tables: [{ page: 4, rows: [
     ["Cost of Credit", "65", "and", "70", "R$", "37.3", "bn"],
     ["Adjusted Net Income", "18", "and", "22", "R$", "7.3", "bn"],
+    ["INAD +90d Agro", "6,27%"],
+    ["Cobertura +90d Agro", "165,2%"],
+    ["New NPL Agro (t) / Cart. Agro (t-1)", "1,37%"],
+    ["Cobertura New NPL", "145,9%"],
   ] }] }],
 };
 assert.equal(findBibliotecaMetricConflicts({
@@ -249,15 +259,26 @@ assert.equal(findBibliotecaMetricConflicts({
 assert.deepEqual(findBibliotecaMetricConflicts({
   lacunas: [{ r: "O lucro líquido ajustado foi de R$ 7,3 bi, com guidance entre R$ 18 bi e R$ 22 bi." }],
 }, metricContext), [], "associação correta da linha deve passar pelo guardrail");
+const semanticNplConflicts = findBibliotecaMetricConflicts({
+  lacunas: [{ r: "Agro: INAD = 1,37%, cobertura New NPL = 145,9%." }],
+}, metricContext);
+assert.ok(semanticNplConflicts.some((item) => item.target_metric === "inadimplência sem janela definida"), "INAD sem janela não pode absorver o índice de formação de New NPL");
+const capitalMinimumConflicts = findBibliotecaMetricConflicts({
+  lacunas: [{ r: "CET1 de 11,27% está acima do mínimo regulatório de 8%." }],
+}, metricContext);
+assert.ok(capitalMinimumConflicts.some((item) => item.target_metric === "requerimento de capital sem decomposição"), "mínimos de capital não podem omitir buffers e adicionais");
+assert.deepEqual(findBibliotecaMetricConflicts({
+  lacunas: [{ r: "CET1 de 11,27% supera o mínimo-base aplicável; buffers e adicionais institucionais devem ser verificados separadamente." }],
+}, metricContext), [], "afirmação prudencial decomposta deve permanecer válida");
 
 const retrievalReconciled = applyBibliotecaAudit({
-  lacunas: [{ q: "NPL por carteira", r: "NPL Agro 1,37%, PF 8,41% e PJ 3,18%, com cobertura agro de 145,9%." }],
+  lacunas: [{ q: "NPL por carteira", r: "INAD+90d Agro 6,27%, PF 8,41% e PJ 3,18%; New NPL Agro 1,37%, com cobertura New NPL de 145,9%." }],
   lacunas_documentais: [{ lacuna: "NPL por carteira", status: "aberta", evidencia_documental: [] }],
 }, {
   ...context,
   documents: [{
     id: "ri:npl-full", trust: "user_supplied", matchedGaps: ["NPL por carteira"],
-    text: "NPL Agro 1,37%. INAD+90d PF 8,41%. INAD+90d PJ 3,18%. Cobertura New NPL agro 145,9%.",
+    text: "INAD+90d Agro 6,27%. INAD+90d PF 8,41%. INAD+90d PJ 3,18%. New NPL Agro 1,37%. Cobertura New NPL agro 145,9%.",
     chunks: [{ id: "ri:npl-full#00001" }],
   }],
   documentIds: ["ri:npl-full"],

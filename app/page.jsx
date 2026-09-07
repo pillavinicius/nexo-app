@@ -581,7 +581,7 @@ function DeepReport({ r, showClassicValuations = false }) {
           {r?.integridade_analise?.valuation_zone_suppressed && (
             <DetailBlock
               title="Zona e BESST suspensos pelo servidor"
-              value="Uma ou mais camadas apresentaram valor incompatível com a própria fórmula ou entradas insuficientes para validá-la. O servidor preservou ou corrigiu somente os cálculos verificáveis; a zona não foi reconstruída automaticamente."
+              value="A derivação de uma camada ou a memória estruturada da convergência não passou na validação. O servidor preservou somente os cálculos verificáveis; a zona não foi reconstruída automaticamente."
               note={`Camadas afetadas: ${valuationAffectedLayers.join(", ") || "não informadas"}.`}
             />
           )}
@@ -608,6 +608,13 @@ function DeepReport({ r, showClassicValuations = false }) {
               title="BESST corrigido automaticamente"
               value={`Valor retornado pelo motor: ${asText(r.integridade_analise.besst_previous_value)}`}
               note="A faixa foi recalculada para permanecer entre 15% e 25% abaixo da zona de convergência."
+            />
+          )}
+          {!r?.integridade_analise?.valuation_zone_suppressed && r?.integridade_analise?.convergence_excluded_layers?.length > 0 && (
+            <DetailBlock
+              title="Memória da convergência"
+              value={`Camadas incluídas: ${r.integridade_analise.convergence_included_layers.join(", ")}. Camadas fora da faixa central: ${r.integridade_analise.convergence_excluded_layers.join(", ")}.`}
+              note={r.integridade_analise.convergence_exclusion_reason}
             />
           )}
         </Sec>

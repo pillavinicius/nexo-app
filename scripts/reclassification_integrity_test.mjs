@@ -44,7 +44,12 @@ const deep = reconcileDeepIntegrity({
   score_original: 18,
   score_revisado: 17,
   score_max: 30,
+  preco: [
+    { c: "C1", vj: "R$ 19,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 19, multiplo: 1 } },
+    { c: "C2", vj: "R$ 21,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 21, multiplo: 1 } },
+  ],
   zona: "R$ 19,00 a R$ 21,00",
+  zona_calc: { camadas_incluidas: ["C1", "C2"], justificativa_exclusoes: "" },
   besst: "R$ 24,50 a R$ 26,00",
   desconto: "10%",
   ajustes_score: [
@@ -63,7 +68,7 @@ assert.equal(deep.mudanca_score, "-1");
 assert.equal(deep.ajustes_score.length, 3);
 assert.equal(deep.integridade_analise.score_source, "server_calculated");
 assert.equal(deep.integridade_analise.besst_corrected, true);
-assert.equal(deep.besst, "R$ 14,25 a R$ 17,85");
+assert.equal(deep.besst, "R$ 14,25 a R$ 16,15");
 
 const finalAfterDeep = buildDeterministicFinal({ ticker: "BBAS3", history: { scan, deep } });
 assert.equal(finalAfterDeep.classificacao_final, "MONITORAR");
@@ -74,7 +79,7 @@ assert.equal(finalAfterDeep.score_revisado, 20);
 assert.equal(finalAfterDeep.mudanca_veredito, "MANTEVE");
 assert.equal(finalAfterDeep.integridade_reclassificacao.baseline_phase, "deep");
 
-const validBesst = reconcileBesst({ zone: "USD 100.00 - USD 110.00", besst: "USD 78.00 - USD 90.00" });
+const validBesst = reconcileBesst({ zone: "USD 100.00 - USD 110.00", besst: "USD 75.00 - USD 85.00" });
 assert.equal(validBesst.status, "valid");
 assert.equal(validBesst.corrected, false);
 
@@ -96,7 +101,12 @@ assert.doesNotMatch(priceNarrative.value, /20,4%|dentro da zona de convergência
 const reportSevenDeep = reconcileDeepIntegrity({
   ticker: "BBAS3",
   veredito_final: "MONITORAR",
+  preco: [
+    { c: "C1", vj: "R$ 24,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 24, multiplo: 1 } },
+    { c: "C2", vj: "R$ 27,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 27, multiplo: 1 } },
+  ],
   zona: "R$ 24,00 – R$ 27,00",
+  zona_calc: { camadas_incluidas: ["C1", "C2"], justificativa_exclusoes: "" },
   besst: "R$ 19,50",
   desconto: "Preço atual R$ 22,45 está dentro da zona de convergência.",
   ajustes_score: [],
@@ -141,7 +151,7 @@ assert.deepEqual(reportEightDeep.integridade_analise.valuation_corrected_layers,
 assert.equal(reportEightDeep.integridade_analise.valuation_zone_suppressed, true);
 assert.match(reportEightDeep.zona, /^N\/D/);
 assert.match(reportEightDeep.besst, /^N\/D/);
-assert.match(reportEightDeep.desconto, /não foi inferida automaticamente/);
+assert.match(reportEightDeep.desconto, /não inferiu uma faixa automaticamente/);
 assert.doesNotMatch(reportEightDeep.desconto, /dentro da zona/);
 
 for (const bankCase of [
@@ -176,14 +186,24 @@ assert.equal(fiiYield.layers[0].vj, "R$ 12,00", "a integridade aritmética tamb�
 const validStructuredLayers = reconcileDeepIntegrity({
   ticker: "ITUB4",
   veredito_final: "MONITORAR",
-  preco: [{
-    c: "C1",
-    vj: "R$ 90,00",
-    met: "Múltiplo sobre resultado por ação",
-    prem: "Entradas estruturadas.",
-    calc: { formula: "TOTAL_POR_UNIDADE_X_MULTIPLO", multiplo: 9, valor_total: 40e9, quantidade_unidades: 4e9 },
-  }],
+  preco: [
+    {
+      c: "C1",
+      vj: "R$ 90,00",
+      met: "Múltiplo sobre resultado por ação",
+      prem: "Entradas estruturadas.",
+      calc: { formula: "TOTAL_POR_UNIDADE_X_MULTIPLO", multiplo: 9, valor_total: 40e9, quantidade_unidades: 4e9 },
+    },
+    {
+      c: "C2",
+      vj: "R$ 80,00",
+      met: "Valor unitário",
+      prem: "Entrada direta.",
+      calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", multiplo: 1, valor_por_unidade: 80 },
+    },
+  ],
   zona: "R$ 80,00 a R$ 90,00",
+  zona_calc: { camadas_incluidas: ["C1", "C2"], justificativa_exclusoes: "" },
   besst: "R$ 60,00 a R$ 76,50",
   desconto: "Narrativa provisória.",
   ajustes_score: [],
@@ -192,5 +212,47 @@ assert.equal(validStructuredLayers.integridade_analise.valuation_status, "verifi
 assert.equal(validStructuredLayers.integridade_analise.valuation_zone_suppressed, false);
 assert.equal(validStructuredLayers.zona, "R$ 80,00 a R$ 90,00");
 assert.match(validStructuredLayers.desconto, /6,25% abaixo do piso/);
+
+const reportNineRejected = reconcileDeepIntegrity({
+  ticker: "BANK3",
+  veredito_final: "MONITORAR",
+  preco: [
+    { c: "C1", vj: "R$ 25,41", met: "P/VPA", prem: "VPA direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 31.76, multiplo: 0.8 } },
+    { c: "C2", vj: "R$ 23,52", met: "P/L", prem: "Média conservadora entre R$ 2,18 e R$ 2,47.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 2.24, multiplo: 10.5 } },
+    { c: "C3", vj: "R$ 27,00", met: "P/VPA", prem: "Cenário otimista.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 31.76, multiplo: 0.85 } },
+  ],
+  zona: "R$ 23,52 a R$ 25,41",
+  zona_calc: { camadas_incluidas: ["C1", "C2"], justificativa_exclusoes: "C3 representa cenário otimista, não a convergência central." },
+  besst: "R$ 19,92 a R$ 19,91",
+  ajustes_score: [],
+}, { scan: { ...scan, ticker: "BANK3" } }, { referencePrice: 22.45 });
+assert.deepEqual(reportNineRejected.integridade_analise.valuation_invalid_layers, ["C2"]);
+assert.equal(reportNineRejected.preco[1].calculo_integridade.reason, "derivacao_composta_nao_declarada");
+assert.equal(reportNineRejected.integridade_analise.valuation_zone_suppressed, true);
+
+const reportNineCorrected = reconcileDeepIntegrity({
+  ticker: "BANK3",
+  veredito_final: "MONITORAR",
+  tese_final: "Banco negocia com P/B 0,67x e P/L 10,49x após atualização documental.",
+  preco: [
+    { c: "C1", vj: "R$ 25,41", met: "P/VPA", prem: "VPA direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 31.76, multiplo: 0.8 } },
+    { c: "C2", vj: "R$ 24,41", met: "P/L", prem: "Média ponderada explicitada.", calc: { formula: "MEDIA_PONDERADA_X_MULTIPLO", multiplo: 10.5, componentes: [{ rotulo: "LPA contábil", valor: 2.18, peso_pct: 50 }, { rotulo: "LPA ajustado", valor: 2.47, peso_pct: 50 }] } },
+    { c: "C3", vj: "R$ 27,00", met: "P/VPA", prem: "Cenário otimista.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 31.76, multiplo: 0.85 } },
+  ],
+  zona: "R$ 24,41 a R$ 25,41",
+  zona_calc: { camadas_incluidas: ["C1", "C2"], justificativa_exclusoes: "C3 representa cenário otimista, não a convergência central." },
+  besst: "R$ 19,92 a R$ 19,91",
+  ajustes_score: [],
+}, { scan: { ...scan, ticker: "BANK3" } }, { referencePrice: 22.45 });
+assert.equal(reportNineCorrected.integridade_analise.valuation_zone_suppressed, false);
+assert.equal(reportNineCorrected.preco[1].vj, "R$ 24,41");
+assert.equal(reportNineCorrected.zona, "R$ 24,41 a R$ 25,41");
+assert.equal(reportNineCorrected.besst, "R$ 18,31 a R$ 20,75");
+assert.equal(reportNineCorrected.integridade_analise.besst_corrected, true);
+assert.deepEqual(reportNineCorrected.integridade_analise.convergence_excluded_layers, ["C3"]);
+const reportNineFinal = buildDeterministicFinal({ ticker: "BANK3", history: { scan: { ...scan, ticker: "BANK3" }, deep: reportNineCorrected } });
+assert.match(reportNineFinal.tese_final, /P\/B 0,71x/);
+assert.match(reportNineFinal.tese_final, /P\/L 9,66x/);
+assert.doesNotMatch(reportNineFinal.tese_final, /0,67x|10,49x/);
 
 console.log("reclassification integrity: score, valuation layers, BESST and price narrative checks passed");

@@ -45,7 +45,13 @@ try {
         { dimensao: "Qualidade do Negócio", antes: 1, depois: 3, motivo: "Evidência nova confirmou deterioração." },
         { dimensao: "Dimensão inventada", antes: 5, depois: 0, motivo: "Não pertence ao score anterior." },
       ],
+      tese_final: "Tese atualizada pelo Deep.",
+      preco: [
+        { c: "C1", vj: "R$ 19,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 19, multiplo: 1 } },
+        { c: "C2", vj: "R$ 21,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 21, multiplo: 1 } },
+      ],
       zona: "R$ 19,00 a R$ 21,00",
+      zona_calc: { camadas_incluidas: ["C1", "C2"], justificativa_exclusoes: "" },
       besst: "R$ 24,50 a R$ 26,00",
       desconto: "10%",
       hdl_conclusao: "Não supera o soberano porque a TIR real esperada permanece abaixo do hurdle oficial.",
@@ -73,13 +79,15 @@ try {
   assert.match(capturedPrompt, /BASE ANALÍTICA ANTERIOR/);
   assert.match(capturedPrompt, /Qualidade do Negócio/);
   assert.match(capturedSystemPrompt, /Every C1\/C2\/C3 layer must include calc/);
-  assert.match(capturedSystemPrompt, /server independently verifies layer arithmetic/);
+  assert.match(capturedSystemPrompt, /server independently verifies derivation, layer arithmetic, convergence and BESST/);
+  assert.match(capturedSystemPrompt, /MEDIA_PONDERADA_X_MULTIPLO/);
+  assert.match(capturedSystemPrompt, /Preserve exact metric semantics and windows/);
   assert.equal(deep.score_original, 21);
   assert.equal(deep.score_revisado, 20);
   assert.equal(deep.ajustes_score.length, 1);
   assert.equal(deep.ajustes_score[0].antes, 4);
   assert.equal(deep.ajustes_score[0].depois, 3);
-  assert.equal(deep.besst, "R$ 14,25 a R$ 17,85");
+  assert.equal(deep.besst, "R$ 14,25 a R$ 16,15");
   assert.match(deep.desconto, /Preço atual R\$ 20,00 está dentro da zona de convergência/);
   assert.equal(deep.integridade_analise.price_narrative_status, "server_calculated");
   assert.equal(deep.integridade_analise.reference_price, 20);
