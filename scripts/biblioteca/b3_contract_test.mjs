@@ -169,6 +169,25 @@ const retrievalReconciled = applyBibliotecaAudit({
 }, { expectedGaps: ["NPL por carteira"] });
 assert.equal(retrievalReconciled.lacunas_documentais[0].status, "resolvida", "servidor deve reconciliar evidência numérica presente nos chunks mesmo sem ID repetido pela IA");
 assert.deepEqual(retrievalReconciled.nexoModules.BIBLIOTECA.documents_used, ["ri:npl-full"]);
+
+const answerCitationReconciled = applyBibliotecaAudit({
+  lacunas: [{
+    q: "O dividend yield atual destoa do histórico: apurar se houve corte de payout, retenção regulatória ou queda do lucro.",
+    r: "Com lucro projetado menor (ri:bbas3-2t26), a base de distribuição encolheu. A fonte não evidencia corte deliberado do payout; a queda decorre do lucro menor.",
+  }],
+  lacunas_documentais: [{
+    lacuna: "O dividend yield atual destoa do histórico: apurar se houve corte de payout, retenção regulatória ou queda do lucro.",
+    status: "aberta",
+    evidencia_documental: [],
+  }],
+}, {
+  ...context,
+  documents: [{ id: "ri:bbas3-2t26", trust: "user_supplied", matchedGaps: [], text: "Lucro líquido ajustado e dividendos." }],
+  documentIds: ["ri:bbas3-2t26"],
+  chunkIds: ["ri:bbas3-2t26#00001"],
+}, { expectedGaps: ["O dividend yield atual destoa do histórico: apurar se houve corte de payout, retenção regulatória ou queda do lucro."] });
+assert.equal(answerCitationReconciled.lacunas_documentais[0].status, "resolvida", "ID permitido citado na resposta deve reconciliar a evidência mesmo se a IA omitir o campo técnico");
+assert.deepEqual(answerCitationReconciled.nexoModules.BIBLIOTECA.documents_used, ["ri:bbas3-2t26"]);
 console.log("SIMULAÇÃO B3 · sem Biblioteca: MONITORAR 21/30 · com Biblioteca: COMPRAR 22/30");
 
 for (const address of ["127.0.0.1", "10.1.2.3", "192.168.1.2", "::1", "fd00::1"]) assert.equal(isPrivateAddress(address), true);
