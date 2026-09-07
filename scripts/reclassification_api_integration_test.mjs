@@ -25,6 +25,7 @@ const activeEdge = {
 
 let upstreamCalls = 0;
 let capturedPrompt = "";
+let capturedSystemPrompt = "";
 const originalFetch = globalThis.fetch;
 
 try {
@@ -32,6 +33,7 @@ try {
     upstreamCalls += 1;
     const request = JSON.parse(options.body);
     capturedPrompt = request.messages[0].content;
+    capturedSystemPrompt = request.system;
     return new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify({
       ticker: "BBAS3",
       veredito_final: "MONITORAR",
@@ -70,6 +72,8 @@ try {
   assert.equal(upstreamCalls, 1);
   assert.match(capturedPrompt, /BASE ANALÍTICA ANTERIOR/);
   assert.match(capturedPrompt, /Qualidade do Negócio/);
+  assert.match(capturedSystemPrompt, /Every C1\/C2\/C3 layer must include calc/);
+  assert.match(capturedSystemPrompt, /server independently verifies layer arithmetic/);
   assert.equal(deep.score_original, 21);
   assert.equal(deep.score_revisado, 20);
   assert.equal(deep.ajustes_score.length, 1);

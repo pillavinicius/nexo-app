@@ -527,6 +527,10 @@ function DeepReport({ r, showClassicValuations = false }) {
   const risks = asArray(r?.riscos);
   const steps = asArray(r?.passos || r?.proximos_passos);
   const scoreAdjustments = asArray(r?.ajustes_score);
+  const valuationAffectedLayers = [...new Set([
+    ...asArray(r?.integridade_analise?.valuation_corrected_layers),
+    ...asArray(r?.integridade_analise?.valuation_invalid_layers),
+  ])];
 
   return (
     <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8", overflowX: "hidden" }}>
@@ -574,6 +578,13 @@ function DeepReport({ r, showClassicValuations = false }) {
               note={item.premises}
             />
           ))}
+          {r?.integridade_analise?.valuation_zone_suppressed && (
+            <DetailBlock
+              title="Zona e BESST suspensos pelo servidor"
+              value="Uma ou mais camadas apresentaram valor incompatível com a própria fórmula ou entradas insuficientes para validá-la. O servidor preservou ou corrigiu somente os cálculos verificáveis; a zona não foi reconstruída automaticamente."
+              note={`Camadas afetadas: ${valuationAffectedLayers.join(", ") || "não informadas"}.`}
+            />
+          )}
           {classics.length > 0 && <div className="valuation-subtitle">Valuations clássicos auxiliares</div>}
           {classics.map((item, i) => (
             <DetailBlock

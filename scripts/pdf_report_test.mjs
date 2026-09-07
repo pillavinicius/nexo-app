@@ -84,6 +84,8 @@ const fixture = {
     integridade_analise: {
       besst_corrected: true,
       besst_previous_value: "R$ 36,50",
+      valuation_zone_suppressed: true,
+      valuation_corrected_layers: ["C1", "C2"],
     },
     hdl_conclusao: "O alfa esperado supera o soberano, condicionado à manutenção das premissas operacionais.",
     tdn_conclusao: "As duas janelas mostram defesa mista, sem alteração automática da classificação global.",
