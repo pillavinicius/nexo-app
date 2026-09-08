@@ -148,10 +148,10 @@ assert.equal(reportEightDeep.preco[0].vj, "R$ 62,72");
 assert.equal(reportEightDeep.preco[1].vj, "R$ 37,89");
 assert.equal(reportEightDeep.preco[2].vj, "R$ 32,21");
 assert.deepEqual(reportEightDeep.integridade_analise.valuation_corrected_layers, ["C1", "C2", "C3"]);
-assert.equal(reportEightDeep.integridade_analise.valuation_zone_suppressed, true);
-assert.match(reportEightDeep.zona, /^N\/D/);
-assert.match(reportEightDeep.besst, /^N\/D/);
-assert.match(reportEightDeep.desconto, /não inferiu uma faixa automaticamente/);
+assert.equal(reportEightDeep.integridade_analise.valuation_zone_suppressed, false);
+assert.equal(reportEightDeep.zona, "R$ 32,21 a R$ 62,72");
+assert.equal(reportEightDeep.besst, "R$ 24,16 a R$ 27,38");
+assert.match(reportEightDeep.desconto, /abaixo do piso/);
 assert.doesNotMatch(reportEightDeep.desconto, /dentro da zona/);
 
 for (const bankCase of [
@@ -228,7 +228,30 @@ const reportNineRejected = reconcileDeepIntegrity({
 }, { scan: { ...scan, ticker: "BANK3" } }, { referencePrice: 22.45 });
 assert.deepEqual(reportNineRejected.integridade_analise.valuation_invalid_layers, ["C2"]);
 assert.equal(reportNineRejected.preco[1].calculo_integridade.reason, "derivacao_composta_nao_declarada");
-assert.equal(reportNineRejected.integridade_analise.valuation_zone_suppressed, true);
+assert.equal(reportNineRejected.integridade_analise.valuation_zone_suppressed, false);
+assert.equal(reportNineRejected.zona, "R$ 25,41 a R$ 27,00");
+assert.equal(reportNineRejected.besst, "R$ 19,06 a R$ 21,60");
+assert.deepEqual(reportNineRejected.integridade_analise.convergence_excluded_layers, ["C2"]);
+
+const reportTenProvisional = reconcileDeepIntegrity({
+  ticker: "BANK3",
+  veredito_final: "MONITORAR",
+  preco: [
+    { c: "C1", vj: "R$ 26,50", met: "P/L normalizado", prem: "Referência declarada.", calc: { formula: "NAO_VERIFICAVEL" } },
+    { c: "C2", vj: "R$ 22,45", met: "P/VP histórico", prem: "Referência declarada.", calc: { formula: "NAO_VERIFICAVEL" } },
+    { c: "C3", vj: "R$ 24,50", met: "Dividend yield reverso", prem: "Referência declarada.", calc: { formula: "NAO_VERIFICAVEL" } },
+  ],
+  zona: "R$ 22,45 a R$ 26,50",
+  zona_calc: { camadas_incluidas: ["C1", "C2", "C3"], justificativa_exclusoes: "" },
+  besst: "N/D",
+  ajustes_score: [],
+}, { scan: { ...scan, ticker: "BANK3" } }, { referencePrice: 22.45 });
+assert.equal(reportTenProvisional.integridade_analise.valuation_zone_suppressed, false);
+assert.equal(reportTenProvisional.integridade_analise.convergence_status, "provisional_from_declared_layers");
+assert.deepEqual(reportTenProvisional.integridade_analise.convergence_provisional_layers, ["C1", "C2", "C3"]);
+assert.equal(reportTenProvisional.zona, "R$ 22,45 a R$ 26,50");
+assert.equal(reportTenProvisional.besst, "R$ 16,84 a R$ 19,08");
+assert.doesNotMatch(`${reportTenProvisional.zona} ${reportTenProvisional.besst} ${reportTenProvisional.desconto}`, /suprimid/i);
 
 const reportNineCorrected = reconcileDeepIntegrity({
   ticker: "BANK3",

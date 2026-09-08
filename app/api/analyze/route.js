@@ -45,7 +45,7 @@ import {
   deriveExpectedDeepGaps,
   findBibliotecaMetricConflicts,
   loadBibliotecaContext,
-  suppressBibliotecaMetricConflicts,
+  reconcileBibliotecaMetricConflicts,
 } from "../../../lib/nexo/biblioteca/context.mjs";
 
 const SCAN_S =
@@ -749,7 +749,7 @@ export async function POST(req) {
     if (phase === "deep") {
       const metricConflicts = findBibliotecaMetricConflicts(result.data, biblioteca);
       if (metricConflicts.length) {
-        result = { ...result, data: suppressBibliotecaMetricConflicts(result.data, metricConflicts) };
+        result = { ...result, data: reconcileBibliotecaMetricConflicts(result.data, metricConflicts) };
       }
     }
 

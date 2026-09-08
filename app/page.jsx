@@ -580,9 +580,9 @@ function DeepReport({ r, showClassicValuations = false }) {
           ))}
           {r?.integridade_analise?.valuation_zone_suppressed && (
             <DetailBlock
-              title="Zona e BESST suspensos pelo servidor"
-              value="A derivação de uma camada ou a memória estruturada da convergência não passou na validação. O servidor preservou somente os cálculos verificáveis; a zona não foi reconstruída automaticamente."
-              note={`Camadas afetadas: ${valuationAffectedLayers.join(", ") || "não informadas"}.`}
+              title="Faixa de preço não consolidada"
+              value="Menos de duas camadas apresentaram valores utilizáveis. A análise qualitativa permanece válida, mas a margem de segurança depende de uma memória de cálculo mais completa."
+              note={valuationAffectedLayers.length ? `Camadas a revisar: ${valuationAffectedLayers.join(", ")}.` : "Revisar as premissas quantitativas antes de usar a faixa."}
             />
           )}
           {classics.length > 0 && <div className="valuation-subtitle">Valuations clássicos auxiliares</div>}
@@ -615,6 +615,13 @@ function DeepReport({ r, showClassicValuations = false }) {
               title="Memória da convergência"
               value={`Camadas incluídas: ${r.integridade_analise.convergence_included_layers.join(", ")}. Camadas fora da faixa central: ${r.integridade_analise.convergence_excluded_layers.join(", ")}.`}
               note={r.integridade_analise.convergence_exclusion_reason}
+            />
+          )}
+          {!r?.integridade_analise?.valuation_zone_suppressed && r?.integridade_analise?.convergence_provisional_layers?.length > 0 && (
+            <DetailBlock
+              title="Memória de cálculo parcial"
+              value={`Faixa preservada a partir dos valores declarados em ${r.integridade_analise.convergence_provisional_layers.join(", ")}.`}
+              note="Essas camadas permanecem identificadas como referências provisórias até a memória aritmética ser detalhada."
             />
           )}
         </Sec>
