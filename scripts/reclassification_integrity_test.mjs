@@ -297,4 +297,27 @@ assert.match(reportNineFinal.tese_final, /P\/B 0,71x/);
 assert.match(reportNineFinal.tese_final, /P\/L 9,66x/);
 assert.doesNotMatch(reportNineFinal.tese_final, /0,67x|10,49x/);
 
+const reportEightConvergence = reconcileDeepIntegrity({
+  ticker: "BBAS3",
+  veredito_final: "MONITORAR",
+  preco: [
+    { c: "C1", vj: "R$ 23,50", met: "P/VPA", prem: "Valor governado.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 23.83, multiplo: 1 } },
+    { c: "C2", vj: "R$ 25,16", met: "P/L", prem: "Valor governado.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 25.16, multiplo: 1 } },
+    { c: "C3", vj: "R$ 22,39", met: "Yield", prem: "Valor governado.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 22.39, multiplo: 1 } },
+  ],
+  zona: "R$ 22,39 a R$ 25,16",
+  zona_calc: { camadas_incluidas: ["C3", "C2"], justificativa_exclusoes: "C1 de R$ 23,50 está dentro do intervalo central." },
+  besst: "R$ 16,79 a R$ 19,03",
+  ajustes_score: [],
+}, { scan: { ticker: "BBAS3", score_total: 18, score_max: 30 } }, { referencePrice: 22.45 });
+assert.equal(reportEightConvergence.preco[0].vj, "R$ 23,83");
+assert.deepEqual(reportEightConvergence.integridade_analise.convergence_included_layers, ["C3", "C2", "C1"], "camada válida dentro do intervalo deve integrar a convergência");
+assert.deepEqual(reportEightConvergence.integridade_analise.convergence_excluded_layers, []);
+assert.equal(reportEightConvergence.zona_calc.justificativa_exclusoes, "");
+assert.equal(reportEightConvergence.zona, "R$ 22,39 a R$ 25,16");
+assert.equal(reportEightConvergence.besst, "R$ 16,79 a R$ 19,03");
+assert.match(reportEightConvergence.desconto, /15,00% e 25,00% abaixo do piso/);
+const reportEightFinal = buildDeterministicFinal({ ticker: "BBAS3", history: { scan: { ticker: "BBAS3", score_total: 18, score_max: 30 }, deep: reportEightConvergence } });
+assert.doesNotMatch(reportEightFinal.preco_final.observacao, /23,50|fora da faixa|\.\.$/);
+
 console.log("reclassification integrity: score, valuation layers, BESST and price narrative checks passed");

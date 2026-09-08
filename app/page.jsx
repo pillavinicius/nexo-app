@@ -616,7 +616,7 @@ function DeepReport({ r, showClassicValuations = false }) {
           {!r?.integridade_analise?.valuation_zone_suppressed && r?.integridade_analise?.convergence_excluded_layers?.length > 0 && (
             <DetailBlock
               title="Memória da convergência"
-              value={`Camadas incluídas: ${r.integridade_analise.convergence_included_layers.join(", ")}. Camadas fora da faixa central: ${r.integridade_analise.convergence_excluded_layers.join(", ")}.`}
+              value={`Camadas incluídas: ${r.integridade_analise.convergence_included_layers.join(", ")}. Camadas excluídas por justificativa metodológica: ${r.integridade_analise.convergence_excluded_layers.join(", ")}.`}
               note={r.integridade_analise.convergence_exclusion_reason}
             />
           )}

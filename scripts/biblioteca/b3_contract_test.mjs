@@ -271,6 +271,44 @@ assert.match(locallyReconciled.lacunas[0].r, /inadimplência com janela não esp
 assert.doesNotMatch(locallyReconciled.lacunas[0].r, /suprimido pelo servidor/i);
 assert.equal(locallyReconciled.integridade_analise.biblioteca_metric_conflicts_reconciled.length, 1);
 assert.equal(findBibliotecaMetricConflicts(locallyReconciled, metricContext).length, 0, "reconciliação local deve corrigir a associação sem apagar o restante da resposta");
+
+const reportEightSemanticCandidate = {
+  ticker: "BBAS3",
+  score_original: 18,
+  score_revisado: 19,
+  ajustes_score: [{
+    dimensao: "Qualidade de ativos",
+    antes: 3,
+    depois: 4,
+    motivo: "NPL +90d Agro encerrou em 1,37%, mostrando melhora material.",
+    fonte_nova: "ri:bbas3-2t26",
+  }],
+  lacunas: [{ q: "Qualidade da carteira Agro", r: "NPL +90d Agro encerrou em 1,37%." }],
+  tese_final: "O NPL +90d Agro de 1,37% sustenta a revisão positiva.",
+};
+const reportEightSemanticConflicts = findBibliotecaMetricConflicts(reportEightSemanticCandidate, metricContext);
+assert.ok(reportEightSemanticConflicts.some((item) => item.target_metric_key === "npl_90" && item.conflicting_metric_key === "new_npl"), "1,37% pertence à formação de New NPL e não pode ser rotulado como NPL +90d");
+const reportEightSemanticReconciled = reconcileBibliotecaMetricConflicts(reportEightSemanticCandidate, reportEightSemanticConflicts);
+assert.match(reportEightSemanticReconciled.lacunas[0].r, /formação de New NPL Agro encerrou em 1,37%/i);
+assert.doesNotMatch(reportEightSemanticReconciled.lacunas[0].r, /NPL\s*\+?\s*90/i);
+assert.deepEqual(reportEightSemanticReconciled.ajustes_score, [], "ajuste apoiado em métrica semanticamente trocada deve ser rejeitado");
+assert.deepEqual(reportEightSemanticReconciled.integridade_analise.biblioteca_score_adjustments_rejected, [0]);
+const reportEightScoreGoverned = reconcileDeepIntegrity(reportEightSemanticReconciled, {
+  scan: { ticker: "BBAS3", score_total: 18, score_max: 30 },
+});
+assert.equal(reportEightScoreGoverned.score_revisado, 18, "rejeição semântica deve preservar o score anterior");
+
+const guidanceGap = "Guidance de lucro líquido e ROE para 2026/2027";
+const guidanceAudit = applyBibliotecaAudit({
+  lacunas: [{ q: guidanceGap, r: "Resolvida. Guidance 2026 foi localizado. Guidance 2027 não está nos trechos disponíveis e o ROE projetado não é explicitado nas fontes." }],
+  lacunas_documentais: [{ lacuna: guidanceGap, status: "resolvida", evidencia_documental: ["ri:bbas3-2t26"] }],
+}, {
+  ...context,
+  documents: [{ id: "ri:bbas3-2t26", trust: "user_supplied", text: "Guidance de lucro líquido para 2026.", matchedGaps: [guidanceGap] }],
+  documentIds: ["ri:bbas3-2t26"],
+}, { expectedGaps: [guidanceGap] });
+assert.equal(guidanceAudit.lacunas_documentais[0].status, "parcial", "lacuna com 2027 e ROE ausentes não pode ser marcada como resolvida");
+assert.match(guidanceAudit.lacunas[0].r, /^Parcialmente resolvida\./);
 const repeatedPathReconciled = reconcileBibliotecaMetricConflicts({
   ticker: "BANK3",
   lacunas: [{ r: "Agro encerrou com INAD New NPL de 1,37%." }],
