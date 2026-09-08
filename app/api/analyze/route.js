@@ -1,4 +1,4 @@
-export const maxDuration = 120;
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 import { jsonrepair } from "jsonrepair";
@@ -45,6 +45,7 @@ import {
   deriveExpectedDeepGaps,
   findBibliotecaMetricConflicts,
   loadBibliotecaContext,
+  suppressBibliotecaMetricConflicts,
 } from "../../../lib/nexo/biblioteca/context.mjs";
 
 const SCAN_S =
@@ -690,7 +691,7 @@ export async function POST(req) {
     let rawText = modelResult.rawText;
     let result = parseModelJSON(rawText);
 
-    if (!result.ok) {
+    if (!result.ok && phase !== "deep") {
       modelResult = await requestStructuredAnalysis({
         phase,
         systemPrompt,
@@ -746,40 +747,9 @@ export async function POST(req) {
     }
 
     if (phase === "deep") {
-      const hdlCheck = applyHdlToAnalysis({ phase, result: result.data, hdl });
-      const semanticCheck = applyTdnToAnalysis({ phase, result: hdlCheck, tdn });
-      const hdlIncomplete = hdl.status === "ok" && semanticCheck?.hdl_integrity?.complete === false;
-      const tdnIncomplete = tdn.status === "ok" && semanticCheck?.tdn_integrity?.complete === false;
       const metricConflicts = findBibliotecaMetricConflicts(result.data, biblioteca);
-      if (hdlIncomplete || tdnIncomplete || metricConflicts.length) {
-        const semanticCorrection = hdlIncomplete || tdnIncomplete
-          ? "A resposta anterior não completou hdl_conclusao e/ou tdn_conclusao."
-          : "A resposta anterior falhou na validação de associação entre métricas e valores.";
-        const metricCorrection = metricConflicts.length
-          ? ` A Biblioteca também bloqueou associações entre métricas e valores de linhas diferentes: ${JSON.stringify(metricConflicts)}. Corrija essas associações usando exclusivamente os valores da mesma linha estruturada; se a associação não estiver comprovada, marque a lacuna como parcial ou aberta.`
-          : "";
-        const semanticRetry = await requestStructuredAnalysis({
-          phase,
-          systemPrompt,
-          userMsg:
-            userMsg +
-            `\n\n${semanticCorrection} Gere novamente o JSON completo. Preencha hdl_conclusao quando o HDL estiver válido e tdn_conclusao quando o TDN estiver válido. Interprete apenas os valores imutáveis fornecidos pelo servidor; não recalcule números e não altere score ou veredito global automaticamente.` +
-            metricCorrection,
-        });
-        if (semanticRetry.ok) {
-          const retried = parseModelJSON(semanticRetry.rawText);
-          if (retried.ok) result = retried;
-        }
-      }
-      const remainingMetricConflicts = findBibliotecaMetricConflicts(result.data, biblioteca);
-      if (remainingMetricConflicts.length) {
-        return Response.json({
-          error: {
-            code: "biblioteca_metric_conflict",
-            message: "A Biblioteca detectou valores associados à métrica errada. O Deep foi bloqueado para não salvar uma análise contaminada; execute novamente.",
-            conflicts: remainingMetricConflicts,
-          },
-        }, { status: 422 });
+      if (metricConflicts.length) {
+        result = { ...result, data: suppressBibliotecaMetricConflicts(result.data, metricConflicts) };
       }
     }
 

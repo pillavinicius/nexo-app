@@ -7,7 +7,7 @@ import { join } from "node:path";
 import PDFDocument from "pdfkit";
 
 import { reconcileDeepIntegrity } from "../../lib/nexo/analysis/reclassification_integrity.mjs";
-import { applyBibliotecaAudit, buildBibliotecaPromptContext, deriveExpectedDeepGaps, findBibliotecaMetricConflicts, formatBibliotecaTables, loadBibliotecaContext, selectBibliotecaChunks, selectBibliotecaDocuments } from "../../lib/nexo/biblioteca/context.mjs";
+import { applyBibliotecaAudit, buildBibliotecaPromptContext, deriveExpectedDeepGaps, findBibliotecaMetricConflicts, formatBibliotecaTables, loadBibliotecaContext, selectBibliotecaChunks, selectBibliotecaDocuments, suppressBibliotecaMetricConflicts } from "../../lib/nexo/biblioteca/context.mjs";
 import { buildDocumentChunks, extractHtmlText, extractTableRows, parseDocument, parsePendingDocuments, selectRelevantPdfContent } from "../../lib/nexo/biblioteca/document_parser.mjs";
 import { createBibliotecaRepository } from "../../lib/nexo/biblioteca/repository.mjs";
 import { ingestUserSource, isPrivateAddress, validatePublicHttpsUrl } from "../../lib/nexo/biblioteca/url_ingestion.mjs";
@@ -263,6 +263,13 @@ const semanticNplConflicts = findBibliotecaMetricConflicts({
   lacunas: [{ r: "Agro: INAD = 1,37%, cobertura New NPL = 145,9%." }],
 }, metricContext);
 assert.ok(semanticNplConflicts.some((item) => item.target_metric === "inadimplência sem janela definida"), "INAD sem janela não pode absorver o índice de formação de New NPL");
+const locallySuppressed = suppressBibliotecaMetricConflicts({
+  ticker: "BANK3",
+  lacunas: [{ r: "Agro: INAD = 1,37%, cobertura New NPL = 145,9%." }],
+}, semanticNplConflicts);
+assert.match(locallySuppressed.lacunas[0].r, /Trecho suprimido pelo servidor/);
+assert.equal(locallySuppressed.integridade_analise.biblioteca_metric_conflicts_suppressed.length, 1);
+assert.equal(findBibliotecaMetricConflicts(locallySuppressed, metricContext).length, 0, "contenção local deve remover a associação contaminada sem nova chamada externa");
 const capitalMinimumConflicts = findBibliotecaMetricConflicts({
   lacunas: [{ r: "CET1 de 11,27% está acima do mínimo regulatório de 8%." }],
 }, metricContext);

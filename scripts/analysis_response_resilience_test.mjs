@@ -22,7 +22,7 @@ const validScan = {
   lacunas_deep: ["Validar qualidade de crédito.", "Validar custo de funding."],
 };
 
-assert.equal(maxDuration, 120, "a rota deve suportar a latência completa da análise");
+assert.equal(maxDuration, 300, "a chamada única do Deep deve ter margem para concluir sem repetição automática");
 
 const malformedLikeProduction = JSON.stringify(validScan).replace(
   ',"segmento":"Banco Público - Setor Financeiro","veredito"',
@@ -105,9 +105,27 @@ try {
   assert.equal(retriedResult.ticker, "BBAS3");
   assert.equal(retriedResult.veredito, "WATCHLIST");
 
+  upstreamTexts = ["resposta Deep totalmente irrecuperável"];
+  const deepFallbackResponse = await originalFetch(`http://127.0.0.1:${address.port}/api/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      phase: "deep",
+      assetType: "stock-ext",
+      ticker: "BANK",
+      edgeLedger: { edge_type: "nenhum", edge_status: "nao_declarado" },
+      analysisHistory: { scan: validScan },
+    }),
+  });
+  const deepFallback = await readApiJsonResponse(deepFallbackResponse);
+  assert.equal(deepFallbackResponse.status, 200);
+  assert.equal(capturedRequests.length, 4, "Deep inválido deve usar fallback local sem consumir uma segunda chamada");
+  assert.equal(deepFallback.ticker, "BANK");
+  assert.match(deepFallback.preco?.[0]?.met || "", /fallback/i);
+
   await assert.rejects(
     () => readApiJsonResponse(new Response("FUNCTION_INVOCATION_TIMEOUT", { status: 504 })),
-    /tempo limite do servidor/
+    /limite do servidor/
   );
   await assert.rejects(
     () => readApiJsonResponse(new Response("Internal Server Error", { status: 500 })),
@@ -118,4 +136,4 @@ try {
   if (server) await new Promise((resolve) => server.close(resolve));
 }
 
-console.log("analysis response resilience: 18/18 checks passed");
+console.log("analysis response resilience: 22/22 checks passed");

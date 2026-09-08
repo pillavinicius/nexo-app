@@ -39,7 +39,7 @@ const baseDeep = {
 };
 
 try {
-  const outputs = [baseDeep, { ...baseDeep, tdn_conclusao: "O histórico mostra defesa mista entre as duas janelas, com preservação desigual das margens e da receita real." }];
+  const outputs = [baseDeep];
   globalThis.fetch = async (_url, options) => {
     calls += 1;
     requests.push(JSON.parse(options.body));
@@ -63,17 +63,16 @@ try {
   });
   const deep = await response.json();
   assert.equal(response.status, 200);
-  assert.equal(calls, 2, "conclusão TDN ausente deve consumir uma única correção semântica");
+  assert.equal(calls, 1, "conclusão TDN ausente deve ser sinalizada localmente sem segunda chamada");
   assert.equal(deep.nexoModules.TDN.status, "ok");
   assert.equal(deep.nexoModules.TDN.janelas_cobertas, 2);
   assert.equal(deep.nexoModules.TDN.score_nominalidade, 3.44);
   assert.equal(deep.nexoModules.TDN.veredito, "misto");
-  assert.equal(deep.tdn_integrity.complete, true);
+  assert.equal(deep.tdn_integrity.complete, false);
   assert.equal(deep.score_revisado, 22, "TDN não altera score do Deep");
   assert.equal(deep.veredito_final, "MONITORAR", "TDN não altera veredito do Deep");
   assert.match(requests[0].messages[0].content, /TDN · TESTE DE DEFESA NOMINAL/);
   assert.match(requests[0].messages[0].content, /"score_nominalidade":3\.44/);
-  assert.match(requests[1].messages[0].content, /tdn_conclusao/);
 
   globalThis.fetch = async () => { throw new Error("finalização determinística não pode chamar a IA"); };
   const finalResponse = await request({
@@ -86,7 +85,7 @@ try {
   });
   const final = await finalResponse.json();
   assert.equal(finalResponse.status, 200);
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   assert.equal(final.nexoModules.TDN.score_nominalidade, 3.44);
   assert.equal(final.tdn_conclusao, deep.tdn_conclusao);
   assert.equal(final.classificacao_final, "MONITORAR");
@@ -99,7 +98,7 @@ try {
   });
   assert.equal(invalidEdge.status, 422);
   assert.equal((await invalidEdge.json()).error.code, "tdn_edge_unavailable");
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
 
   console.log("TDN API integration: 18 verificações aprovadas.");
 } finally {
