@@ -90,5 +90,7 @@ for (const fixture of cases) {
 }
 
 assert.doesNotMatch(reconcileListingSegmentClaims({ segmento: cases[0].segmento }).segmento, /Novo Mercado.*Nível 1/i, "segmentos B3 mutuamente exclusivos devem ser reconciliados");
+const grammarChecked = reconcileListingSegmentClaims({ tese: "Basileia acima dos referência regulatória citada, com adicionaiss." });
+assert.equal(grammarChecked.tese, "Basileia acima das referências regulatórias citadas, com adicionais.");
 
 console.log("matriz Deep virtual: 3/3 tickers e 3/3 setores aprovados (BBAS3, ROMI3, VALE3), sem chamadas externas");

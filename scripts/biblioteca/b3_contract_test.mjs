@@ -326,6 +326,22 @@ assert.ok(capitalMinimumConflicts.some((item) => item.target_metric === "requeri
 assert.deepEqual(findBibliotecaMetricConflicts({
   lacunas: [{ r: "CET1 de 11,27% supera o mínimo-base aplicável; buffers e adicionais institucionais devem ser verificados separadamente." }],
 }, metricContext), [], "afirmação prudencial decomposta deve permanecer válida");
+const capitalTextReconciled = reconcileBibliotecaMetricConflicts({
+  lacunas: [{ r: "Basileia de 13,91% está acima dos mínimos regulatórios de 11,5% (incluindo adicionais)." }],
+}, findBibliotecaMetricConflicts({
+  lacunas: [{ r: "Basileia de 13,91% está acima dos mínimos regulatórios de 11,5% (incluindo adicionais)." }],
+}, metricContext));
+assert.match(capitalTextReconciled.lacunas[0].r, /acima das referências regulatórias citadas/i);
+assert.match(capitalTextReconciled.lacunas[0].r, /decomposição entre mínimo-base, buffers e adicionais institucionais não foi comprovada/i);
+assert.doesNotMatch(capitalTextReconciled.lacunas[0].r, /dos referência|adicionaiss|incluindo adicionais/i);
+
+const overflowConflictCandidate = {
+  lacunas: Array.from({ length: 30 }, (_, index) => ({ r: `INAD sem janela no item ${index}.` })),
+  ajustes_score: [{ dimensao: "Risco", antes: 3, depois: 4, motivo: "CET1 está acima do mínimo regulatório de 8%.", fonte_nova: "ri:bbas3-2t26" }],
+};
+const overflowConflicts = findBibliotecaMetricConflicts(overflowConflictCandidate, metricContext);
+assert.match(overflowConflicts[0].path, /^\$\.ajustes_score\[/, "conflitos de score devem ter prioridade mesmo em respostas extensas");
+assert.deepEqual(reconcileBibliotecaMetricConflicts(overflowConflictCandidate, overflowConflicts).ajustes_score, [], "limite de conflitos não pode deixar passar ajuste inválido");
 
 const retrievalReconciled = applyBibliotecaAudit({
   lacunas: [{ q: "NPL por carteira", r: "INAD+90d Agro 6,27%, PF 8,41% e PJ 3,18%; New NPL Agro 1,37%, com cobertura New NPL de 145,9%." }],

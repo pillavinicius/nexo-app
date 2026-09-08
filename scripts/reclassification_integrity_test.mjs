@@ -233,6 +233,26 @@ assert.equal(reportNineRejected.zona, "R$ 25,41 a R$ 27,00");
 assert.equal(reportNineRejected.besst, "R$ 19,06 a R$ 21,60");
 assert.deepEqual(reportNineRejected.integridade_analise.convergence_excluded_layers, ["C2"]);
 
+const reportThreeC2Regression = reconcileDeepIntegrity({
+  ticker: "BBAS3",
+  veredito_final: "MONITORAR",
+  preco: [
+    { c: "C1", vj: "R$ 31,76", met: "Valor Patrimonial por Ação (VPA) — múltiplo de P/VP histórico médio", prem: "VPA de R$ 31,76 com P/VP alvo de 1,0x.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 31.76, multiplo: 1 } },
+    { c: "C2", vj: "R$ 28,56", met: "LPA anualizado com P/L alvo setorial", prem: "LPA 2T26 de R$ 0,56 anualizado (R$ 2,24/ano) com P/L alvo de 12,75x (média setor 10–15x).", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 2.24, multiplo: 12.75 } },
+    { c: "C3", vj: "", met: "Dividend Yield normalizado", prem: "Sem convergência confiável.", calc: { formula: "NAO_VERIFICAVEL" } },
+  ],
+  zona: "R$ 28,56 a R$ 31,76",
+  zona_calc: { camadas_incluidas: ["C1", "C2"], justificativa_exclusoes: "C3 não possui valor confiável por renda." },
+  besst: "Não calculado",
+  ajustes_score: [],
+}, { scan: { ticker: "BBAS3", score_total: 18, score_max: 30 } }, { referencePrice: 22.45 });
+assert.notEqual(reportThreeC2Regression.preco[1].calculo_integridade?.status, "invalid_formula", "média do múltiplo setorial não é média oculta do LPA");
+assert.deepEqual(reportThreeC2Regression.integridade_analise.valuation_invalid_layers, []);
+assert.equal(reportThreeC2Regression.integridade_analise.valuation_zone_suppressed, false);
+assert.equal(reportThreeC2Regression.zona, "R$ 28,56 a R$ 31,76");
+assert.equal(reportThreeC2Regression.besst, "R$ 21,42 a R$ 24,28");
+assert.match(reportThreeC2Regression.desconto, /dentro da faixa BESST/);
+
 const reportTenProvisional = reconcileDeepIntegrity({
   ticker: "BANK3",
   veredito_final: "MONITORAR",

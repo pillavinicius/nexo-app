@@ -542,6 +542,12 @@ function DeepReport({ r, showClassicValuations = false }) {
         {r?.veredito_final && <Badge text={r.veredito_final} />}
       </div>
 
+      {r?.integridade_analise?.version && (
+        <div className="edg-audit-note" style={{ marginBottom: 12 }}>
+          Motor de integridade {asText(r.integridade_analise.version)} · valuation {asText(r.integridade_analise.valuation_version)}
+        </div>
+      )}
+
       {Number.isFinite(Number(r?.score_revisado)) && (
         <Sec title="Evolução auditável do score">
           <Row label="Score de entrada" right={<ScoreBar score={r?.score_original} max={r?.score_max || 30} />} />
