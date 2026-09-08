@@ -135,7 +135,7 @@ try {
   const semanticDeep = await semanticResponse.json();
   assert.equal(semanticResponse.status, 200);
   assert.equal(semanticCalls, 1, "falha semântica do Deep deve ser contida localmente sem segunda chamada");
-  assert.match(semanticDeep.lacunas[0].r, /indicador de inadimplência sem janela definida/);
+  assert.match(semanticDeep.lacunas[0].r, /inadimplência com janela não especificada/);
   assert.doesNotMatch(semanticDeep.lacunas[0].r, /suprimido pelo servidor/i);
   assert.equal(semanticDeep.integridade_analise.biblioteca_metric_conflicts_reconciled.length, 1);
   assert.equal(semanticDeep.hdl_integrity.complete, false);

@@ -253,6 +253,25 @@ assert.equal(reportTenProvisional.zona, "R$ 22,45 a R$ 26,50");
 assert.equal(reportTenProvisional.besst, "R$ 16,84 a R$ 19,08");
 assert.doesNotMatch(`${reportTenProvisional.zona} ${reportTenProvisional.besst} ${reportTenProvisional.desconto}`, /suprimid/i);
 
+const roundingConsistent = reconcileDeepIntegrity({
+  ticker: "BANK3",
+  veredito_final: "MONITORAR",
+  preco: [
+    { c: "C1", vj: "R$ 24,50", met: "P/VP", prem: "Referência declarada.", calc: { formula: "NAO_VERIFICAVEL" } },
+    { c: "C2", vj: "R$ 21,40", met: "Yield", prem: "Referência declarada.", calc: { formula: "NAO_VERIFICAVEL" } },
+    { c: "C3", vj: "R$ 20,40", met: "P/L", prem: "2,14 x 9,5.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 2.14, multiplo: 9.5 } },
+  ],
+  zona: "R$ 20,40 a R$ 24,50",
+  zona_calc: { camadas_incluidas: ["C1", "C2", "C3"], justificativa_exclusoes: "" },
+  besst: "R$ 15,30 a R$ 17,34",
+  ajustes_score: [],
+}, { scan: { ...scan, ticker: "BANK3" } }, { referencePrice: 22.45 });
+assert.equal(roundingConsistent.preco[2].vj, "R$ 20,33", "valor exibido deve coincidir com a aritmética usada na convergência");
+assert.equal(roundingConsistent.zona, "R$ 20,33 a R$ 24,50");
+assert.equal(roundingConsistent.besst, "R$ 15,25 a R$ 17,28");
+assert.deepEqual(roundingConsistent.integridade_analise.valuation_corrected_layers, ["C3"]);
+assert.equal(roundingConsistent.integridade_analise.besst_corrected, true);
+
 const reportNineCorrected = reconcileDeepIntegrity({
   ticker: "BANK3",
   veredito_final: "MONITORAR",

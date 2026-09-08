@@ -267,10 +267,20 @@ const locallyReconciled = reconcileBibliotecaMetricConflicts({
   ticker: "BANK3",
   lacunas: [{ r: "Agro: INAD = 1,37%, cobertura New NPL = 145,9%." }],
 }, semanticNplConflicts);
-assert.match(locallyReconciled.lacunas[0].r, /indicador de inadimplência sem janela definida/);
+assert.match(locallyReconciled.lacunas[0].r, /inadimplência com janela não especificada/);
 assert.doesNotMatch(locallyReconciled.lacunas[0].r, /suprimido pelo servidor/i);
 assert.equal(locallyReconciled.integridade_analise.biblioteca_metric_conflicts_reconciled.length, 1);
 assert.equal(findBibliotecaMetricConflicts(locallyReconciled, metricContext).length, 0, "reconciliação local deve corrigir a associação sem apagar o restante da resposta");
+const repeatedPathReconciled = reconcileBibliotecaMetricConflicts({
+  ticker: "BANK3",
+  lacunas: [{ r: "Agro encerrou com INAD New NPL de 1,37%." }],
+}, [
+  { path: "lacunas.0.r", target_metric: "inadimplência sem janela definida", conflicting_metric: "formação de New NPL" },
+  { path: "lacunas.0.r", target_metric: "inadimplência sem janela definida", conflicting_metric: "formação de New NPL" },
+  { path: "lacunas.0.r", target_metric: "inadimplência sem janela definida", conflicting_metric: "formação de New NPL" },
+]);
+assert.equal(repeatedPathReconciled.lacunas[0].r, "Agro encerrou com formação de New NPL de 1,37%.");
+assert.equal((repeatedPathReconciled.lacunas[0].r.match(/classificação exata/gi) || []).length, 0, "correção semântica exata não deve acrescentar ressalvas repetidas");
 const capitalMinimumConflicts = findBibliotecaMetricConflicts({
   lacunas: [{ r: "CET1 de 11,27% está acima do mínimo regulatório de 8%." }],
 }, metricContext);

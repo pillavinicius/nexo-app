@@ -42,6 +42,7 @@ import {
 import { readApiJsonResponse } from "../lib/ui/api_response_adapter.mjs";
 import { resolveEdgeScanGate } from "../lib/ui/edge_scan_gate.mjs";
 import {
+  buildPdfSharePayload,
   canSharePdfFile,
   choosePdfSaveHandle,
   isMobilePdfEnvironment,
@@ -605,9 +606,11 @@ function DeepReport({ r, showClassicValuations = false }) {
           />
           {r?.integridade_analise?.besst_corrected && (
             <DetailBlock
-              title="BESST corrigido automaticamente"
-              value={`Valor retornado pelo motor: ${asText(r.integridade_analise.besst_previous_value)}`}
-              note="A faixa foi recalculada para permanecer entre 15% e 25% abaixo da zona de convergência."
+              title="BESST alinhado à zona"
+              value={/^(?:N\/D|Não calculado)/i.test(asText(r.integridade_analise.besst_previous_value))
+                ? "A análise não trouxe uma faixa BESST utilizável; a faixa foi calculada a partir da zona validada."
+                : `Faixa recebida na análise: ${asText(r.integridade_analise.besst_previous_value)}`}
+              note="O servidor aplicou a regra de 15% a 25% abaixo do piso da zona validada. Esse ajuste não representa, isoladamente, uma nova mudança de fundamento."
             />
           )}
           {!r?.integridade_analise?.valuation_zone_suppressed && r?.integridade_analise?.convergence_excluded_layers?.length > 0 && (
@@ -1538,11 +1541,7 @@ export default function NEXOApp() {
       const file = new File([blob], filename, { type: "application/pdf" });
 
       if (canSharePdfFile(navigator, file)) {
-        await navigator.share({
-          files: [file],
-          title: `Relatório NEXO · ${normalizedTicker}`,
-          text: `Relatório final da análise NEXO de ${normalizedTicker}.`,
-        });
+        await navigator.share(buildPdfSharePayload(file));
         return;
       }
 
