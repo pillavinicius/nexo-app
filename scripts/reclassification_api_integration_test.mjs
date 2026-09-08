@@ -113,7 +113,7 @@ try {
   assert.match(capturedPrompt, /BASE ANALÍTICA ANTERIOR/);
   assert.match(capturedPrompt, /Qualidade do Negócio/);
   assert.match(capturedSystemPrompt, /Every C1\/C2\/C3 layer must include calc/);
-  assert.match(capturedSystemPrompt, /server independently verifies derivation, layer arithmetic, convergence and BESST/);
+  assert.match(capturedSystemPrompt, /server independently verifies derivation, chained arithmetic, provenance, dispersion, convergence and BESST/);
   assert.match(capturedSystemPrompt, /MEDIA_PONDERADA_X_MULTIPLO/);
   assert.match(capturedSystemPrompt, /Preserve exact metric semantics and windows/);
   assert.equal(deep.score_original, 21);
@@ -169,7 +169,7 @@ try {
   const semanticDeep = await semanticResponse.json();
   assert.equal(semanticResponse.status, 200);
   assert.equal(semanticCalls, 1, "falha semântica do Deep deve ser contida localmente sem segunda chamada");
-  assert.match(semanticDeep.lacunas[0].r, /inadimplência com janela não especificada/);
+  assert.match(semanticDeep.lacunas[0].r, /Não há fonte primária processada/i);
   assert.doesNotMatch(semanticDeep.lacunas[0].r, /suprimido pelo servidor/i);
   assert.equal(semanticDeep.integridade_analise.biblioteca_metric_conflicts_reconciled.length, 1);
   assert.equal(semanticDeep.hdl_integrity.complete, false);

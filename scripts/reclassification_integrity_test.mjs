@@ -148,10 +148,11 @@ assert.equal(reportEightDeep.preco[0].vj, "R$ 62,72");
 assert.equal(reportEightDeep.preco[1].vj, "R$ 37,89");
 assert.equal(reportEightDeep.preco[2].vj, "R$ 32,21");
 assert.deepEqual(reportEightDeep.integridade_analise.valuation_corrected_layers, ["C1", "C2", "C3"]);
-assert.equal(reportEightDeep.integridade_analise.valuation_zone_suppressed, false);
-assert.equal(reportEightDeep.zona, "R$ 32,21 a R$ 62,72");
-assert.equal(reportEightDeep.besst, "R$ 24,16 a R$ 27,38");
-assert.match(reportEightDeep.desconto, /abaixo do piso/);
+assert.equal(reportEightDeep.integridade_analise.valuation_zone_suppressed, true);
+assert.equal(reportEightDeep.integridade_analise.convergence_status, "divergent_layers");
+assert.equal(reportEightDeep.zona, "Faixa não consolidada — camadas divergentes");
+assert.equal(reportEightDeep.besst, "Não calculado — depende da consolidação da faixa");
+assert.match(reportEightDeep.desconto, /camadas válidas não convergiram/i);
 assert.doesNotMatch(reportEightDeep.desconto, /dentro da zona/);
 
 for (const bankCase of [
@@ -368,5 +369,66 @@ assert.equal(reportEightConvergence.besst, "R$ 16,79 a R$ 19,03");
 assert.match(reportEightConvergence.desconto, /15,00% e 25,00% abaixo do piso/);
 const reportEightFinal = buildDeterministicFinal({ ticker: "BBAS3", history: { scan: { ticker: "BBAS3", score_total: 18, score_max: 30 }, deep: reportEightConvergence } });
 assert.doesNotMatch(reportEightFinal.preco_final.observacao, /23,50|fora da faixa|\.\.$/);
+
+const bbasDirectPbFallback = reconcileValuationLayers([{
+  c: "C2",
+  vj: "R$ 26,80",
+  met: "P/VP alvo com ROE estrutural",
+  prem: "VPA implícito = preço / P/VP = 22,45 / 0,67 = R$ 33,51. P/VP alvo de 0,80x.",
+  calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: null, multiplo: 0.8 },
+}]);
+assert.equal(bbasDirectPbFallback.layers[0].vj, "R$ 26,81", "C2 direto deve ser recuperado da memória textual quando a estrutura vier incompleta");
+assert.notEqual(bbasDirectPbFallback.layers[0].calculo_integridade.status, "invalid_formula");
+
+const valeDebtOmission = reconcileValuationLayers([{
+  c: "C1",
+  vj: "R$ 76,05",
+  met: "EV/EBITDA normalizado",
+  prem: "EBITDA estimado em R$ 11,70/ação; múltiplo 6,5x aplicado ao EV/ação, descontando dívida líquida/ação de R$ 15,60.",
+  calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 11.7, multiplo: 6.5 },
+}]);
+assert.deepEqual(valeDebtOmission.invalid_layers, ["C1"], "dívida narrada e omitida da fórmula deve invalidar a camada");
+assert.equal(valeDebtOmission.layers[0].calculo_integridade.reason, "ajuste_divida_liquida_nao_estruturado");
+
+const valeEnterpriseToEquity = reconcileValuationLayers([{
+  c: "C1",
+  vj: "R$ 76,05",
+  met: "EV/EBITDA normalizado",
+  prem: "EBITDA por ação vezes múltiplo, menos dívida líquida por ação.",
+  calc: { formula: "EV_POR_UNIDADE_MENOS_DIVIDA_LIQUIDA", ebitda_por_unidade: 11.7, multiplo: 6.5, divida_liquida_por_unidade: 15.6 },
+}]);
+assert.equal(valeEnterpriseToEquity.layers[0].vj, "R$ 60,45", "EV por ação deve ser convertido em equity após a dívida líquida");
+
+const contradictoryYield = reconcileValuationLayers([{
+  c: "C2",
+  vj: "R$ 80,51",
+  met: "Renda normalizada por yield-alvo",
+  prem: "Yield-alvo de 10,93%, acima da referência de 12%.",
+  calc: { formula: "RENDA_POR_YIELD", renda_por_unidade: 8.8, yield_pct: 10.93 },
+}]);
+assert.deepEqual(contradictoryYield.invalid_layers, ["C2"], "comparação percentual contraditória deve bloquear a camada");
+
+const romiDivergence = reconcileDeepIntegrity({
+  ticker: "ROMI3",
+  veredito_final: "AGUARDAR",
+  tese_final: "Valor justo entre R$ 8,43 e R$ 13,52.",
+  preco: [
+    { c: "C1", vj: "R$ 13,52", met: "P/VP", prem: "VPA direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 13.52, multiplo: 1 } },
+    { c: "C2", vj: "R$ 8,43", met: "Dividend yield", prem: "Valor calculado R$ 8,43.", calc: { formula: "RENDA_POR_YIELD", renda_por_unidade: 0.42, yield_pct: 5 } },
+  ],
+  zona: "R$ 8,43 a R$ 13,52",
+  zona_calc: { camadas_incluidas: ["C1", "C2"], justificativa_exclusoes: "" },
+  besst: "R$ 6,32 a R$ 7,17",
+  ajustes_score: [],
+}, { scan: { ticker: "ROMI3", score_total: 14, score_max: 30 } }, { referencePrice: 5.95 });
+assert.equal(romiDivergence.preco[1].vj, "R$ 8,40");
+assert.match(romiDivergence.preco[1].prem, /R\$ 8,40/);
+assert.match(romiDivergence.preco[1].prem, /valor informado R\$ 8,43 corrigido para R\$ 8,40/i);
+assert.equal(romiDivergence.integridade_analise.convergence_status, "divergent_layers");
+assert.equal(romiDivergence.integridade_analise.valuation_zone_suppressed, true);
+const romiFinal = buildDeterministicFinal({ ticker: "ROMI3", history: { scan: { ticker: "ROMI3", score_total: 14, score_max: 30 }, deep: romiDivergence } });
+assert.doesNotMatch(romiFinal.tese_final, /8,43/);
+assert.match(romiFinal.tese_final, /8,40/);
+assert.match(romiFinal.preco_final.observacao, /Faixa não consolidada/i);
 
 console.log("reclassification integrity: score, valuation layers, BESST and price narrative checks passed");

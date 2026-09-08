@@ -82,8 +82,8 @@ const fixture = {
     besst: "R$ 16,84 a R$ 19,08",
     desconto: "Preço de referência dentro da faixa declarada.",
     integridade_analise: {
-      version: "P3B_v1.5",
-      valuation_version: "VALUATION_v1.5",
+      version: "P3B_v1.6",
+      valuation_version: "VALUATION_v1.6",
       besst_corrected: true,
       besst_previous_value: "N/D",
       valuation_zone_suppressed: false,

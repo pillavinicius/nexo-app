@@ -321,6 +321,34 @@ const guidanceAudit = applyBibliotecaAudit({
 }, { expectedGaps: [guidanceGap] });
 assert.equal(guidanceAudit.lacunas_documentais[0].status, "parcial", "lacuna com 2027 e ROE ausentes não pode ser marcada como resolvida");
 assert.match(guidanceAudit.lacunas[0].r, /^Parcialmente resolvida\./);
+const nimGap = "Composição da carteira e evolução da NIM trimestral";
+const nimAudit = applyBibliotecaAudit({
+  lacunas: [{ q: nimGap, r: "Resolvida. A composição foi encontrada. A NIM em nível absoluto não foi fornecida; a lacuna de NIM permanece parcialmente aberta." }],
+  lacunas_documentais: [{ lacuna: nimGap, status: "resolvida", evidencia_documental: ["ri:bbas3-2t26"] }],
+}, {
+  ...context,
+  documents: [{ id: "ri:bbas3-2t26", trust: "user_supplied", text: "Composição da carteira.", matchedGaps: [nimGap] }],
+  documentIds: ["ri:bbas3-2t26"],
+}, { expectedGaps: [nimGap] });
+assert.equal(nimAudit.lacunas_documentais[0].status, "parcial", "declaração de componente parcialmente aberto deve governar o status");
+assert.match(nimAudit.lacunas[0].r, /^Parcialmente resolvida\./);
+
+const openGap = "Quantificar o risco do minério abaixo de USD 80/t e o impacto sobre EBITDA e dividendos";
+const noSourceAudit = applyBibliotecaAudit({
+  lacunas: [{ q: openGap, r: "Lacuna aberta. Estimativa pública de redução de EBITDA de USD 4–7 bi e dividendos de USD 0,8–1,2 por ação." }],
+  lacunas_documentais: [{ lacuna: openGap, status: "aberta", evidencia_documental: [] }],
+  tese_final: "A queda do minério poderia reduzir o EBITDA em USD 4–7 bi e os dividendos para USD 0,8–1,2 por ação. O score foi preservado.",
+  preco: [{ c: "C2", vj: "R$ 80,51", met: "Dividend yield", prem: "Dividendo normalizado estimado em USD 1,60 por ação.", calc: { formula: "RENDA_POR_YIELD", renda_por_unidade: 8.8, yield_pct: 10.93 } }],
+}, {
+  available: false,
+  status: "no_documents",
+  documents: [],
+  documentIds: [],
+}, { expectedGaps: [openGap] });
+assert.equal(noSourceAudit.lacunas[0].r, "Lacuna aberta. Não há fonte primária processada na Biblioteca Viva para responder esta pergunta sem criar estimativas não auditáveis.");
+assert.doesNotMatch(noSourceAudit.tese_final, /USD 4|0,8/);
+assert.match(noSourceAudit.tese_final, /não foram incorporadas à tese governada/i);
+assert.equal(noSourceAudit.preco[0].calc.origem_base, "HIPOTESE", "estimativa ligada à lacuna aberta deve ser bloqueada antes do valuation");
 const repeatedPathReconciled = reconcileBibliotecaMetricConflicts({
   ticker: "BANK3",
   lacunas: [{ r: "Agro encerrou com INAD New NPL de 1,37%." }],
