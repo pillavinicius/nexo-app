@@ -34,6 +34,22 @@ Essas quantidades não devem ser confundidas. Um acervo com nove documentos pode
 
 O bootstrap reindexa binários antigos e tenta recuperar fontes RI legadas que guardavam somente o recorte textual. O processo é idempotente: documentos já indexados na versão corrente não são baixados nem processados novamente.
 
+## Melhoria planejada — identificação humana das evidências
+
+O `dedup_key`/SHA-256 permanece como identidade técnica imutável do documento para deduplicação, auditoria e integridade referencial. Esse código não deve mais ser usado como rótulo principal na interface ou no PDF.
+
+A Biblioteca deverá manter metadados de apresentação separados da chave técnica:
+
+- nome canônico: `{TICKER}_{TIPO}_{COMPETENCIA}_{DATA}_{SEQUENCIA}`;
+- título humano preferencial extraído da fonte, por exemplo `Release de Resultados 2T26`;
+- referência curta por execução, por exemplo `Documento 1 — Release de Resultados 2T26`;
+- emissor, categoria, competência, data do documento e origem exibidos nos detalhes;
+- `dedup_key` completo disponível somente em “Detalhes de auditoria” ou ação de copiar ID.
+
+Exemplo: o identificador interno `ri:ba17...` poderá ser apresentado como `Documento 1 — BBAS3 · Release de Resultados 2T26`, sem alterar o vínculo já persistido. Um backfill deverá gerar nomes canônicos para o acervo existente usando os metadados disponíveis, preservando integralmente as chaves e referências atuais.
+
+Status: melhoria registrada para a próxima evolução da Biblioteca Viva; ainda não implementada.
+
 ## Comparação de homologação
 
 O teste dirigido usa a mesma resposta analítica candidata em dois contextos:
