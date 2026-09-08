@@ -20,6 +20,7 @@ import {
   reconcileDeepIntegrity,
 } from "../../../lib/nexo/analysis/reclassification_integrity.mjs";
 import { reconcileListingSegmentClaims } from "../../../lib/nexo/analysis/text_integrity.mjs";
+import { reconcileScanGaps } from "../../../lib/nexo/analysis/gap_integrity.mjs";
 import {
   applyHdlToAnalysis,
   buildHdlPromptContext,
@@ -429,7 +430,7 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
 }
 
 function responseWithGovernance(phase, data, edg, hdl, nfi, tdn, analysisHistory = {}, biblioteca = null, analysisIntent = {}) {
-  const textChecked = reconcileListingSegmentClaims(data);
+  const textChecked = reconcileListingSegmentClaims(phase === "scan" ? reconcileScanGaps(data) : data);
   const integrityChecked = phase === "deep"
     ? reconcileDeepIntegrity(textChecked, analysisHistory, {
         documentIds: biblioteca?.documentIds || [],

@@ -183,6 +183,35 @@ const fiiYield = reconcileValuationLayers([{
 }]);
 assert.equal(fiiYield.layers[0].vj, "R$ 12,00", "a integridade aritmética também deve funcionar para outra natureza de ativo");
 
+const bbasYieldNarrative = reconcileValuationLayers([{
+  c: "C2",
+  vj: "R$ 22,84",
+  met: "Renda por yield com yield-alvo de 6,0%.",
+  prem: "Renda anual de R$ 0,628 e yield-alvo de 2,75%.",
+  calc: { formula: "RENDA_POR_YIELD", renda_por_unidade: 0.628, yield_pct: 2.75 },
+}]);
+assert.equal(bbasYieldNarrative.layers[0].vj, "R$ 22,84");
+assert.match(bbasYieldNarrative.layers[0].met, /yield-alvo de 2,75%/i, "o método deve usar o mesmo yield da memória estruturada");
+assert.doesNotMatch(bbasYieldNarrative.layers[0].met, /6,0%/, "o servidor deve remover a taxa textual contraditória");
+assert.deepEqual(bbasYieldNarrative.layers[0].calculo_integridade.narrative_input_corrections.map((item) => item.field), ["yield_pct"]);
+
+const valeStaleExclusion = reconcileDeepIntegrity({
+  ticker: "VALE3",
+  veredito_final: "MONITORAR",
+  preco: [
+    { c: "C1", vj: "R$ 87,00", met: "Base direta", prem: "Valor verificável.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 87, multiplo: 1 } },
+    { c: "C2", vj: "R$ 82,00", met: "Base direta", prem: "Valor verificável.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 82, multiplo: 1 } },
+    { c: "C3", vj: "R$ 92,00", met: "Múltiplo", prem: "Valor estruturado.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 45.35, multiplo: 2 } },
+  ],
+  zona: "R$ 82,00 a R$ 87,00",
+  zona_calc: { camadas_incluidas: ["C1", "C2"], justificativa_exclusoes: "C3 (R$ 92,00) excluída por representar cenário otimista." },
+  besst: "R$ 61,50 a R$ 69,70",
+  ajustes_score: [],
+}, { scan: { ...scan, ticker: "VALE3" } }, { referencePrice: 62 });
+assert.equal(valeStaleExclusion.preco[2].vj, "R$ 90,70");
+assert.match(valeStaleExclusion.zona_calc.justificativa_exclusoes, /C3 \(R\$ 90,70\)/);
+assert.doesNotMatch(valeStaleExclusion.zona_calc.justificativa_exclusoes, /92,00/);
+
 const validStructuredLayers = reconcileDeepIntegrity({
   ticker: "ITUB4",
   veredito_final: "MONITORAR",

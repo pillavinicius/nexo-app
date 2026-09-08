@@ -156,6 +156,18 @@ const inconsistentDeep = {
   ],
 };
 const expectedGaps = deriveExpectedDeepGaps({ scan: { lacunas_deep: governedScanGaps } });
+const valeFallbackGaps = deriveExpectedDeepGaps({
+  scan: {
+    ticker: "VALE3",
+    lacunas_deep: [],
+    riscos: [
+      { descricao: "volatilidade do minério sem evidência primária atualizada", severidade: "ALTO" },
+      { descricao: "execução de projetos sem cronograma confirmado", severidade: "MEDIO" },
+    ],
+  },
+});
+assert.equal(valeFallbackGaps.length, 2, "Scan antigo sem lacunas deve receber duas lacunas determinísticas antes do Deep");
+assert.match(valeFallbackGaps[0], /volatilidade do minério/i);
 const governedDeep = applyBibliotecaAudit(inconsistentDeep, context, { expectedGaps });
 assert.deepEqual(governedDeep.lacunas_documentais.map((gap) => gap.lacuna), governedScanGaps);
 assert.equal(governedDeep.lacunas_documentais.length, 2, "Deep não pode inventar uma terceira lacuna");

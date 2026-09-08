@@ -29,6 +29,40 @@ let capturedSystemPrompt = "";
 const originalFetch = globalThis.fetch;
 
 try {
+  let scanCalls = 0;
+  globalThis.fetch = async () => {
+    scanCalls += 1;
+    return new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify({
+      ticker: "VALE3",
+      nome: "Vale",
+      segmento: "Novo Mercado",
+      veredito: "APROVADO",
+      score_total: 20,
+      score_max: 30,
+      filtros: [],
+      governanca: [],
+      kpis: [],
+      score_dimensoes: [],
+      tese: "Tese preliminar.",
+      catalisadores: [],
+      riscos: [
+        { descricao: "volatilidade do minério sem evidência primária atualizada", severidade: "ALTO", probabilidade: "Moderada" },
+        { descricao: "execução de projetos sem cronograma confirmado", severidade: "MEDIO", probabilidade: "Moderada" },
+      ],
+      lacunas_deep: [],
+    }) }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  const scanGapResponse = await POST(new Request("http://localhost/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phase: "scan", assetType: "acao-br", ticker: "VALE3" }),
+  }));
+  const scanGapResult = await scanGapResponse.json();
+  assert.equal(scanGapResponse.status, 200);
+  assert.equal(scanCalls, 1, "reconciliação de lacunas não pode refazer a chamada externa");
+  assert.equal(scanGapResult.lacunas_deep.length, 2, "a rota deve devolver duas lacunas mesmo se o modelo retornar nenhuma");
+  assert.equal(scanGapResult.integridade_analise.gap_integrity_version, "GAP_v1.0");
+
   globalThis.fetch = async (_url, options) => {
     upstreamCalls += 1;
     const request = JSON.parse(options.body);
@@ -195,4 +229,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log("reclassification API integration: 33/33 checks passed");
+console.log("reclassification API integration: 37/37 checks passed");
