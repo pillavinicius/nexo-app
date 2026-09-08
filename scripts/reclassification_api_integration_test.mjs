@@ -113,7 +113,9 @@ try {
   assert.match(capturedPrompt, /BASE ANALÍTICA ANTERIOR/);
   assert.match(capturedPrompt, /Qualidade do Negócio/);
   assert.match(capturedSystemPrompt, /Every C1\/C2\/C3 layer must include calc/);
-  assert.match(capturedSystemPrompt, /server independently verifies derivation, chained arithmetic, provenance, dispersion, convergence and BESST/);
+  assert.match(capturedSystemPrompt, /server independently verifies derivation, chained arithmetic, provenance, dispersion, convergence, BESST and final text consistency/);
+  assert.match(capturedSystemPrompt, /Every textual target yield or target multiple must agree with calc/);
+  assert.match(capturedSystemPrompt, /Compute real interest rates by composition/);
   assert.match(capturedSystemPrompt, /MEDIA_PONDERADA_X_MULTIPLO/);
   assert.match(capturedSystemPrompt, /Preserve exact metric semantics and windows/);
   assert.equal(deep.score_original, 21);

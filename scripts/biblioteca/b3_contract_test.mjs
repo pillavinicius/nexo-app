@@ -103,6 +103,7 @@ assert.equal(updates[0].status, "ok");
 assert.equal(pendingIndexes[0].pages.length, 1, "parse pendente deve criar índice integral");
 
 const context = {
+  ticker: "BBAS3",
   available: true,
   status: "ready",
   documentIds: ["cvm_ipe:doc-1"],
@@ -139,6 +140,7 @@ assert.deepEqual(withLibrary.nexoModules.BIBLIOTECA.documents_consulted, ["cvm_i
 assert.equal(withLibrary.nexoModules.BIBLIOTECA.documents_available, 9, "contagem deve refletir o acervo, não só o contexto enviado");
 assert.equal(withLibrary.nexoModules.BIBLIOTECA.documents_indexed, 8);
 assert.deepEqual(withLibrary.nexoModules.BIBLIOTECA.chunks_consulted, ["cvm_ipe:doc-1#00000"]);
+assert.equal(withLibrary.nexoModules.BIBLIOTECA.document_labels[0].label, "Documento 1 — BBAS3 · Fato Relevante · 2026-08-19");
 
 const governedScanGaps = [
   "Inadimplência por segmento (rural vs. varejo vs. grandes empresas)",
@@ -185,6 +187,16 @@ assert.deepEqual(partiallyAnswered.nexoModules.BIBLIOTECA.lacunas_parciais, ["Po
 assert.deepEqual(partiallyAnswered.nexoModules.BIBLIOTECA.lacunas_abertas, ["Política de dividendos e payout 2026–2027"], "lacuna parcial continua no escopo do próximo aprofundamento");
 assert.equal(partiallyAnswered.nexoModules.BIBLIOTECA.requires_user_source, true);
 assert.match(partiallyAnswered.lacunas[0].r, /^Parcialmente resolvida\./, "texto exibido deve reproduzir o status governado");
+
+const missingPortfolioComponent = applyBibliotecaAudit({
+  lacunas: [{
+    q: "NPL por carteira, especialmente Agro e PME",
+    r: "A carteira Agro encerrou com INAD +90d de 1,37%. Dados de NPL de PME não foram segregados nos trechos disponíveis.",
+  }],
+  lacunas_documentais: [{ lacuna: "NPL por carteira, especialmente Agro e PME", status: "resolvida", evidencia_documental: ["cvm_ipe:doc-1"] }],
+}, context, { expectedGaps: ["NPL por carteira, especialmente Agro e PME"] });
+assert.equal(missingPortfolioComponent.lacunas_documentais[0].status, "parcial", "componente PME ausente deve impedir status resolvido");
+assert.match(missingPortfolioComponent.lacunas[0].r, /^Parcialmente resolvida\./);
 
 const numericPartial = applyBibliotecaAudit({
   lacunas: [{
@@ -300,6 +312,10 @@ const reportEightSemanticCandidate = {
 };
 const reportEightSemanticConflicts = findBibliotecaMetricConflicts(reportEightSemanticCandidate, metricContext);
 assert.ok(reportEightSemanticConflicts.some((item) => item.target_metric_key === "npl_90" && item.conflicting_metric_key === "new_npl"), "1,37% pertence à formação de New NPL e não pode ser rotulado como NPL +90d");
+const reportV16CombinedConflict = findBibliotecaMetricConflicts({
+  lacunas: [{ r: "A carteira agro encerrou com INAD +90d de 1,37% e cobertura de New NPL Agro de 145,9%." }],
+}, metricContext);
+assert.ok(reportV16CombinedConflict.some((item) => item.target_metric_key === "npl_90" && item.conflicting_metric_key === "new_npl"), "orações encadeadas não podem esconder a troca entre INAD +90d e New NPL");
 const reportEightSemanticReconciled = reconcileBibliotecaMetricConflicts(reportEightSemanticCandidate, reportEightSemanticConflicts);
 assert.match(reportEightSemanticReconciled.lacunas[0].r, /formação de New NPL Agro encerrou em 1,37%/i);
 assert.doesNotMatch(reportEightSemanticReconciled.lacunas[0].r, /NPL\s*\+?\s*90/i);

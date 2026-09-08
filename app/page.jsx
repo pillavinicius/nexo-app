@@ -40,6 +40,7 @@ import {
   splitPriceModels,
 } from "../lib/ui/valuation_adapter.mjs";
 import { readApiJsonResponse } from "../lib/ui/api_response_adapter.mjs";
+import { evidenceDisplayLabel } from "../lib/ui/evidence_labels.mjs";
 import { resolveEdgeScanGate } from "../lib/ui/edge_scan_gate.mjs";
 import {
   buildPdfSharePayload,
@@ -467,8 +468,8 @@ function BibliotecaAudit({ result }) {
         <MetricCard title="Lacunas parciais" value={asText(partial.length)} note="Há evidência, mas falta parte da resposta" />
         <MetricCard title="Lacunas abertas" value={asText(open.length)} note={open.length ? "Exigem fonte complementar" : "Nenhuma fonte adicional exigida"} />
       </div>
-      {asArray(library.documents_used).map((id, index) => <DetailBlock key={`bib-doc-${index}`} title={`Evidência ${index + 1}`} value={id} />)}
-      {asArray(library.documents_consulted).filter((id) => !asArray(library.documents_used).includes(id)).map((id, index) => <DetailBlock key={`bib-consulted-${index}`} title={`Fonte consultada ${index + 1}`} value={id} note="Disponível ao Deep; não citada como evidência conclusiva" />)}
+      {asArray(library.documents_used).map((id, index) => <DetailBlock key={`bib-doc-${index}`} title={`Evidência ${index + 1}`} value={evidenceDisplayLabel(library, id, index)} />)}
+      {asArray(library.documents_consulted).filter((id) => !asArray(library.documents_used).includes(id)).map((id, index) => <DetailBlock key={`bib-consulted-${index}`} title={`Fonte consultada ${index + 1}`} value={evidenceDisplayLabel(library, id, index)} note="Disponível ao Deep; não citada como evidência conclusiva" />)}
       {partial.map((gap, index) => <DetailBlock key={`bib-partial-${index}`} title={`Lacuna parcialmente respondida ${index + 1}`} value={gap} note="O documento trouxe evidência útil, mas ainda não cobriu todos os componentes pedidos." />)}
       {open.map((gap, index) => <DetailBlock key={`bib-gap-${index}`} title={`Lacuna aberta ${index + 1}`} value={gap} />)}
       <div className="edg-audit-note">{asText(library.version)} · fonte integral preservada · recuperação {library.retrieval_mode === "selective_chunks" ? "seletiva por lacuna" : "compatível com índice anterior"} · score e veredito só mudam por ajuste novo e reconciliado.</div>

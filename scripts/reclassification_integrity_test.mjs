@@ -191,10 +191,10 @@ const bbasYieldNarrative = reconcileValuationLayers([{
   prem: "Renda anual de R$ 0,628 e yield-alvo de 2,75%.",
   calc: { formula: "RENDA_POR_YIELD", renda_por_unidade: 0.628, yield_pct: 2.75 },
 }]);
-assert.equal(bbasYieldNarrative.layers[0].vj, "R$ 22,84");
-assert.match(bbasYieldNarrative.layers[0].met, /yield-alvo de 2,75%/i, "o método deve usar o mesmo yield da memória estruturada");
-assert.doesNotMatch(bbasYieldNarrative.layers[0].met, /6,0%/, "o servidor deve remover a taxa textual contraditória");
-assert.deepEqual(bbasYieldNarrative.layers[0].calculo_integridade.narrative_input_corrections.map((item) => item.field), ["yield_pct"]);
+assert.equal(bbasYieldNarrative.layers[0].vj, "N/D", "premissas textuais conflitantes não podem ser silenciosamente reescritas");
+assert.deepEqual(bbasYieldNarrative.invalid_layers, ["C2"]);
+assert.equal(bbasYieldNarrative.layers[0].calculo_integridade.reason, "premissa_percentual_conflitante");
+assert.match(bbasYieldNarrative.layers[0].prem, /não utilizada na convergência/i);
 
 const valeStaleExclusion = reconcileDeepIntegrity({
   ticker: "VALE3",
@@ -389,6 +389,7 @@ const valeDebtOmission = reconcileValuationLayers([{
 }]);
 assert.deepEqual(valeDebtOmission.invalid_layers, ["C1"], "dívida narrada e omitida da fórmula deve invalidar a camada");
 assert.equal(valeDebtOmission.layers[0].calculo_integridade.reason, "ajuste_divida_liquida_nao_estruturado");
+assert.equal(valeDebtOmission.layers[0].vj, "N/D", "camada rejeitada não deve continuar exibindo preço como se fosse utilizável");
 
 const valeEnterpriseToEquity = reconcileValuationLayers([{
   c: "C1",
@@ -428,7 +429,22 @@ assert.equal(romiDivergence.integridade_analise.convergence_status, "divergent_l
 assert.equal(romiDivergence.integridade_analise.valuation_zone_suppressed, true);
 const romiFinal = buildDeterministicFinal({ ticker: "ROMI3", history: { scan: { ticker: "ROMI3", score_total: 14, score_max: 30 }, deep: romiDivergence } });
 assert.doesNotMatch(romiFinal.tese_final, /8,43/);
-assert.match(romiFinal.tese_final, /8,40/);
+assert.doesNotMatch(romiFinal.tese_final, /valor justo|potencial de valorização|convergem/i, "tese final não pode preservar faixa rejeitada");
+assert.match(romiFinal.tese_final, /faixa de preço não foi consolidada/i);
 assert.match(romiFinal.preco_final.observacao, /Faixa não consolidada/i);
+
+const realRateGoverned = reconcileDeepIntegrity({
+  ticker: "VALE3",
+  veredito_final: "MONITORAR",
+  tese_final: "O yield permanece abaixo da Selic real (~9,56%).",
+  macro: [{ s: "Selic real (~9,56%) frente ao IPCA.", i: "Custo de oportunidade elevado." }],
+  preco: [],
+  ajustes_score: [],
+}, { scan: { ticker: "VALE3", score_total: 17, score_max: 30 } }, {
+  macro: { selic_target: 14, ipca_12m: 4.44 },
+});
+assert.match(realRateGoverned.tese_final, /9,15%/, "taxa real deve usar composição, não subtração simples");
+assert.match(realRateGoverned.macro[0].s, /9,15%/);
+assert.equal(realRateGoverned.integridade_analise.macro_real_rate_method, "compound_fisher");
 
 console.log("reclassification integrity: score, valuation layers, BESST and price narrative checks passed");

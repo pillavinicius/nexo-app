@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { renderNexoReportPdf } from "../lib/reporting/nexo_pdf_report.mjs";
+import { evidenceDisplayLabel } from "../lib/ui/evidence_labels.mjs";
 
 const tdnFixture = {
   version: "TDN_v1.0",
@@ -82,8 +83,8 @@ const fixture = {
     besst: "R$ 16,84 a R$ 19,08",
     desconto: "Preço de referência dentro da faixa declarada.",
     integridade_analise: {
-      version: "P3B_v1.6",
-      valuation_version: "VALUATION_v1.6",
+      version: "P3B_v1.7",
+      valuation_version: "VALUATION_v1.7",
       besst_corrected: true,
       besst_previous_value: "N/D",
       valuation_zone_suppressed: false,
@@ -109,6 +110,19 @@ const fixture = {
         vertices_base_anos: [5],
       },
       TDN: tdnFixture,
+      BIBLIOTECA: {
+        version: "BIB_B3_2_CONTEXT_v2.8",
+        status: "ready",
+        documents_available: 1,
+        documents_indexed: 1,
+        chunks_consulted: ["ri:hash-interno#00001"],
+        documents_used: ["ri:hash-interno"],
+        documents_consulted: ["ri:hash-interno"],
+        document_labels: [{ id: "ri:hash-interno", label: "Documento 1 — TEST3 · Release de Resultados 2T26" }],
+        lacunas_resolvidas: ["A margem é sustentável?"],
+        lacunas_parciais: [],
+        lacunas_abertas: [],
+      },
     },
     macro: [{ s: "Juros altos", i: "Pressão moderada sobre múltiplos" }],
     catalisadores: [{ d: "Eficiência", impacto: "Positivo", p: "12 a 18 meses" }],
@@ -159,6 +173,11 @@ const fixture = {
   },
   options: { classicValuations: "SIM" },
 };
+
+assert.equal(evidenceDisplayLabel({
+  document_labels: [{ id: "ri:hash-interno", label: "Documento 1 — TEST3 · Release de Resultados 2T26" }],
+}, "ri:hash-interno", 0), "Documento 1 — TEST3 · Release de Resultados 2T26");
+assert.equal(evidenceDisplayLabel({}, "ri:hash-interno", 1), "Documento 2");
 
 const pdf = await renderNexoReportPdf(fixture);
 assert.equal(pdf.subarray(0, 4).toString(), "%PDF");
