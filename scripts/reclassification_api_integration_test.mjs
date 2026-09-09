@@ -25,13 +25,49 @@ const activeEdge = {
 
 let upstreamCalls = 0;
 let capturedPrompt = "";
+let capturedSystemPrompt = "";
 const originalFetch = globalThis.fetch;
 
 try {
+  let scanCalls = 0;
+  globalThis.fetch = async () => {
+    scanCalls += 1;
+    return new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify({
+      ticker: "VALE3",
+      nome: "Vale",
+      segmento: "Novo Mercado",
+      veredito: "APROVADO",
+      score_total: 20,
+      score_max: 30,
+      filtros: [],
+      governanca: [],
+      kpis: [],
+      score_dimensoes: [],
+      tese: "Tese preliminar.",
+      catalisadores: [],
+      riscos: [
+        { descricao: "volatilidade do minério sem evidência primária atualizada", severidade: "ALTO", probabilidade: "Moderada" },
+        { descricao: "execução de projetos sem cronograma confirmado", severidade: "MEDIO", probabilidade: "Moderada" },
+      ],
+      lacunas_deep: [],
+    }) }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  const scanGapResponse = await POST(new Request("http://localhost/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phase: "scan", assetType: "acao-br", ticker: "VALE3" }),
+  }));
+  const scanGapResult = await scanGapResponse.json();
+  assert.equal(scanGapResponse.status, 200);
+  assert.equal(scanCalls, 1, "reconciliação de lacunas não pode refazer a chamada externa");
+  assert.equal(scanGapResult.lacunas_deep.length, 2, "a rota deve devolver duas lacunas mesmo se o modelo retornar nenhuma");
+  assert.equal(scanGapResult.integridade_analise.gap_integrity_version, "GAP_v1.0");
+
   globalThis.fetch = async (_url, options) => {
     upstreamCalls += 1;
     const request = JSON.parse(options.body);
     capturedPrompt = request.messages[0].content;
+    capturedSystemPrompt = request.system;
     return new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify({
       ticker: "BBAS3",
       veredito_final: "MONITORAR",
@@ -43,7 +79,13 @@ try {
         { dimensao: "Qualidade do Negócio", antes: 1, depois: 3, motivo: "Evidência nova confirmou deterioração." },
         { dimensao: "Dimensão inventada", antes: 5, depois: 0, motivo: "Não pertence ao score anterior." },
       ],
+      tese_final: "Tese atualizada pelo Deep.",
+      preco: [
+        { c: "C1", vj: "R$ 19,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 19, multiplo: 1 } },
+        { c: "C2", vj: "R$ 21,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 21, multiplo: 1 } },
+      ],
       zona: "R$ 19,00 a R$ 21,00",
+      zona_calc: { camadas_incluidas: ["C1", "C2"], justificativa_exclusoes: "" },
       besst: "R$ 24,50 a R$ 26,00",
       desconto: "10%",
       hdl_conclusao: "Não supera o soberano porque a TIR real esperada permanece abaixo do hurdle oficial.",
@@ -58,6 +100,7 @@ try {
       phase: "deep",
       assetType: "acao-br",
       ticker: "BBAS3",
+      extraCtx: "- Moeda selecionada: BRL\n- Valor atual/cota atual: 20,00\n",
       edgeLedger: activeEdge,
       hdlInput: { tir_esperada_pct: 6.5, horizonte_anos: 5 },
       analysisHistory: { scan },
@@ -69,12 +112,69 @@ try {
   assert.equal(upstreamCalls, 1);
   assert.match(capturedPrompt, /BASE ANALÍTICA ANTERIOR/);
   assert.match(capturedPrompt, /Qualidade do Negócio/);
+  assert.match(capturedSystemPrompt, /Every C1\/C2\/C3 layer must include calc/);
+  assert.match(capturedSystemPrompt, /server independently verifies derivation, chained arithmetic, provenance, dispersion, convergence, BESST and final text consistency/);
+  assert.match(capturedSystemPrompt, /Every textual target yield or target multiple must agree with calc/);
+  assert.match(capturedSystemPrompt, /Compute real interest rates by composition/);
+  assert.match(capturedSystemPrompt, /MEDIA_PONDERADA_X_MULTIPLO/);
+  assert.match(capturedSystemPrompt, /Preserve exact metric semantics and windows/);
   assert.equal(deep.score_original, 21);
   assert.equal(deep.score_revisado, 20);
   assert.equal(deep.ajustes_score.length, 1);
   assert.equal(deep.ajustes_score[0].antes, 4);
   assert.equal(deep.ajustes_score[0].depois, 3);
-  assert.equal(deep.besst, "R$ 14,25 a R$ 17,85");
+  assert.equal(deep.besst, "R$ 14,25 a R$ 16,15");
+  assert.match(deep.desconto, /Preço atual R\$ 20,00 está dentro da zona de convergência/);
+  assert.equal(deep.integridade_analise.price_narrative_status, "server_calculated");
+  assert.equal(deep.integridade_analise.reference_price, 20);
+
+  let semanticCalls = 0;
+  globalThis.fetch = async () => {
+    semanticCalls += 1;
+    return new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify({
+      ticker: "BANK3",
+      veredito_final: "MONITORAR",
+      score_original: 21,
+      score_revisado: 21,
+      score_max: 30,
+      mudanca_score: "0",
+      ajustes_score: [],
+      tese_final: "Tese mantida com contenção semântica local.",
+      lacunas: [{ q: "Validar inadimplência.", r: "Agro: INAD = 1,37%." }],
+      lacunas_documentais: [{ lacuna: "Validar inadimplência.", status: "resolvida", evidencia_documental: [] }],
+      preco: [
+        { c: "C1", vj: "R$ 19,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 19, multiplo: 1 } },
+        { c: "C2", vj: "R$ 21,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 21, multiplo: 1 } },
+      ],
+      zona: "R$ 19,00 a R$ 21,00",
+      zona_calc: { camadas_incluidas: ["C1", "C2"], justificativa_exclusoes: "" },
+      besst: "R$ 14,25 a R$ 16,15",
+      desconto: "",
+      hdl_conclusao: "",
+      riscos: [],
+      passos: [],
+    }) }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  const semanticResponse = await POST(new Request("http://localhost/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      phase: "deep",
+      assetType: "acao-br",
+      ticker: "BANK3",
+      extraCtx: "- Moeda selecionada: BRL\n- Valor atual/cota atual: 20,00\n",
+      edgeLedger: activeEdge,
+      hdlInput: { tir_esperada_pct: 6.5, horizonte_anos: 5 },
+      analysisHistory: { scan: { ...scan, ticker: "BANK3" } },
+    }),
+  }));
+  const semanticDeep = await semanticResponse.json();
+  assert.equal(semanticResponse.status, 200);
+  assert.equal(semanticCalls, 1, "falha semântica do Deep deve ser contida localmente sem segunda chamada");
+  assert.match(semanticDeep.lacunas[0].r, /Não há fonte primária processada/i);
+  assert.doesNotMatch(semanticDeep.lacunas[0].r, /suprimido pelo servidor/i);
+  assert.equal(semanticDeep.integridade_analise.biblioteca_metric_conflicts_reconciled.length, 1);
+  assert.equal(semanticDeep.hdl_integrity.complete, false);
 
   globalThis.fetch = async () => {
     throw new Error("A finalização determinística não pode chamar a IA.");
@@ -131,4 +231,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log("reclassification API integration: 28/28 checks passed");
+console.log("reclassification API integration: 37/37 checks passed");

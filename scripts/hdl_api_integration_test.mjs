@@ -44,13 +44,6 @@ const deepIncomplete = {
   hdl_conclusao: "",
 };
 
-const deepPositive = {
-  ...deepNegative,
-  veredito_final: "COMPRAR",
-  hdl_conclusao:
-    "O alfa supera o soberano, condicionado à validade das premissas usadas para estimar a TIR real.",
-};
-
 const deepExternal = {
   ticker: "MSFT",
   veredito_final: "MONITORAR",
@@ -63,7 +56,7 @@ const deepExternal = {
 };
 
 try {
-  const outputs = [deepIncomplete, deepPositive, deepNegative];
+  const outputs = [deepIncomplete, deepNegative];
   globalThis.fetch = async (_url, options) => {
     upstreamCalls += 1;
     capturedRequests.push(JSON.parse(options.body));
@@ -137,10 +130,9 @@ try {
   });
   const semanticRetryResult = await semanticRetryResponse.json();
   assert.equal(semanticRetryResponse.status, 200);
-  assert.equal(upstreamCalls, 2, "Conclusão HDL incompleta deve consumir uma única correção semântica");
-  assert.equal(semanticRetryResult.hdl_integrity.complete, true);
+  assert.equal(upstreamCalls, 1, "Conclusão HDL incompleta deve ser sinalizada localmente sem segunda chamada");
+  assert.equal(semanticRetryResult.hdl_integrity.complete, false);
   assert.equal(semanticRetryResult.veredito_final, "COMPRAR");
-  assert.match(capturedRequests[1].messages[0].content, /não completou hdl_conclusao/);
 
   const negativeResponse = await request({
     phase: "deep",
@@ -152,7 +144,7 @@ try {
   });
   const negative = await negativeResponse.json();
   assert.equal(negativeResponse.status, 200);
-  assert.equal(upstreamCalls, 3);
+  assert.equal(upstreamCalls, 2);
   assert.equal(negative.nexoModules.HDL.version, "HDL_v1.0");
   assert.equal(negative.nexoModules.HDL.status, "ok");
   assert.equal(negative.nexoModules.HDL.hurdle_real_pct, 7.9001);
@@ -187,7 +179,7 @@ try {
   });
   const final = await finalResponse.json();
   assert.equal(finalResponse.status, 200);
-  assert.equal(upstreamCalls, 3);
+  assert.equal(upstreamCalls, 2);
   assert.equal(final.nexoModules.HDL.alfa_vs_classe_pp, -1.4001);
   assert.equal(final.hdl_conclusao, deepNegative.hdl_conclusao);
   assert.equal(final.score_revisado, 20);

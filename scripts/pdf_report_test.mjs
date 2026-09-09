@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { renderNexoReportPdf } from "../lib/reporting/nexo_pdf_report.mjs";
+import { evidenceDisplayLabel, evidenceSourceDisplayLabel } from "../lib/ui/evidence_labels.mjs";
 
 const tdnFixture = {
   version: "TDN_v1.0",
@@ -70,20 +71,25 @@ const fixture = {
     }],
     lacunas: [{ q: "A margem é sustentável?", r: "O histórico indica estabilidade, sujeita ao gatilho de acompanhamento." }],
     preco: [
-      { c: "C1 · Conservador", vj: "R$ 38,20", met: "Fluxo normalizado", prem: "Crescimento baixo" },
-      { c: "C2 · Base", vj: "R$ 42,70", met: "Múltiplos e fundamentos", prem: "Cenário central" },
-      { c: "C3 · Otimista", vj: "R$ 47,40", met: "Fluxo descontado", prem: "Expansão moderada" },
+      { c: "C1 · Conservador", vj: "R$ 26,50", met: "P/L normalizado", prem: "Referência declarada", calc: { formula: "NAO_VERIFICAVEL" } },
+      { c: "C2 · Base", vj: "R$ 22,45", met: "P/VP histórico", prem: "Referência declarada", calc: { formula: "NAO_VERIFICAVEL" } },
+      { c: "C3 · Otimista", vj: "R$ 24,50", met: "Dividend yield reverso", prem: "Referência declarada", calc: { formula: "NAO_VERIFICAVEL" } },
     ],
     valuations_classicos: [
       { modelo: "Graham", valor_justo: "R$ 39,90", metodologia: "Fórmula de Graham", premissas: "Referência auxiliar" },
       { modelo: "Peter Lynch", valor_justo: "R$ 44,10", metodologia: "PEG normalizado", premissas: "Referência auxiliar" },
     ],
-    zona: "R$ 39,00 a R$ 43,00",
-    besst: "R$ 29,25 a R$ 36,55",
-    desconto: "2,0%",
+    zona: "R$ 22,45 a R$ 26,50",
+    besst: "R$ 16,84 a R$ 19,08",
+    desconto: "Preço de referência dentro da faixa declarada.",
     integridade_analise: {
+      version: "P3B_v1.8",
+      valuation_version: "VALUATION_v1.8",
       besst_corrected: true,
-      besst_previous_value: "R$ 36,50",
+      besst_previous_value: "N/D",
+      valuation_zone_suppressed: false,
+      valuation_corrected_layers: [],
+      convergence_provisional_layers: ["C1", "C2", "C3"],
     },
     hdl_conclusao: "O alfa esperado supera o soberano, condicionado à manutenção das premissas operacionais.",
     tdn_conclusao: "As duas janelas mostram defesa mista, sem alteração automática da classificação global.",
@@ -104,6 +110,19 @@ const fixture = {
         vertices_base_anos: [5],
       },
       TDN: tdnFixture,
+      BIBLIOTECA: {
+        version: "BIB_B3_2_CONTEXT_v2.8",
+        status: "ready",
+        documents_available: 1,
+        documents_indexed: 1,
+        chunks_consulted: ["ri:hash-interno#00001"],
+        documents_used: ["ri:hash-interno"],
+        documents_consulted: ["ri:hash-interno"],
+        document_labels: [{ id: "ri:hash-interno", label: "Documento 1 — TEST3 · Release de Resultados 2T26 · 05/09/2026" }],
+        lacunas_resolvidas: ["A margem é sustentável?"],
+        lacunas_parciais: [],
+        lacunas_abertas: [],
+      },
     },
     macro: [{ s: "Juros altos", i: "Pressão moderada sobre múltiplos" }],
     catalisadores: [{ d: "Eficiência", impacto: "Positivo", p: "12 a 18 meses" }],
@@ -128,7 +147,7 @@ const fixture = {
       baseline_phase: "deep",
     },
     tese_final: "A qualidade permanece, mas a relação entre preço, cenário e risco exige acompanhamento.",
-    preco_final: { zona_convergencia: "R$ 39,00 a R$ 43,00", besst: "R$ 29,25 a R$ 36,55", margem_seguranca: "15%", observacao: "Faixa de referência, não decisão automática." },
+    preco_final: { zona_convergencia: "R$ 22,45 a R$ 26,50", besst: "R$ 16,84 a R$ 19,08", margem_seguranca: "Faixa provisória", observacao: "Referências declaradas preservadas; memória aritmética parcial." },
     conclusao: "Manter em acompanhamento até que a evidência observável confirme a tese.",
     hdl_conclusao: "O alfa esperado supera o soberano, condicionado à manutenção das premissas operacionais.",
     tdn_conclusao: "As duas janelas mostram defesa mista, sem alteração automática da classificação global.",
@@ -154,6 +173,15 @@ const fixture = {
   },
   options: { classicValuations: "SIM" },
 };
+
+assert.equal(evidenceDisplayLabel({
+  document_labels: [{ id: "ri:hash-interno", label: "Documento 1 — TEST3 · Release de Resultados 2T26" }],
+}, "ri:hash-interno", 0), "Documento 1 — TEST3 · Release de Resultados 2T26");
+assert.equal(evidenceDisplayLabel({}, "ri:hash-interno", 1), "Documento 2");
+assert.equal(evidenceSourceDisplayLabel({
+  document_labels: [{ id: "ri:hash-interno", label: "Documento 1 — TEST3 · Release de Resultados 2T26 · 08/09/2026" }],
+}, "ri:hash-interno"), "Documento 1 — TEST3 · Release de Resultados 2T26 · 08/09/2026");
+assert.equal(evidenceSourceDisplayLabel({}, "DEEP"), "DEEP");
 
 const pdf = await renderNexoReportPdf(fixture);
 assert.equal(pdf.subarray(0, 4).toString(), "%PDF");

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  buildPdfSharePayload,
   canSharePdfFile,
   isMobilePdfEnvironment,
   isPdfDeliveryCancellation,
@@ -12,6 +13,9 @@ assert.equal(isMobilePdfEnvironment({ userAgent: "Mozilla/5.0 (Macintosh; Intel 
 assert.equal(isMobilePdfEnvironment({ userAgentData: { mobile: true }, userAgent: "Desktop" }), true);
 
 const fakeFile = { name: "NEXO_BBAS3.pdf" };
+assert.deepEqual(buildPdfSharePayload(fakeFile), { files: [fakeFile] });
+assert.equal("text" in buildPdfSharePayload(fakeFile), false);
+assert.equal("title" in buildPdfSharePayload(fakeFile), false);
 assert.equal(canSharePdfFile({ userAgent: "iPhone Mobile", share() {}, canShare: () => true }, fakeFile), true);
 assert.equal(canSharePdfFile({ userAgent: "iPhone Mobile", share() {}, canShare: () => false }, fakeFile), false);
 assert.equal(canSharePdfFile({ userAgent: "Desktop", share() {}, canShare: () => true }, fakeFile), false);
@@ -34,9 +38,10 @@ assert.equal(isPdfDeliveryCancellation({ name: "NotAllowedError" }), true);
 assert.equal(isPdfDeliveryCancellation(new Error("falha")), false);
 
 const page = readFileSync(new URL("../app/page.jsx", import.meta.url), "utf8");
-assert.match(page, /navigator\.share\(\{/);
+assert.match(page, /navigator\.share\(buildPdfSharePayload\(file\)\)/);
+assert.doesNotMatch(page, /navigator\.share\(\{[\s\S]{0,300}\btext\s*:/);
 assert.match(page, /choosePdfSaveHandle\(window, fallbackFilename\)/);
 assert.match(page, /previewWindow\.location\.href = url/);
 assert.match(page, /triggerPdfDownload/);
 
-console.log("pdf delivery: 16/16 checks passed");
+console.log("pdf delivery: 19/19 checks passed");
