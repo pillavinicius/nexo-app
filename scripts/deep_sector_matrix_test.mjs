@@ -20,9 +20,9 @@ const cases = [
     segmento: "Novo Mercado adaptado (Nível 1 B3)",
     scan: { lacunas_deep: ["Validar inadimplência.", "Confirmar capital regulatório."] },
     layers: [
-      { c: "C1", vj: "R$ 1,00", met: "Resultado por ação", prem: "Total por ações.", calc: { formula: "TOTAL_POR_UNIDADE_X_MULTIPLO", valor_total: 14.298e9, quantidade_unidades: 6e9, multiplo: 10 } },
-      { c: "C2", vj: "R$ 1,00", met: "Valor unitário", prem: "Base direta.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 3.145, multiplo: 8 } },
-      { c: "C3", vj: "R$ 1,00", met: "Média ponderada", prem: "Componentes declarados.", calc: { formula: "MEDIA_PONDERADA_X_MULTIPLO", multiplo: 10, componentes: [{ rotulo: "Base A", valor: 2.1, peso_pct: 60 }, { rotulo: "Base B", valor: 2.4475, peso_pct: 40 }] } },
+      { c: "C1", vj: "R$ 23,80", met: "Resultado por ação", prem: "Total por ações.", calc: { formula: "TOTAL_POR_UNIDADE_X_MULTIPLO", valor_total: 14.298e9, quantidade_unidades: 6e9, multiplo: 10 } },
+      { c: "C2", vj: "R$ 25,15", met: "Valor unitário", prem: "Base direta.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 3.145, multiplo: 8 } },
+      { c: "C3", vj: "R$ 22,40", met: "Média ponderada", prem: "Componentes declarados.", calc: { formula: "MEDIA_PONDERADA_X_MULTIPLO", multiplo: 10, componentes: [{ rotulo: "Base A", valor: 2.1, peso_pct: 60 }, { rotulo: "Base B", valor: 2.4475, peso_pct: 40 }] } },
     ],
   },
   {
@@ -32,9 +32,9 @@ const cases = [
     segmento: "Novo Mercado",
     scan: { lacunas_deep: [], kpis: [{ nome: "Carteira de pedidos atualizada", valor: "N/D" }, { nome: "Conversão de caixa normalizada", valor: "Não informado" }] },
     layers: [
-      { c: "C1", vj: "R$ 1,00", met: "Resultado por ação", prem: "Total por ações.", calc: { formula: "TOTAL_POR_UNIDADE_X_MULTIPLO", valor_total: 180e6, quantidade_unidades: 90e6, multiplo: 7.5 } },
-      { c: "C2", vj: "R$ 1,00", met: "Valor unitário", prem: "Base direta.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 12, multiplo: 1.4 } },
-      { c: "C3", vj: "R$ 1,00", met: "Média ponderada", prem: "Componentes declarados.", calc: { formula: "MEDIA_PONDERADA_X_MULTIPLO", multiplo: 1.2, componentes: [{ rotulo: "Ciclo baixo", valor: 12, peso_pct: 40 }, { rotulo: "Ciclo normal", valor: 14, peso_pct: 60 }] } },
+      { c: "C1", vj: "R$ 15,01", met: "Resultado por ação", prem: "Total por ações.", calc: { formula: "TOTAL_POR_UNIDADE_X_MULTIPLO", valor_total: 180e6, quantidade_unidades: 90e6, multiplo: 7.5 } },
+      { c: "C2", vj: "R$ 16,79", met: "Valor unitário", prem: "Base direta.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 12, multiplo: 1.4 } },
+      { c: "C3", vj: "R$ 15,85", met: "Média ponderada", prem: "Componentes declarados.", calc: { formula: "MEDIA_PONDERADA_X_MULTIPLO", multiplo: 1.2, componentes: [{ rotulo: "Ciclo baixo", valor: 12, peso_pct: 40 }, { rotulo: "Ciclo normal", valor: 14, peso_pct: 60 }] } },
     ],
   },
   {
@@ -44,9 +44,9 @@ const cases = [
     segmento: "Novo Mercado",
     scan: { lacunas_deep: [], riscos: [{ descricao: "volatilidade do minério sem evidência primária atualizada", severidade: "ALTO" }, { descricao: "execução de projetos de crescimento sem cronograma confirmado", severidade: "MEDIO" }] },
     layers: [
-      { c: "C1", vj: "R$ 1,00", met: "Resultado por ação", prem: "Total por ações.", calc: { formula: "TOTAL_POR_UNIDADE_X_MULTIPLO", valor_total: 36e9, quantidade_unidades: 4.5e9, multiplo: 8 } },
-      { c: "C2", vj: "R$ 1,00", met: "Renda por yield", prem: "Renda anual declarada.", calc: { formula: "RENDA_POR_YIELD", renda_por_unidade: 5.4, yield_pct: 8 } },
-      { c: "C3", vj: "R$ 1,00", met: "Valor unitário", prem: "Base direta.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 55, multiplo: 1.1 } },
+      { c: "C1", vj: "R$ 64,01", met: "Resultado por ação", prem: "Total por ações.", calc: { formula: "TOTAL_POR_UNIDADE_X_MULTIPLO", valor_total: 36e9, quantidade_unidades: 4.5e9, multiplo: 8 } },
+      { c: "C2", vj: "R$ 67,49", met: "Renda por yield", prem: "Renda anual declarada.", calc: { formula: "RENDA_POR_YIELD", renda_por_unidade: 5.4, yield_pct: 8 } },
+      { c: "C3", vj: "R$ 60,51", met: "Valor unitário", prem: "Base direta.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 55, multiplo: 1.1 } },
     ],
   },
 ];

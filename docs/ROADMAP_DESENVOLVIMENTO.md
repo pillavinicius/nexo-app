@@ -1,6 +1,6 @@
 # NEXO APP - Documento mestre de produto, método e desenvolvimento
 
-Versão: 2.0
+Versão: 2.1
 
 Atualizado em: 2026-09-09
 
@@ -353,9 +353,9 @@ Regras de integridade atuais:
 - arredondamento tolerável deve ser normalizado; conflito material invalida;
 - se a zona for bloqueada, a tese não pode afirmar convergência, upside, preço justo, BESST ou margem de segurança.
 
-### 11.2 Bloqueios da bateria v1.7
+### 11.2 Fechamento da bateria v1.7
 
-Estado: `BLOQUEADO` para homologação final do B3.2.
+Estado: correções `IMPLEMENTADAS` no P3B v1.8 / VALUATION v1.8; contrato B3.2 permanece `EM_HOMOLOGACAO` até a bateria real final.
 
 1. impedir escalonamento direto do preço por razão EV/EBITDA quando houver dívida material;
 2. recalcular upside/downside da tese final pelos limites finais;
@@ -363,6 +363,16 @@ Estado: `BLOQUEADO` para homologação final do B3.2.
 4. substituir `margem de segurança` por `desconto aparente` quando não houver zona;
 5. impedir próximos passos que antecipem `COMPRAR` antes de novo fluxo completo;
 6. concluir nome humano e data local das evidências documentais.
+
+Validação interna concluída em 2026-09-09:
+
+- conflitos materiais de aritmética invalidam a camada; apenas arredondamentos dentro da tolerância são normalizados;
+- EV/EBITDA exige conversão estruturada de enterprise value para equity;
+- posicionamento do preço, upside/downside e BESST são reconstruídos pelos limites finais governados;
+- sem zona consolidada, a apresentação usa `desconto aparente` e não afirma margem de segurança;
+- próximos passos exigem novo fluxo completo antes de qualquer mudança para `COMPRAR`;
+- evidências exibem nome humano e data em formato local, mantendo o identificador técnico apenas internamente;
+- matriz virtual BBAS3/ROMI3/VALE3, contratos da rota e PDF aprovados sem chamadas analíticas externas.
 
 ## 12. Ciclo Goldberg
 
@@ -738,11 +748,11 @@ Estado: fundação parcial; hardening `PLANEJADO`.
 
 ### J0 - fechamento do B3.2 e valuation v1.8
 
-Momento: imediato.
+Momento: em homologação real.
 
-- corrigir os seis bloqueios da bateria BBAS3/ROMI3/VALE3;
-- fechar nomes documentais;
-- rodar matriz virtual e PDFs;
+- corrigir os seis bloqueios da bateria BBAS3/ROMI3/VALE3 — concluído;
+- fechar nomes documentais — concluído;
+- rodar matriz virtual e PDFs — concluído;
 - homologar e congelar contrato B3.2.
 
 Saída: três relatórios reais sem bloqueio.

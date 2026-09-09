@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { renderNexoReportPdf } from "../lib/reporting/nexo_pdf_report.mjs";
-import { evidenceDisplayLabel } from "../lib/ui/evidence_labels.mjs";
+import { evidenceDisplayLabel, evidenceSourceDisplayLabel } from "../lib/ui/evidence_labels.mjs";
 
 const tdnFixture = {
   version: "TDN_v1.0",
@@ -83,8 +83,8 @@ const fixture = {
     besst: "R$ 16,84 a R$ 19,08",
     desconto: "Preço de referência dentro da faixa declarada.",
     integridade_analise: {
-      version: "P3B_v1.7",
-      valuation_version: "VALUATION_v1.7",
+      version: "P3B_v1.8",
+      valuation_version: "VALUATION_v1.8",
       besst_corrected: true,
       besst_previous_value: "N/D",
       valuation_zone_suppressed: false,
@@ -118,7 +118,7 @@ const fixture = {
         chunks_consulted: ["ri:hash-interno#00001"],
         documents_used: ["ri:hash-interno"],
         documents_consulted: ["ri:hash-interno"],
-        document_labels: [{ id: "ri:hash-interno", label: "Documento 1 — TEST3 · Release de Resultados 2T26" }],
+        document_labels: [{ id: "ri:hash-interno", label: "Documento 1 — TEST3 · Release de Resultados 2T26 · 05/09/2026" }],
         lacunas_resolvidas: ["A margem é sustentável?"],
         lacunas_parciais: [],
         lacunas_abertas: [],
@@ -178,6 +178,10 @@ assert.equal(evidenceDisplayLabel({
   document_labels: [{ id: "ri:hash-interno", label: "Documento 1 — TEST3 · Release de Resultados 2T26" }],
 }, "ri:hash-interno", 0), "Documento 1 — TEST3 · Release de Resultados 2T26");
 assert.equal(evidenceDisplayLabel({}, "ri:hash-interno", 1), "Documento 2");
+assert.equal(evidenceSourceDisplayLabel({
+  document_labels: [{ id: "ri:hash-interno", label: "Documento 1 — TEST3 · Release de Resultados 2T26 · 08/09/2026" }],
+}, "ri:hash-interno"), "Documento 1 — TEST3 · Release de Resultados 2T26 · 08/09/2026");
+assert.equal(evidenceSourceDisplayLabel({}, "DEEP"), "DEEP");
 
 const pdf = await renderNexoReportPdf(fixture);
 assert.equal(pdf.subarray(0, 4).toString(), "%PDF");

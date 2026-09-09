@@ -140,7 +140,7 @@ assert.deepEqual(withLibrary.nexoModules.BIBLIOTECA.documents_consulted, ["cvm_i
 assert.equal(withLibrary.nexoModules.BIBLIOTECA.documents_available, 9, "contagem deve refletir o acervo, não só o contexto enviado");
 assert.equal(withLibrary.nexoModules.BIBLIOTECA.documents_indexed, 8);
 assert.deepEqual(withLibrary.nexoModules.BIBLIOTECA.chunks_consulted, ["cvm_ipe:doc-1#00000"]);
-assert.equal(withLibrary.nexoModules.BIBLIOTECA.document_labels[0].label, "Documento 1 — BBAS3 · Fato Relevante · 2026-08-19");
+assert.equal(withLibrary.nexoModules.BIBLIOTECA.document_labels[0].label, "Documento 1 — BBAS3 · Fato Relevante · 19/08/2026");
 
 const governedScanGaps = [
   "Inadimplência por segmento (rural vs. varejo vs. grandes empresas)",

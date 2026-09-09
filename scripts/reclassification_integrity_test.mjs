@@ -6,6 +6,7 @@ import {
   reconcileBesst,
   reconcileDeepIntegrity,
   reconcilePriceNarrative,
+  sanitizeNextSteps,
   RECLASSIFICATION_INTEGRITY_VERSION,
 } from "../lib/nexo/analysis/reclassification_integrity.mjs";
 import { reconcileValuationLayers } from "../lib/nexo/analysis/valuation_integrity.mjs";
@@ -101,6 +102,7 @@ assert.doesNotMatch(priceNarrative.value, /20,4%|dentro da zona de convergência
 const reportSevenDeep = reconcileDeepIntegrity({
   ticker: "BBAS3",
   veredito_final: "MONITORAR",
+  tese_final: "Fundamentos preservados. Potencial de valorização de 99% até a zona estimada.",
   preco: [
     { c: "C1", vj: "R$ 24,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 24, multiplo: 1 } },
     { c: "C2", vj: "R$ 27,00", met: "Valor unitário", prem: "Direto.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 27, multiplo: 1 } },
@@ -114,6 +116,11 @@ const reportSevenDeep = reconcileDeepIntegrity({
 assert.match(reportSevenDeep.desconto, /acima do BESST e abaixo da zona de convergência/);
 assert.equal(reportSevenDeep.integridade_analise.price_narrative_status, "server_calculated");
 assert.equal(reportSevenDeep.integridade_analise.reference_price, 22.45);
+assert.doesNotMatch(reportSevenDeep.tese_final, /99%/);
+assert.match(reportSevenDeep.tese_final, /6,46% abaixo do piso/);
+const reportSevenFinal = buildDeterministicFinal({ ticker: "BBAS3", history: { scan, deep: reportSevenDeep } });
+assert.doesNotMatch(reportSevenFinal.tese_final, /99%/);
+assert.match(reportSevenFinal.tese_final, /6,46% abaixo do piso/);
 
 const reportEightPriceLayers = [
   {
@@ -144,15 +151,16 @@ const reportEightDeep = reconcileDeepIntegrity({
   desconto: "Preço atual R$ 22,45 está dentro da zona.",
   ajustes_score: [],
 }, { scan }, { referencePrice });
-assert.equal(reportEightDeep.preco[0].vj, "R$ 62,72");
-assert.equal(reportEightDeep.preco[1].vj, "R$ 37,89");
-assert.equal(reportEightDeep.preco[2].vj, "R$ 32,21");
-assert.deepEqual(reportEightDeep.integridade_analise.valuation_corrected_layers, ["C1", "C2", "C3"]);
+assert.equal(reportEightDeep.preco[0].vj, "N/D");
+assert.equal(reportEightDeep.preco[1].vj, "N/D");
+assert.equal(reportEightDeep.preco[2].vj, "N/D");
+assert.deepEqual(reportEightDeep.integridade_analise.valuation_corrected_layers, []);
+assert.deepEqual(reportEightDeep.integridade_analise.valuation_invalid_layers, ["C1", "C2", "C3"]);
 assert.equal(reportEightDeep.integridade_analise.valuation_zone_suppressed, true);
-assert.equal(reportEightDeep.integridade_analise.convergence_status, "divergent_layers");
-assert.equal(reportEightDeep.zona, "Faixa não consolidada — camadas divergentes");
+assert.equal(reportEightDeep.integridade_analise.convergence_status, "layer_integrity_failed");
+assert.equal(reportEightDeep.zona, "Faixa não consolidada — memória de cálculo insuficiente");
 assert.equal(reportEightDeep.besst, "Não calculado — depende da consolidação da faixa");
-assert.match(reportEightDeep.desconto, /camadas válidas não convergiram/i);
+assert.match(reportEightDeep.desconto, /menos de duas camadas/i);
 assert.doesNotMatch(reportEightDeep.desconto, /dentro da zona/);
 
 for (const bankCase of [
@@ -161,7 +169,7 @@ for (const bankCase of [
 ]) {
   const result = reconcileValuationLayers([{
     c: "C1",
-    vj: "R$ 1,00",
+    vj: bankCase.expected,
     met: "Múltiplo sobre resultado por ação",
     prem: "Entradas estruturadas.",
     calc: {
@@ -172,12 +180,12 @@ for (const bankCase of [
     },
   }]);
   assert.equal(result.layers[0].vj, bankCase.expected, `${bankCase.ticker} deve obedecer à mesma regra, sem exceção por ticker`);
-  assert.equal(result.corrected_layers[0], "C1");
+  assert.equal(result.verified_layers[0], "C1");
 }
 
 const fiiYield = reconcileValuationLayers([{
   c: "C2",
-  vj: "R$ 10,00",
+  vj: "R$ 12,01",
   met: "Renda anual por cota dividida pelo yield requerido",
   prem: "Perfil de FII de renda.",
   calc: { formula: "RENDA_POR_YIELD", renda_por_unidade: 1.2, yield_pct: 10 },
@@ -209,7 +217,7 @@ const valeStaleExclusion = reconcileDeepIntegrity({
   besst: "R$ 61,50 a R$ 69,70",
   ajustes_score: [],
 }, { scan: { ...scan, ticker: "VALE3" } }, { referencePrice: 62 });
-assert.equal(valeStaleExclusion.preco[2].vj, "R$ 90,70");
+assert.equal(valeStaleExclusion.preco[2].vj, "N/D");
 assert.match(valeStaleExclusion.zona_calc.justificativa_exclusoes, /C3 \(R\$ 90,70\)/);
 assert.doesNotMatch(valeStaleExclusion.zona_calc.justificativa_exclusoes, /92,00/);
 
@@ -351,12 +359,12 @@ const reportEightConvergence = reconcileDeepIntegrity({
   ticker: "BBAS3",
   veredito_final: "MONITORAR",
   preco: [
-    { c: "C1", vj: "R$ 23,50", met: "P/VPA", prem: "Valor governado.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 23.83, multiplo: 1 } },
+    { c: "C1", vj: "R$ 23,75", met: "P/VPA", prem: "Valor governado.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 23.83, multiplo: 1 } },
     { c: "C2", vj: "R$ 25,16", met: "P/L", prem: "Valor governado.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 25.16, multiplo: 1 } },
     { c: "C3", vj: "R$ 22,39", met: "Yield", prem: "Valor governado.", calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 22.39, multiplo: 1 } },
   ],
   zona: "R$ 22,39 a R$ 25,16",
-  zona_calc: { camadas_incluidas: ["C3", "C2"], justificativa_exclusoes: "C1 de R$ 23,50 está dentro do intervalo central." },
+  zona_calc: { camadas_incluidas: ["C3", "C2"], justificativa_exclusoes: "C1 de R$ 23,75 está dentro do intervalo central." },
   besst: "R$ 16,79 a R$ 19,03",
   ajustes_score: [],
 }, { scan: { ticker: "BBAS3", score_total: 18, score_max: 30 } }, { referencePrice: 22.45 });
@@ -368,7 +376,7 @@ assert.equal(reportEightConvergence.zona, "R$ 22,39 a R$ 25,16");
 assert.equal(reportEightConvergence.besst, "R$ 16,79 a R$ 19,03");
 assert.match(reportEightConvergence.desconto, /15,00% e 25,00% abaixo do piso/);
 const reportEightFinal = buildDeterministicFinal({ ticker: "BBAS3", history: { scan: { ticker: "BBAS3", score_total: 18, score_max: 30 }, deep: reportEightConvergence } });
-assert.doesNotMatch(reportEightFinal.preco_final.observacao, /23,50|fora da faixa|\.\.$/);
+assert.doesNotMatch(reportEightFinal.preco_final.observacao, /23,75|fora da faixa|\.\.$/);
 
 const bbasDirectPbFallback = reconcileValuationLayers([{
   c: "C2",
@@ -382,7 +390,7 @@ assert.notEqual(bbasDirectPbFallback.layers[0].calculo_integridade.status, "inva
 
 const valeDebtOmission = reconcileValuationLayers([{
   c: "C1",
-  vj: "R$ 76,05",
+  vj: "R$ 60,46",
   met: "EV/EBITDA normalizado",
   prem: "EBITDA estimado em R$ 11,70/ação; múltiplo 6,5x aplicado ao EV/ação, descontando dívida líquida/ação de R$ 15,60.",
   calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 11.7, multiplo: 6.5 },
@@ -393,12 +401,32 @@ assert.equal(valeDebtOmission.layers[0].vj, "N/D", "camada rejeitada não deve c
 
 const valeEnterpriseToEquity = reconcileValuationLayers([{
   c: "C1",
-  vj: "R$ 76,05",
+  vj: "R$ 60,46",
   met: "EV/EBITDA normalizado",
   prem: "EBITDA por ação vezes múltiplo, menos dívida líquida por ação.",
   calc: { formula: "EV_POR_UNIDADE_MENOS_DIVIDA_LIQUIDA", ebitda_por_unidade: 11.7, multiplo: 6.5, divida_liquida_por_unidade: 15.6 },
 }]);
 assert.equal(valeEnterpriseToEquity.layers[0].vj, "R$ 60,45", "EV por ação deve ser convertido em equity após a dívida líquida");
+
+const materialArithmeticConflict = reconcileValuationLayers([{
+  c: "C2",
+  vj: "R$ 115,06",
+  met: "Dividend Yield alvo",
+  prem: "Renda anual por yield-alvo.",
+  calc: { formula: "RENDA_POR_YIELD", renda_por_unidade: 5.478, yield_pct: 6 },
+}]);
+assert.equal(materialArithmeticConflict.layers[0].vj, "N/D", "divergência material não pode ser corrigida silenciosamente");
+assert.equal(materialArithmeticConflict.layers[0].calculo_integridade.reason, "resultado_declarado_incompativel_com_memoria");
+
+const enterpriseShortcut = reconcileValuationLayers([{
+  c: "C1",
+  vj: "R$ 80,00",
+  met: "EV/EBITDA normalizado",
+  prem: "Escalonamento direto do preço pelo múltiplo.",
+  calc: { formula: "VALOR_POR_UNIDADE_X_MULTIPLO", valor_por_unidade: 10, multiplo: 8 },
+}]);
+assert.deepEqual(enterpriseShortcut.invalid_layers, ["C1"], "EV/EBITDA exige conversão estruturada de enterprise value para equity");
+assert.equal(enterpriseShortcut.layers[0].calculo_integridade.reason, "ev_sem_conversao_para_equity");
 
 const contradictoryYield = reconcileValuationLayers([{
   c: "C2",
@@ -424,7 +452,7 @@ const romiDivergence = reconcileDeepIntegrity({
 }, { scan: { ticker: "ROMI3", score_total: 14, score_max: 30 } }, { referencePrice: 5.95 });
 assert.equal(romiDivergence.preco[1].vj, "R$ 8,40");
 assert.match(romiDivergence.preco[1].prem, /R\$ 8,40/);
-assert.match(romiDivergence.preco[1].prem, /valor informado R\$ 8,43 corrigido para R\$ 8,40/i);
+assert.match(romiDivergence.preco[1].prem, /arredondamento informado R\$ 8,43 normalizado para R\$ 8,40/i);
 assert.equal(romiDivergence.integridade_analise.convergence_status, "divergent_layers");
 assert.equal(romiDivergence.integridade_analise.valuation_zone_suppressed, true);
 const romiFinal = buildDeterministicFinal({ ticker: "ROMI3", history: { scan: { ticker: "ROMI3", score_total: 14, score_max: 30 }, deep: romiDivergence } });
@@ -432,6 +460,14 @@ assert.doesNotMatch(romiFinal.tese_final, /8,43/);
 assert.doesNotMatch(romiFinal.tese_final, /valor justo|potencial de valorização|convergem/i, "tese final não pode preservar faixa rejeitada");
 assert.match(romiFinal.tese_final, /faixa de preço não foi consolidada/i);
 assert.match(romiFinal.preco_final.observacao, /Faixa não consolidada/i);
+assert.equal(romiFinal.preco_final.margem_seguranca, "Desconto aparente não calculável sem uma faixa de preço consolidada.");
+
+assert.deepEqual(sanitizeNextSteps([
+  "Se o minério superar USD 100/t, reavaliar veredito para COMPRAR com atualização de C1.",
+]), [
+  "Se o minério superar USD 100/t, executar um novo fluxo completo do NEXO e então reavaliar o veredito com atualização de C1.",
+]);
+assert.doesNotMatch(sanitizeNextSteps(["Reclassificar o ativo como COMPRAR."])[0], /COMPRAR/);
 
 const realRateGoverned = reconcileDeepIntegrity({
   ticker: "VALE3",

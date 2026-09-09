@@ -40,7 +40,7 @@ import {
   splitPriceModels,
 } from "../lib/ui/valuation_adapter.mjs";
 import { readApiJsonResponse } from "../lib/ui/api_response_adapter.mjs";
-import { evidenceDisplayLabel } from "../lib/ui/evidence_labels.mjs";
+import { evidenceDisplayLabel, evidenceSourceDisplayLabel } from "../lib/ui/evidence_labels.mjs";
 import { resolveEdgeScanGate } from "../lib/ui/edge_scan_gate.mjs";
 import {
   buildPdfSharePayload,
@@ -559,7 +559,7 @@ function DeepReport({ r, showClassicValuations = false }) {
               key={`deep-score-${index}`}
               title={`${adjustment?.dimensao || "Dimensão"} · ${asText(adjustment?.antes)} → ${asText(adjustment?.depois)}`}
               value={adjustment?.motivo}
-              note={`Fonte: ${asText(adjustment?.fonte_nova || "DEEP")}`}
+              note={`Fonte: ${evidenceSourceDisplayLabel(r?.nexoModules?.BIBLIOTECA, adjustment?.fonte_nova, index)}`}
             />
           ))}
         </Sec>
@@ -589,7 +589,7 @@ function DeepReport({ r, showClassicValuations = false }) {
           {r?.integridade_analise?.valuation_zone_suppressed && (
             <DetailBlock
               title="Faixa de preço não consolidada"
-              value="Menos de duas camadas apresentaram valores utilizáveis. A análise qualitativa permanece válida, mas a margem de segurança depende de uma memória de cálculo mais completa."
+              value="Menos de duas camadas apresentaram valores utilizáveis. A análise qualitativa permanece válida, mas o desconto aparente não pode ser tratado como margem de segurança sem uma faixa consolidada."
               note={valuationAffectedLayers.length ? `Camadas a revisar: ${valuationAffectedLayers.join(", ")}.` : "Revisar as premissas quantitativas antes de usar a faixa."}
             />
           )}
@@ -691,7 +691,10 @@ function FinalReport({ r }) {
         <Sec title="Preço Final">
           <DetailBlock title="Zona de convergência" value={preco?.zona_convergencia} />
           <DetailBlock title="BESST" value={preco?.besst} />
-          <DetailBlock title="Margem de segurança" value={preco?.margem_seguranca} />
+          <DetailBlock
+            title={/^(?:N\/D|Faixa não consolidada)/i.test(asText(preco?.zona_convergencia)) ? "Desconto aparente" : "Margem de segurança"}
+            value={preco?.margem_seguranca}
+          />
           <DetailBlock title="Observação" value={preco?.observacao} />
         </Sec>
       )}
