@@ -1,8 +1,8 @@
 # NEXO APP - Documento mestre de produto, método e desenvolvimento
 
-Versão: 2.2
+Versão: 2.3
 
-Atualizado em: 2026-09-15
+Atualizado em: 2026-09-16
 
 Repositório: `pillavinicius/nexo-app`
 
@@ -151,7 +151,7 @@ Filosofia: não apenas identificar onde estamos, mas com quais períodos nos par
 
 ### 5.4 Camada de Dissonância
 
-Estado consolidado em 2026-09-15: contrato `v0.2` `ESPECIFICADO`; CD-1 ratificada; engine, snapshot e adaptadores ainda não implementados. NFI v1.1, FXE v0.2, DPM v0.1 e CIN v0.1 estão especificados, mas nenhum deles está integrado ao route.
+Estado consolidado em 2026-09-16: contrato-mãe `v0.2` ainda em `DRAFT`, com CD-1 ratificada e CD-2 a CD-15 provisórias; engine, snapshot e adaptadores ainda não implementados. Os probes reais de B3, SGS e DPM foram executados e incorporados à `main` em `bb3f407`. O Escopo Unificado v2.0 substitui os escopos anteriores e fecha NFI v1.2, FXE v0.3 e DPM v0.2 para implementação offline. Nenhum deles está integrado ao route.
 
 Objetivo: diagnosticar se uma tese está apoiada em números verificáveis, mecânica de mercado ou narrativa, obrigando o código a calcular observações, índices, rótulos e flags antes da interpretação analítica.
 
@@ -191,10 +191,10 @@ Estado por peça:
 
 | Peça | Versão | Estado | Próximo gate |
 | --- | --- | --- | --- |
-| Contrato de Dissonância | v0.2 | `ESPECIFICADO`; CD-1 ratificada | congelar CD-2 a CD-15 após validação |
-| NFI por tipo de investidor | v1.1 | escopo e probe escritos; self-test do probe 14/14 | executar probe ao vivo e validar unidade, categorias e soma-zero |
-| FXE | v0.2 | escopo e probe escritos | localizar três séries SGS, executar probe e fechar trilha própria |
-| DPM | v0.1 | escopo e probe escritos; self-test do probe 24/24 | executar probe ao vivo e confirmar endpoints/entidades |
+| Contrato de Dissonância | v0.2 | `DRAFT`; CD-1 ratificada e CD-2 a CD-15 provisórias | aprovar Anexo A antes de produção e congelar constantes após os gates |
+| NFI por tipo de investidor | v1.2 | migração `ESPECIFICADA`; fonte BDI diária, cinco categorias, unidade e D+2 confirmados; probe 25/25 | criar `calendario_b3.csv`, substituir engine/coletor preservando repositório e testes atuais |
+| FXE | v0.3 | `ESPECIFICADO`; séries SGS e identidades confirmadas; probe 26/26 | implementar engine/coletor e executar gates G-FXE-1 a G-FXE-4 |
+| DPM | v0.2 | `ESPECIFICADO`; endpoints, entidades, datas e votação na ata confirmados; probe 24/24 | implementar engine/coletor, mapa Focus reunião->Copom e gates completos |
 | CIN | v0.1 | escopo escrito; curadoria manual | completar dez/2025 a ago/2026 com pelo menos três casas |
 | Engine, snapshot e adaptadores | v0.2 | `ESPECIFICADO` | implementar com 28 fixtures sintéticas |
 | Teste Brasil 2026 | Anexo A | protocolo fechado | depende dos dados reais dos coletores |
@@ -218,11 +218,11 @@ Critérios C1-C7:
 - C4: pelo menos seis de sete afirmações duras corretas e nenhuma afirmação causal marcada como confirmada;
 - C5: A/B cego nos snapshots T2 e T4, com a chave mantida fechada até a pontuação;
 - C6: T1 deve apontar dominância estrangeira positiva e T5 deve ativar `ROTACAO_ESTRANGEIRO_LOCAL`;
-- C7: a ablação individual de cada coletor precisa mudar rótulo, flag, ordem ou veredito em pelo menos um snapshot de 2026 ou 2022. Caso contrário, o coletor volta a `DRAFT`.
+- C7: a ablação individual de cada coletor precisa mudar rótulo, flag, ordem ou veredito em pelo menos um snapshot de 2026 ou no caso fora da amostra ratificado. Caso contrário, o coletor volta a `DRAFT`.
 
-O rótulo esperado de cada snapshot não é pré-fixado. O caso fora da amostra é janeiro-fevereiro de 2022, com constantes congeladas após a validação de 2026 e gabarito definido antes da execução.
+O rótulo esperado de cada snapshot não é pré-fixado. O caso fora da amostra permanece com decisão explícita pendente: o candidato atual é o choque tarifário de julho/2025, dentro da janela mar-dez/2025 em que o z de 756 d.u. está cheio; alternativamente, o gestor pode manter jan-fev/2022 usando a série mensal legada como fonte secundária declarada. Em ambos os casos, as constantes ficam congeladas após 2026 e o gabarito é escrito antes da execução.
 
-O contrato detalhado continua pertencendo ao documento-mãe `NEXO_Contrato_Dissonancia_v0.2.md`. O dossiê de 2026-09-15 consolida estado e ordem de execução, mas não substitui esse contrato.
+O contrato detalhado continua pertencendo ao documento-mãe `NEXO_Contrato_Dissonancia_v0.2.md`. O Escopo Unificado v2.0, de 2026-09-15, governa a implementação de NFI v1.2, FXE v0.3 e DPM v0.2 e supersede todos os escopos anteriores desses coletores; ele não substitui o contrato-mãe.
 
 ## 6. Fundação de dados e Quant Engine
 
@@ -484,7 +484,7 @@ Gates: self-test 46/46, paridade de contrato, A/B pré-comprometido, invariânci
 
 ### 12.2 NFI - NEXO Flow Intelligence
 
-Estado atual: `IMPLEMENTADO` como `NFI_v1.0`. Evolução `NFI_v1.1` `ESPECIFICADA`, ainda sem coleta ao vivo, engine versionada ou integração.
+Estado atual: `IMPLEMENTADO` como `NFI_v1.0`. Migração `NFI_v1.2` `ESPECIFICADA`, com fonte real validada, ainda sem engine/coletor migrados ou integração.
 
 - mede fluxo estrangeiro oficial e posição histórica;
 - explica deslocamento de preço;
@@ -494,22 +494,26 @@ Estado atual: `IMPLEMENTADO` como `NFI_v1.0`. Evolução `NFI_v1.1` `ESPECIFICAD
 - extremo exige histórico mínimo suficiente;
 - coletor roda offline.
 
-Mudança contratual da v1.1:
+Mudança contratual da v1.2:
 
-- substituir a visão mensal agregada por série diária desde 2010, separada por tipo de investidor;
-- usar enum fechado iniciado por `ESTRANGEIRO`, `INSTITUCIONAL`, `PF`, `INST_FINANCEIRA` e `OUTROS`; qualquer ampliação depende do probe;
-- preservar compras e vendas somente quando a fonte as fornecer, nunca derivá-las;
-- aplicar D+2 por calendário B3, soma-zero diária e exclusão de observações `PARCIAL` da agregação;
+- substituir a planilha mensal agregada pelo BDI diário da B3, disponível desde março/2022 e separado nas cinco categorias confirmadas: institucionais, instituições financeiras, estrangeiro, individuais e outros;
+- interpretar a tabela BDI como acumulada no mês: o fluxo diário é a diferença entre dias consecutivos do mesmo mês, com reset somente no primeiro dia útil real;
+- converter a unidade publicada de R$ mil para BRL multiplicando por 1.000;
+- aplicar D+2 por calendário de pregão da B3; o calendário é pré-requisito e o coletor falha alto fora da cobertura;
+- marcar como `PARCIAL` o primeiro dia disponível quando não houver o dia útil anterior necessário, sem tratá-lo como início de mês;
+- preservar `fluxo_liquido_brl` por compatibilidade com o repositório, rota, PDF e tela atuais;
+- tratar soma-zero como teste de parsing, não como sinal econômico, porque compras e vendas fecham por construção nessa fonte;
 - calcular no engine soma de 20 dias úteis, z robusto em 756 dias úteis, participação estrangeira e acumulado anual por tipo;
-- manter M5/ANBIMA opcional e fundos de pensão fora da v1.1;
+- manter a tabela mensal T2 apenas para volume segmentado/M4; nunca tratá-la como saldo;
+- manter M5/ANBIMA opcional e fundos de pensão fora da v1.2;
 - impedir leitura por ticker e uso como argumento de momentum;
-- validar contra janeiro de 2026, soma-zero em pelo menos 99% dos dias e ablação C7.
+- validar janeiro/2026, reconciliação mensal em seis meses, contrato C6, ablação C7 e os testes de UI existentes durante toda a migração.
 
-O probe da v1.1 está redigido e passou 14/14 testes offline, mas ainda precisa ser executado ao vivo e versionado no repositório. Até a migração passar pelos gates, `NFI_v1.0` permanece a implementação efetiva.
+O probe real `nexo_b3_probe_v02.mjs` está versionado na `main` e passou 25/25. Até a migração cumprir os gates, `NFI_v1.0` permanece a implementação efetiva.
 
 ### 12.2.1 FXE - Fluxo Externo
 
-Estado: `ESPECIFICADO` como `FXE_v0.2`; probe escrito, ainda não executado ao vivo.
+Estado: `ESPECIFICADO` como `FXE_v0.3`; probe real versionado e aprovado em 26/26.
 
 - decompõe receita externa em quantidade, preço em USD e câmbio pela identidade logarítmica exata;
 - publica FXE agregado como contexto R7 e o resíduo empresa versus setor SH4 como D4;
@@ -518,11 +522,15 @@ Estado: `ESPECIFICADO` como `FXE_v0.2`; probe escrito, ainda não executado ao v
 - usa limiares provisórios `FXE_L1 = 0.05` e `FXE_L2 = 0.10` até a validação;
 - mantém `applicability` explícita para setores fora do escopo;
 - exclui ETFs, inclusive BXPO11, e extingue a razão BXPO11/BDOM11 da v0.1;
-- depende da localização das séries SGS de fluxo cambial comercial, balança mensal e transações correntes.
+- usa as séries SGS 13962 a 13970 para câmbio contratado diário e SGS 1 para PTAX; 27574 a 27577 cobrem IC-Br;
+- calcula o `conversion_ratio` padrão com `Demais` (13965) + pagamento antecipado (13964), nunca com ACC (13963), que permanece série separada de financiamento;
+- verifica diariamente quatro identidades contábeis; dia que não fecha vira `PARCIAL`;
+- usa Comex Stat para balança mensal; a balança SGS foi descartada por redundância metodológica;
+- mantém transações correntes como `AUSENTE`, pois o código SGS não foi localizado e a série não integra o `conversion_ratio`.
 
 ### 12.2.2 DPM - Decisões de Política Monetária
 
-Estado: `ESPECIFICADO` como `DPM_v0.1`; probe escrito e aprovado em 24/24 testes offline, ainda sem execução ao vivo.
+Estado: `ESPECIFICADO` como `DPM_v0.2`; probe real versionado e aprovado em 24/24.
 
 - registra todas as reuniões, inclusive manutenções, com decisão, votação, ciclo e surpresa;
 - usa o último Focus anterior à decisão para a surpresa Copom;
@@ -530,7 +538,11 @@ Estado: `ESPECIFICADO` como `DPM_v0.1`; probe escrito e aprovado em 24/24 testes
 - reconstrói ciclos sem inferir votação quando o texto não casa com as regras fechadas;
 - limita o diff do comunicado oficial do Copom a seis frases;
 - mantém o calendário FOMC como CSV curado manualmente;
-- precisa confirmar endpoints de comunicado/atas e entidades Olinda no probe.
+- deriva `data_decisao` de `dataReferencia`; SGS 432 marca a vigência no dia útil seguinte e não substitui a data da decisão;
+- extrai votação da ata publicada seis dias depois, com `disponivel_em` próprio; antes disso, votação é `AUSENTE`;
+- filtra Focus com `baseCalculo = 0`, evitando duplicidade entre bases 0 e 1;
+- ainda precisa construir, com falha alta, o mapa `R<n>/<ano> -> nroReuniao` a partir da lista oficial de atas;
+- precisa ampliar SGS 432 em blocos para provar correspondência reunião-mudança desde 1999.
 
 ### 12.2.3 CIN - Consenso Institucional
 
@@ -836,7 +848,7 @@ Proibições:
 Convenção aprovada para a Camada de Dissonância:
 
 - coletores em `scripts/collectors/` e probes em `scripts/probes/`;
-- engines de domínio em `lib/<modulo>/`;
+- engines de domínio em `lib/nexo/<modulo>/`;
 - adaptadores em `lib/dissonancia/adapters/`;
 - tabelas versionadas em `data/<modulo>/`;
 - contratos em `contracts/<modulo>.schema.json`.
@@ -901,25 +913,30 @@ Critérios de fechamento:
 
 ### Trilha transversal D0-D6 - Camada de Dissonância
 
-Esta trilha corre em paralelo às janelas J0-J9 e não altera a ordem de dependência do Ciclo Goldberg. As Ondas 1 e 2 podem começar em paralelo; nenhuma delas toca produção.
+Esta trilha corre em paralelo às janelas J0-J9 e não altera a ordem de dependência do Ciclo Goldberg. A validação das fontes foi concluída; a implementação segue a ordem técnica fechada pelo Escopo Unificado v2.0 e não toca produção antes dos gates.
 
-| Onda | Entrega | Estado em 2026-09-15 | Toca produção? |
+| Onda | Entrega | Estado em 2026-09-16 | Toca produção? |
 | --- | --- | --- | --- |
-| D0 | Contrato de Dissonância v0.2 e CD-1 | `ESPECIFICADO`; CD-1 ratificada | Não |
-| D1 | Executar probes NFI, SGS/FXE e DPM | scripts escritos; execução ao vivo pendente | Não |
-| D2 | Constants, engine, snapshot, validador e 28 fixtures | `ESPECIFICADO`; implementação pendente | Não |
-| D3 | NFI v1.1, DPM v0.1, curadoria CIN e adaptadores | `ESPECIFICADO`; depende de D1 para dados reais | Não |
-| D3b | FXE v0.2 com trilha e gates próprios | `ESPECIFICADO`; três códigos SGS pendentes | Não |
-| D4 | Teste Brasil 2026, critérios C1-C7 | protocolo fechado; depende de D3/D3b | Não |
-| D5 | Teste fora da amostra jan-fev/2022 | planejado; constantes congeladas após 2026 | Não |
+| D0 | Contrato de Dissonância v0.2 e CD-1 | contrato `DRAFT`; CD-1 ratificada; demais constantes provisórias | Não |
+| D1 | Probes B3, SGS/FXE e DPM | `CONCLUÍDA`; scripts na `main` em `bb3f407`, com 25/25, 26/26 e 24/24 | Não |
+| D2 | Calendário B3 + migração NFI v1.2 | `ESPECIFICADO`; implementação pendente | Não |
+| D3 | Engine/coletor FXE v0.3 | `ESPECIFICADO`; códigos SGS e regra ACC confirmados | Não |
+| D3b | Engine/coletor DPM v0.2 | `ESPECIFICADO`; mapa Focus->Copom e histórico SGS em blocos pendentes de implementação | Não |
+| D3c | Constants, engine de Dissonância, snapshot, validador, 28 fixtures, adaptadores e CIN | `ESPECIFICADO`; implementação pendente | Não |
+| D4 | Teste Brasil 2026, critérios C1-C7 | protocolo fechado; depende de D2, D3, D3b e D3c | Não |
+| D5 | Teste fora da amostra | episódio entre mar-dez/2025 é o candidato atual; uso secundário da série mensal para jan-fev/2022 depende de decisão do gestor | Não |
 | D6 | Integração I-1 a I-5 no route | `BLOQUEADA` até todos os gates | Sim |
 
 Próxima execução da trilha:
 
-1. rodar `nexo_flow_probe.mjs`, `nexo_sgs_probe.mjs` e `nexo_dpm_probe.mjs` no Cloud Shell;
-2. preservar as saídas `nfi_probe_out.txt`, `sgs_probe_out.txt` e `dpm_probe_out.txt`;
-3. em paralelo, implementar somente D2 com fixtures sintéticas;
-4. não iniciar integração ao route antes da aprovação de C1-C7 e do teste fora da amostra.
+1. anexar ao handoff as evidências `b3_probe_out2.txt`, `sgs_probe_out.txt` e `dpm_probe_out.txt`;
+2. criar `data/goldberg/calendario_b3.csv`;
+3. migrar `lib/nexo/nfi/nfi_engine.mjs` e `scripts/collectors/nfi_collector.mjs`, preservando repositório, rota, UI e testes atuais;
+4. implementar engine e coletor FXE v0.3;
+5. implementar engine e coletor DPM v0.2;
+6. implementar adaptadores e schemas, depois engine/snapshot/validador da Dissonância e fixtures;
+7. executar Brasil 2026, A/B, ablações e caso fora da amostra;
+8. não integrar ao route antes da aprovação de C1-C7 e do caso fora da amostra.
 
 ### J0 - fechamento do B3.2 e valuation v1.8
 
@@ -1076,15 +1093,18 @@ Os IDs abaixo usam o namespace `DIS-IMP` para não colidir com as decisões hist
 
 | ID | Tema | Valor registrado |
 | --- | --- | --- |
-| DIS-IMP-1 | Diretórios | `scripts/collectors/`, `scripts/probes/`, `lib/<modulo>/`, `lib/dissonancia/adapters/`, `data/<modulo>/`, `contracts/` |
+| DIS-IMP-1 | Diretórios | `scripts/collectors/`, `scripts/probes/`, `lib/nexo/<modulo>/`, `lib/dissonancia/adapters/`, `data/<modulo>/`, `contracts/` |
 | DIS-IMP-2 | Execução da coleta | Cloud Shell manual; Actions somente após o gatilho de frequência |
 | DIS-IMP-3 | Pós-checagem no route | uma regeneração e faixa visível; nunca correção silenciosa |
-| DIS-IMP-4 | M5/ANBIMA | opcional no NFI v1.1 se houver acesso público |
+| DIS-IMP-4 | M5/ANBIMA | opcional no NFI v1.2 se houver acesso público |
 | DIS-IMP-5 | Receita-base FXE | exportação segregada; receita total exige flag e limiar 1,5 vez maior |
 | DIS-IMP-6 | Limiares FXE | 0,05 e 0,10 em log, provisórios até os gates |
 | DIS-IMP-7 | Casas CIN | enum fechado do contrato v0.1 |
 | DIS-IMP-8 | Curadoria CIN | dezembro/2025 a agosto/2026, com pelo menos três casas |
 | DIS-IMP-9 | Calendário FOMC | CSV curado manualmente |
+| DIS-IMP-10 | NFI legado | preservar `nfi_repository.mjs` e integrações; substituir somente engine/coletor na migração |
+| DIS-IMP-11 | FXE/ACC | ACC é financiamento e nunca integra o numerador padrão do `conversion_ratio` |
+| DIS-IMP-12 | DPM/votação | votação vem da ata e possui `disponivel_em` diferente da decisão |
 
 ### 22.2 Decisões e constantes de contrato da Dissonância
 
@@ -1094,17 +1114,21 @@ Os IDs abaixo usam o namespace `DIS-IMP` para não colidir com as decisões hist
 - DIS-CD-14 define o z robusto como padrão;
 - DIS-CD-15 permite apenas o diff do comunicado oficial do BC, limitado a seis frases.
 
-Constantes que fecham com probe:
+Constantes e convenções fechadas pelos probes:
 
-| Constante | Valor provisório | Evidência de fechamento |
+| Item | Valor confirmado | Evidência |
 | --- | --- | --- |
-| `SOMA_ZERO_TOL_REL` | 0,02 | `nfi_probe_out.txt` |
-| `UNIDADE_VALOR` e `N_CATEGORIAS` | R$ milhões; cinco ou sete categorias | `nfi_probe_out.txt` |
-| `SGS_FLUXO_CAMBIAL_COMERCIAL` | `null` | busca manual e `sgs_probe_out.txt` |
-| `SGS_BALANCA_MENSAL` | `null` | busca manual e `sgs_probe_out.txt` |
-| `SGS_TRANSACOES_CORRENTES` | `null` | busca manual e `sgs_probe_out.txt` |
-| `COMEX_STAT_MENSAL` | 10 dias | probe FXE |
-| endpoints de comunicado Copom e entidades Olinda | candidatos | `dpm_probe_out.txt` |
+| Fonte NFI | BDI capítulo 02, acumulado no mês, série desde março/2022 | `b3_probe_out2.txt` |
+| Categorias NFI | cinco categorias estáveis | `b3_probe_out2.txt` |
+| Unidade NFI | R$ mil, convertida para BRL por `x 1.000` | `b3_probe_out2.txt` |
+| Defasagem NFI | D+2 de pregão, por `calendario_b3.csv` | `b3_probe_out2.txt` |
+| `SOMA_ZERO_TOL_REL` | deixa de ser limiar econômico; soma-zero é teste de parsing e fechou com razão 0 | `b3_probe_out2.txt` |
+| SGS FXE | 13962 a 13970; PTAX 1; IC-Br 27574 a 27577 | `sgs_probe_out.txt` |
+| `conversion_ratio` | 13965 + 13964; `inclui_acc = false` | `sgs_probe_out.txt` |
+| `SGS_TRANSACOES_CORRENTES` | `null`; bloco reporta `AUSENTE` | `sgs_probe_out.txt` |
+| Data DPM | decisão=`dataReferencia`; vigência=SGS 432 no próximo d.u.; ata=D+6 corridos | `dpm_probe_out.txt` |
+| Focus | quatro entidades confirmadas e `baseCalculo = 0` | `dpm_probe_out.txt` |
+| Votação DPM | extraída de `textoAta`, nunca do comunicado | `dpm_probe_out.txt` |
 
 Constante `null` mantém o bloco dependente como `AUSENTE`; nunca autoriza valor padrão ou inferido.
 
@@ -1115,8 +1139,10 @@ Constante `null` mantém o bloco dependente como `AUSENTE`; nunca autoriza valor
 - revalidação operacional P0 do Context Package fora do seed;
 - homologação real final do B3.2 e valuation v1.8;
 - decisão D8;
-- execução ao vivo dos três probes de Dissonância;
-- localização das três séries SGS necessárias ao FXE;
+- envio das evidências textuais `b3_probe_out2.txt`, `sgs_probe_out.txt` e `dpm_probe_out.txt` para o handoff de implementação;
+- construção do `calendario_b3.csv`, pré-requisito do NFI v1.2;
+- decisão sobre o caso fora da amostra: episódio de 2025 com janela z cheia ou manutenção declarada da série mensal apenas para jan-fev/2022;
+- mapa determinístico `R<n>/<ano> -> nroReuniao` e validação histórica da SGS 432 em blocos no DPM;
 - curadoria mínima do CIN antes do teste Brasil 2026.
 
 ### Pré-Beta
@@ -1196,10 +1222,9 @@ Falha em qualquer gate devolve o item a `DRAFT`, com no máximo uma rodada docum
 - NEXO Escopo BJR v1.1;
 - NEXO Dossiê Dissonância Coletores v1.0, de 2026-09-15;
 - NEXO Contrato Dissonância v0.2;
-- NEXO Escopo Coletores Dissonância v1.0;
-- NEXO Escopo NFI v1.1;
-- NEXO Escopo FXE v0.2;
-- probes `nexo_flow_probe.mjs`, `nexo_sgs_probe.mjs` e `nexo_dpm_probe.mjs`;
+- NEXO Escopo Unificado de Implementação v2.0, de 2026-09-15, que supersede os escopos anteriores de coletores, NFI e FXE;
+- probes versionados `nexo_b3_probe_v02.mjs`, `nexo_sgs_probe_v02.mjs` e `nexo_dpm_probe.mjs`;
+- evidências externas `b3_probe_out2.txt`, `sgs_probe_out.txt` e `dpm_probe_out.txt`, ainda pendentes de anexação ao handoff;
 - decisões metodológicas aprovadas nas conversas do projeto.
 
 Os PDFs que exibem código são referências de contrato. Linhas truncadas pela paginação não devem ser copiadas como fonte executável.
@@ -1217,4 +1242,4 @@ Os PDFs que exibem código são referências de contrato. Linhas truncadas pela 
 9. publicar e aguardar gates remotos;
 10. atualizar estado, versão, decisões e backlog neste arquivo.
 
-Próxima ação registrada em 2026-09-15: revalidar P0; executar os três probes da Camada de Dissonância e implementar D2 em paralelo; concluir J0; não integrar Dissonância ao route nem iniciar HDL v1.3 antes dos respectivos gates.
+Próxima ação registrada em 2026-09-16: revalidar P0; receber as três saídas dos probes; criar o calendário B3 e iniciar a migração NFI v1.2; depois implementar FXE v0.3 e DPM v0.2 na ordem do Escopo Unificado; concluir J0; não integrar Dissonância ao route nem iniciar HDL v1.3 antes dos respectivos gates.
