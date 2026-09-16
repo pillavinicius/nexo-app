@@ -8,6 +8,7 @@ import { createBibliotecaRepository, normalizeTicker } from "../../lib/nexo/bibl
 
 const migration = readFileSync(new URL("../../db/migrations/001_biblioteca_b1.sql", import.meta.url), "utf8");
 const b2Migration = readFileSync(new URL("../../db/migrations/002_biblioteca_b2.sql", import.meta.url), "utf8");
+const b32Migration = readFileSync(new URL("../../db/migrations/005_biblioteca_b3_2.sql", import.meta.url), "utf8");
 const conditionalMigration = readFileSync(new URL("./migrate_if_configured.mjs", import.meta.url), "utf8");
 for (const token of [
   "CREATE SCHEMA IF NOT EXISTS biblioteca",
@@ -21,6 +22,9 @@ for (const token of [
 ]) assert.ok(migration.includes(token), `migração sem ${token}`);
 for (const token of ["conteudo_binario BYTEA", "biblioteca.ingestion_runs", "dedup_provada", "002_biblioteca_b2"]) {
   assert.ok(b2Migration.includes(token), `migração B2 sem ${token}`);
+}
+for (const token of ["biblioteca.documento_binario_partes", "biblioteca.documento_paginas", "biblioteca.documento_chunks", "TSVECTOR", "idx_documento_chunks_busca", "005_biblioteca_b3_2"]) {
+  assert.ok(b32Migration.includes(token), `migração B3.2 sem ${token}`);
 }
 assert.ok(conditionalMigration.includes("process.env.VERCEL"), "deploy precisa exigir conexão configurada");
 assert.ok(conditionalMigration.includes('await import("./migrate.mjs")'), "deploy precisa aplicar a migração");
