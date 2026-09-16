@@ -1,6 +1,6 @@
 # NEXO APP - Documento mestre de produto, método e desenvolvimento
 
-Versão: 2.4
+Versão: 2.5
 
 Atualizado em: 2026-09-16
 
@@ -151,7 +151,7 @@ Filosofia: não apenas identificar onde estamos, mas com quais períodos nos par
 
 ### 5.4 Camada de Dissonância
 
-Estado consolidado em 2026-09-16: contrato-mãe `v0.2` ainda em `DRAFT`, com CD-1 ratificada e CD-2 a CD-15 provisórias; engine, snapshot e adaptadores ainda não implementados. Os scripts dos probes reais de B3, SGS e DPM foram incorporados à `main` em `bb3f407`. As saídas completas de B3 e DPM foram recebidas; do SGS foi recebida uma reconstrução parcial fiel da execução, não o relatório original completo. O Escopo Unificado v2.0, complementado pela Emenda 1, substitui os escopos anteriores e fecha NFI v1.2, FXE v0.3 e DPM v0.2 para implementação offline. Nenhum deles está integrado ao route.
+Estado consolidado em 2026-09-16: contrato-mãe `v0.2` ainda em `DRAFT`, com CD-1 ratificada e CD-2 a CD-15 provisórias; engine, snapshot e adaptadores ainda não implementados. Os scripts dos probes reais de B3, SGS e DPM foram incorporados à `main` em `bb3f407`, e as três saídas originais completas foram recebidas e conferidas. O Escopo Unificado v2.0, complementado pela Emenda 1 e pela correção documental do item 5.3 registrada neste roadmap, substitui os escopos anteriores e fecha NFI v1.2, FXE v0.3 e DPM v0.2 para implementação offline. Nenhum deles está integrado ao route.
 
 Objetivo: diagnosticar se uma tese está apoiada em números verificáveis, mecânica de mercado ou narrativa, obrigando o código a calcular observações, índices, rótulos e flags antes da interpretação analítica.
 
@@ -193,7 +193,7 @@ Estado por peça:
 | --- | --- | --- | --- |
 | Contrato de Dissonância | v0.2 | `DRAFT`; CD-1 ratificada e CD-2 a CD-15 provisórias | aprovar Anexo A antes de produção e congelar constantes após os gates |
 | NFI por tipo de investidor | v1.2 | migração `ESPECIFICADA`; fonte BDI diária, cinco categorias, unidade, D+2 e gate de jan/2026 confirmados; probe 25/25 e saída completa recebida | criar `calendario_b3.csv`, substituir engine/coletor preservando repositório e testes atuais |
-| FXE | v0.3 | `ESPECIFICADO`; 15/15 séries consultadas e quatro identidades em 2.494/2.494 dias na reconstrução recebida; relatório original completo ainda não arquivado | implementar engine/coletor, preservar a ressalva de evidência e executar gates G-FXE-1 a G-FXE-4 |
+| FXE | v0.3 | `ESPECIFICADO`; saída original recebida: 15/15 séries consultadas e quatro identidades em 2.493/2.493 dias; `11050` e `13970` confirmados como conceitos distintos | implementar engine/coletor e executar gates G-FXE-1 a G-FXE-4 |
 | DPM | v0.2 | `ESPECIFICADO`; endpoints, entidades Focus, datas, SGS e FRED confirmados; probe 24/24 e saída completa recebida | implementar engine/coletor, mapa Focus reunião->Copom e gates completos |
 | CIN | v0.1 | escopo escrito; curadoria manual | completar dez/2025 a ago/2026 com pelo menos três casas |
 | Engine, snapshot e adaptadores | v0.2 | `ESPECIFICADO` | implementar com 28 fixtures sintéticas |
@@ -515,7 +515,7 @@ Ao substituir o coletor atual, a leitura mensal não pode ser apagada: `parseB3F
 
 ### 12.2.1 FXE - Fluxo Externo
 
-Estado: `ESPECIFICADO` como `FXE_v0.3`; probe real versionado e aprovado conforme o Escopo Unificado. A evidência externa recebida é uma reconstrução parcial: registra execução com saída 0, 15/15 séries respondendo e as quatro identidades fechando em 2.494/2.494 dias, mas não substitui o relatório original para auditoria integral.
+Estado: `ESPECIFICADO` como `FXE_v0.3`; probe real versionado e aprovado conforme o Escopo Unificado. A saída original completa foi recebida e conferida: 15/15 séries responderam, e as quatro identidades fecharam em 2.493/2.493 dias.
 
 - decompõe receita externa em quantidade, preço em USD e câmbio pela identidade logarítmica exata;
 - publica FXE agregado como contexto R7 e o resíduo empresa versus setor SH4 como D4;
@@ -529,7 +529,7 @@ Estado: `ESPECIFICADO` como `FXE_v0.3`; probe real versionado e aprovado conform
 - verifica diariamente quatro identidades contábeis; dia que não fecha vira `PARCIAL`;
 - usa Comex Stat para balança mensal; a balança SGS foi descartada por redundância metodológica;
 - mantém transações correntes como `AUSENTE`, pois o código SGS não foi localizado e a série não integra o `conversion_ratio`.
-- usa 13970 como saldo financeiro diário. A comparação direta com 11050 mensal foi inválida por granularidade; a agregação mensal de 13970 permanece uma confirmação documental posterior que não bloqueia a implementação.
+- usa 13970 como saldo financeiro diário da IES-13 porque essa série integra as quatro identidades contábeis exigidas pelo FXE. A série 11050, mensal e oriunda da IES-14, mede conceito diferente e apresenta magnitudes de outra ordem; por isso é ignorada pelo FXE. Não há redundância entre 11050 e 13970, nem confirmação adicional pendente por agregação mensal.
 
 ### 12.2.2 DPM - Decisões de Política Monetária
 
@@ -921,7 +921,7 @@ Esta trilha corre em paralelo às janelas J0-J9 e não altera a ordem de depend�
 | Onda | Entrega | Estado em 2026-09-16 | Toca produção? |
 | --- | --- | --- | --- |
 | D0 | Contrato de Dissonância v0.2 e CD-1 | contrato `DRAFT`; CD-1 ratificada; demais constantes provisórias | Não |
-| D1 | Probes B3, SGS/FXE e DPM | `CONCLUÍDA` para implementação; scripts na `main` em `bb3f407`; B3 e DPM com saídas completas recebidas; SGS com reconstrução parcial suficiente para o escopo, mas relatório original ainda não arquivado | Não |
+| D1 | Probes B3, SGS/FXE e DPM | `CONCLUÍDA`; scripts na `main` em `bb3f407` e três saídas originais completas recebidas e conferidas | Não |
 | D2 | Calendário B3 + migração NFI v1.2 | `ESPECIFICADO`; implementação pendente | Não |
 | D3 | Engine/coletor FXE v0.3 | `ESPECIFICADO`; códigos SGS e regra ACC confirmados | Não |
 | D3b | Engine/coletor DPM v0.2 | `ESPECIFICADO`; mapa Focus->Copom e histórico SGS em blocos pendentes de implementação | Não |
@@ -932,15 +932,14 @@ Esta trilha corre em paralelo às janelas J0-J9 e não altera a ordem de depend�
 
 Próxima execução da trilha:
 
-1. arquivar o `sgs_probe_out.txt` original quando reexecutado; a ausência não bloqueia o início da implementação, mas permanece pendência de auditoria;
-2. criar `data/goldberg/calendario_b3.csv`;
-3. migrar `lib/nexo/nfi/nfi_engine.mjs` e `scripts/collectors/nfi_collector.mjs`, preservando a leitura mensal em arquivo próprio, além do repositório, rota, UI e testes atuais;
-4. registrar G-NFI-1 a G-NFI-6 e só então entregar o coletor mensal legado para o caso de 2022;
-5. implementar engine e coletor FXE v0.3;
-6. implementar engine e coletor DPM v0.2;
-7. implementar adaptadores e schemas, depois engine/snapshot/validador da Dissonância e fixtures;
-8. executar Brasil 2026, A/B, ablações e o caso fora da amostra de jan-fev/2022;
-9. não integrar ao route antes da aprovação de C1-C7 e do caso fora da amostra.
+1. criar `data/goldberg/calendario_b3.csv`;
+2. migrar `lib/nexo/nfi/nfi_engine.mjs` e `scripts/collectors/nfi_collector.mjs`, preservando a leitura mensal em arquivo próprio, além do repositório, rota, UI e testes atuais;
+3. registrar G-NFI-1 a G-NFI-6 e só então entregar o coletor mensal legado para o caso de 2022;
+4. implementar engine e coletor FXE v0.3;
+5. implementar engine e coletor DPM v0.2;
+6. implementar adaptadores e schemas, depois engine/snapshot/validador da Dissonância e fixtures;
+7. executar Brasil 2026, A/B, ablações e o caso fora da amostra de jan-fev/2022;
+8. não integrar ao route antes da aprovação de C1-C7 e do caso fora da amostra.
 
 ### J0 - fechamento do B3.2 e valuation v1.8
 
@@ -1129,9 +1128,10 @@ Constantes e convenções fechadas pelos probes:
 | Unidade NFI | R$ mil, convertida para BRL por `x 1.000` | `b3_probe_out2.txt` |
 | Defasagem NFI | D+2 de pregão, por `calendario_b3.csv` | `b3_probe_out2.txt` |
 | `SOMA_ZERO_TOL_REL` | deixa de ser limiar econômico; soma-zero é teste de parsing e fechou com razão 0 | `b3_probe_out2.txt` |
-| SGS FXE | 13962 a 13970 e PTAX 1 confirmados na reconstrução; IC-Br 27574 a 27577 permanecem conforme Escopo Unificado v2.0 | `sgs_probe_out RECONSTRUIDO.txt`; original pendente |
-| `conversion_ratio` | 13965 + 13964; `inclui_acc = false`; quatro identidades em 2.494/2.494 dias | `sgs_probe_out RECONSTRUIDO.txt`; original pendente |
-| `SGS_TRANSACOES_CORRENTES` | `null`; bloco reporta `AUSENTE` | `sgs_probe_out RECONSTRUIDO.txt`; original pendente |
+| SGS FXE | 13962 a 13970 e PTAX 1 confirmados; IC-Br 27574 a 27577 permanecem conforme Escopo Unificado v2.0 | `sgs_probe_out.txt` original; MD5 `c6b1e4174e5164874c5e3ef5d57050f9` |
+| `conversion_ratio` | 13965 + 13964; `inclui_acc = false`; quatro identidades em 2.493/2.493 dias | `sgs_probe_out.txt` original |
+| Saldo financeiro FXE | usar 13970/IES-13; 11050/IES-14 é conceito distinto, não redundante, e não integra o FXE | `sgs_probe_out.txt` original; 68 meses comparados, 0 iguais |
+| `SGS_TRANSACOES_CORRENTES` | `null`; bloco reporta `AUSENTE` | `sgs_probe_out.txt` original |
 | Data DPM | decisão=`dataReferencia`; vigência=SGS 432 no próximo d.u.; ata=D+6 corridos | `dpm_probe_out.txt` |
 | Focus | quatro entidades confirmadas e `baseCalculo = 0` | `dpm_probe_out.txt` |
 | Votação DPM | extraída de `textoAta`, nunca do comunicado | `dpm_probe_out.txt` |
@@ -1144,7 +1144,7 @@ Estado das evidências externas:
 | --- | --- | --- |
 | `b3_probe_out2.txt` | completa, recebida e revisada | nenhuma pendência documental do probe B3 |
 | `dpm_probe_out.txt` | completa, recebida e revisada | nenhuma pendência documental do probe DPM |
-| `sgs_probe_out RECONSTRUIDO.txt` | parcial, fiel à execução registrada; faltam cabeçalhos, janela detalhada e linhas internas das identidades | não bloqueia a implementação do FXE v0.3; exige o original reexecutado para fechar a auditoria integral |
+| `sgs_probe_out.txt` | original completo, recebido e revisado; MD5 `c6b1e4174e5164874c5e3ef5d57050f9` | nenhuma pendência documental do probe SGS/FXE |
 
 ## 23. Backlog único
 
@@ -1153,7 +1153,6 @@ Estado das evidências externas:
 - revalidação operacional P0 do Context Package fora do seed;
 - homologação real final do B3.2 e valuation v1.8;
 - decisão D8;
-- reexecução e arquivamento do `sgs_probe_out.txt` original completo; pendência documental, não bloqueador da implementação do FXE v0.3;
 - construção do `calendario_b3.csv`, pré-requisito do NFI v1.2;
 - mapa determinístico `R<n>/<ano> -> nroReuniao` e validação histórica da SGS 432 em blocos no DPM;
 - curadoria mínima do CIN antes do teste Brasil 2026.
@@ -1239,7 +1238,7 @@ Falha em qualquer gate devolve o item a `DRAFT`, com no máximo uma rodada docum
 - NEXO Emenda 1 ao Escopo Unificado v2.0, de 2026-09-15, que resolve `IMP-14` e fixa jan-fev/2022 como caso fora da amostra;
 - probes versionados `nexo_b3_probe_v02.mjs`, `nexo_sgs_probe_v02.mjs` e `nexo_dpm_probe.mjs`;
 - evidências externas completas `b3_probe_out2.txt` e `dpm_probe_out.txt`, recebidas em 2026-09-16;
-- evidência externa `sgs_probe_out RECONSTRUIDO.txt`, recebida em 2026-09-16 como recorte fiel, sem substituir o `sgs_probe_out.txt` original ainda pendente;
+- evidência externa original completa `sgs_probe_out.txt`, recebida e conferida em 2026-09-16, MD5 `c6b1e4174e5164874c5e3ef5d57050f9`;
 - decisões metodológicas aprovadas nas conversas do projeto.
 
 Os PDFs que exibem código são referências de contrato. Linhas truncadas pela paginação não devem ser copiadas como fonte executável.
@@ -1257,4 +1256,4 @@ Os PDFs que exibem código são referências de contrato. Linhas truncadas pela 
 9. publicar e aguardar gates remotos;
 10. atualizar estado, versão, decisões e backlog neste arquivo.
 
-Próxima ação registrada em 2026-09-16: revalidar P0; criar o calendário B3 e iniciar a migração NFI v1.2, preservando em arquivo próprio a leitura mensal; depois implementar FXE v0.3 e DPM v0.2 na ordem do Escopo Unificado; reexecutar o probe SGS para arquivar a saída original sem bloquear o início do FXE; concluir J0; não integrar Dissonância ao route nem iniciar HDL v1.3 antes dos respectivos gates.
+Próxima ação registrada em 2026-09-16: revalidar P0; criar o calendário B3 e iniciar a migração NFI v1.2, preservando em arquivo próprio a leitura mensal; depois implementar FXE v0.3 e DPM v0.2 na ordem do Escopo Unificado; concluir J0; não integrar Dissonância ao route nem iniciar HDL v1.3 antes dos respectivos gates.
