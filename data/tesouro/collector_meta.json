@@ -1,0 +1,16 @@
+{
+  "collected_at": "2026-09-21T10:21:20.061Z",
+  "source_url": "https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv",
+  "source_sha256": "3e31a759c88e97b71b20ee49a8981e4754ea87bd857e8e6e268238e4274eb40e",
+  "source_bytes": 14515714,
+  "source_rows_total": 176390,
+  "ipca_principal_rows_in_source": 18834,
+  "stored_rows": 18834,
+  "added_this_run": 18834,
+  "revisions_new": 0,
+  "revisions_known": 0,
+  "mode": "backfill",
+  "first_date": "2005-07-18",
+  "last_date": "2026-09-18",
+  "distinct_maturities": 10
+}
