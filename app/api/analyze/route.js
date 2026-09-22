@@ -1,4 +1,4 @@
-export const maxDuration = 120;
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 import { jsonrepair } from "jsonrepair";
@@ -16,8 +16,11 @@ import {
 import { reconcileFinalVerdictChange } from "../../../lib/nexo/analysis/verdict_transition.mjs";
 import {
   buildDeterministicFinal,
+  extractReferencePrice,
   reconcileDeepIntegrity,
 } from "../../../lib/nexo/analysis/reclassification_integrity.mjs";
+import { reconcileListingSegmentClaims } from "../../../lib/nexo/analysis/text_integrity.mjs";
+import { reconcileScanGaps } from "../../../lib/nexo/analysis/gap_integrity.mjs";
 import {
   applyHdlToAnalysis,
   buildHdlPromptContext,
@@ -42,17 +45,19 @@ import {
   applyBibliotecaAudit,
   buildBibliotecaPromptContext,
   deriveExpectedDeepGaps,
+  findBibliotecaMetricConflicts,
   loadBibliotecaContext,
+  reconcileBibliotecaMetricConflicts,
 } from "../../../lib/nexo/biblioteca/context.mjs";
 
 const SCAN_S =
   '{"ticker":"","nome":"","segmento":"","veredito":"APROVADO|WATCHLIST|VETADO","motivo_veto":null,"score_total":0,"score_max":30,"score_resumo":"","filtros":[{"nome":"","valor":"","status":"PASS|FAIL","nota":""}],"governanca":[{"dimensao":"","nota":0,"obs":""}],"kpis":[{"nome":"","valor":"","benchmark":"","status":"PASS|FAIL|ALERTA"}],"score_dimensoes":[{"nome":"","nota":0,"obs":""}],"tese":"","catalisadores":[{"descricao":"","prazo":"","impacto":""}],"riscos":[{"descricao":"","severidade":"ALTO|MEDIO|BAIXO","probabilidade":""}],"lacunas_deep":["",""]}';
 
 const DEEP_S =
-  '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":"","fonte_nova":""}],"lacunas":[{"q":"","r":""}],"lacunas_documentais":[{"lacuna":"","status":"resolvida|aberta","evidencia_documental":["source:id"]}],"preco":[{"c":"C1","vj":"","met":"","prem":""},{"c":"C2","vj":"","met":"","prem":""},{"c":"C3","vj":"","met":"","prem":""}],"valuations_classicos":[{"modelo":"Graham|Peter Lynch|Buffett moderno|Bazin","valor_justo":"","metodologia":"","premissas":""}],"zona":"","besst":"","desconto":"","hdl_conclusao":"","tdn_conclusao":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
+  '{"ticker":"","veredito_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":"","fonte_nova":""}],"lacunas":[{"q":"","r":""}],"lacunas_documentais":[{"lacuna":"","status":"resolvida|parcial|aberta","evidencia_documental":["source:id"]}],"preco":[{"c":"C1","vj":"","met":"","prem":"","calc":{"formula":"TOTAL_POR_UNIDADE_X_MULTIPLO|VALOR_POR_UNIDADE_X_MULTIPLO|MEDIA_PONDERADA_X_MULTIPLO|RENDA_POR_YIELD|EV_POR_UNIDADE_MENOS_DIVIDA_LIQUIDA|AJUSTE_PERCENTUAL_CAMADA|NAO_VERIFICAVEL","multiplo":null,"valor_total":null,"quantidade_unidades":null,"valor_por_unidade":null,"renda_por_unidade":null,"yield_pct":null,"ebitda_por_unidade":null,"divida_liquida_por_unidade":null,"ajuste_pct":null,"camada_base":"","direcao":"DESCONTO|PREMIO","origem_base":"DADOS_AUTOMATICOS|BIBLIOTECA|USUARIO|HIPOTESE","evidencia_documental":[],"componentes":[{"rotulo":"","valor":0,"peso_pct":0}]}},{"c":"C2","vj":"","met":"","prem":"","calc":{"formula":"NAO_VERIFICAVEL"}},{"c":"C3","vj":"","met":"","prem":"","calc":{"formula":"NAO_VERIFICAVEL"}}],"valuations_classicos":[{"modelo":"Graham|Peter Lynch|Buffett moderno|Bazin","valor_justo":"","metodologia":"","premissas":""}],"tese_final":"","zona":"","zona_calc":{"camadas_incluidas":["C1","C2"],"justificativa_exclusoes":"","justificativa_convergencia":""},"besst":"","desconto":"","hdl_conclusao":"","tdn_conclusao":"","macro":[{"s":"","i":""}],"catalisadores":[{"d":"","p":""}],"riscos":[{"d":"","sev":"ALTO|MEDIO|BAIXO","g":""}],"passos":[""]}';
 
 const DEEP_INTEGRITY_RULES =
-  " Score original must reproduce the previous stage score. Only include ajustes_score for NEW evidence found in this Deep; never penalize a risk already counted in the previous stage. Each adjustment must use a 0-5 dimension score, explain the new evidence and cite its exact Biblioteca document ID in fonte_nova when documentary. The server will ignore your arithmetic and calculate the total from the adjustments. Fill lacunas_documentais for every investigated gap: resolved requires at least one exact available document ID; otherwise mark open. BESST must be 15-25% below the convergence zone. hdl_conclusao is mandatory for Brazilian assets and must interpret the immutable server-calculated HDL values; never recalculate them. When the server supplies a valid TDN, tdn_conclusao is mandatory and must interpret it without recalculating any metric. TDN never changes the global score or verdict automatically.";
+  " Score original must reproduce the previous stage score. Only include ajustes_score for NEW evidence found in this Deep; never penalize a risk already counted in the previous stage. Each adjustment must use a 0-5 dimension score, explain the new evidence and cite its exact Biblioteca document ID in fonte_nova when documentary. The server will ignore your arithmetic and calculate the total from the adjustments. Fill lacunas_documentais for every investigated gap: resolved requires evidence for every requested component; use partial when at least one component is supported but another remains missing; use open when there is no sufficient answer. If a gap is open because no primary document exists, do not supply uncited public figures, estimates, ranges, dates or named sources, and do not carry them into tese_final or valuation. Referencing a figure or table without retrieving the requested values is partial, never resolved. Every resolved or partial gap must cite at least one exact available document ID. Preserve exact metric semantics and windows: INAD/NPL +90d, New NPL formation and their coverage ratios are distinct and may never be relabeled. Novo Mercado, Nível 1 and Nível 2 are mutually exclusive B3 listing segments; never combine them. Do not state a regulatory minimum without distinguishing the base requirement from buffers and institution-specific add-ons. Every C1/C2/C3 layer must include calc, origem_base and evidencia_documental. Use DADOS_AUTOMATICOS only for an input present in the supplied payload, BIBLIOTECA only with an exact available document ID, USUARIO only for a declared manual input, and HIPOTESE only when the layer must be treated as not verifiable. Use numeric inputs in absolute base units, never scaled text such as bi or mi inside calc. The displayed vj must equal the declared formula result. Every textual target yield or target multiple must agree with calc; never silently replace one premise with another. If a unit base comes from an average or blend, use MEDIA_PONDERADA_X_MULTIPLO and disclose every component and weights totaling 100; never hide a haircut or call an unexplained value a conservative average. EV/EBITDA is an enterprise-value method and must always use EV_POR_UNIDADE_MENOS_DIVIDA_LIQUIDA to reach equity per unit; never scale the share price directly by an EV/EBITDA ratio. Use NAO_VERIFICAVEL only when the method cannot be expressed by the supported formulas; never invent a value to make the zone fit. zona_calc must name at least two included C1/C2/C3 layers; its bounds must equal the minimum and maximum included values. Any excluded valid layer requires an explicit methodological justification. Use N/D when there is no honest convergence or when the spread between valid layers is too wide; do not call a simple min-max interval convergence. BESST is calculated deterministically by the server as the full 15-25% safety band below the lower bound of the convergence zone; do not improvise a narrow or reversed interval. Compute real interest rates by composition, (1 + nominal) / (1 + inflation) - 1, never by simple subtraction. tese_final must reconcile updated Deep inputs and must not repeat stale Scan multiples, corrected layer prices or a zone rejected by the server. The server independently verifies derivation, chained arithmetic, provenance, dispersion, convergence, BESST and final text consistency, suppressing zone/BESST when required. Never write a next step that predetermines COMPRAR; require a new complete NEXO flow before any verdict change. hdl_conclusao is mandatory for Brazilian assets and must interpret the immutable server-calculated HDL values; never recalculate them. When the server supplies a valid TDN, tdn_conclusao is mandatory and must interpret it without recalculating any metric. TDN never changes the global score or verdict automatically.";
 
 const FINAL_S =
   '{"ticker":"","classificacao_final":"COMPRAR|MONITORAR|AGUARDAR|EVITAR|VETADO","veredito_anterior":"","veredito_reclassificado":"","score_original":0,"score_revisado":0,"score_max":30,"mudanca_score":"","mudanca_veredito":"MANTEVE|MELHOROU|PIOROU","riscos_incorporados":[{"descricao":"","impacto_score":"","severidade":"ALTO|MEDIO|BAIXO"}],"ajustes_score":[{"dimensao":"","antes":0,"depois":0,"motivo":""}],"tese_final":"","preco_final":{"zona_convergencia":"","besst":"","margem_seguranca":"","observacao":""},"conclusao":"","proximos_passos":[""]}';
@@ -425,12 +430,17 @@ function buildUserMessage({ phase, ticker, scanSummary, extraCtx, nmiContext, ed
 }
 
 function responseWithGovernance(phase, data, edg, hdl, nfi, tdn, analysisHistory = {}, biblioteca = null, analysisIntent = {}) {
-  const integrityChecked = phase === "deep"
-    ? reconcileDeepIntegrity(data, analysisHistory, { documentIds: biblioteca?.documentIds || [] })
-    : data;
+  const textChecked = reconcileListingSegmentClaims(phase === "scan" ? reconcileScanGaps(data) : data);
   const expectedGaps = phase === "deep" ? deriveExpectedDeepGaps(analysisHistory, analysisIntent?.userFocus) : [];
-  const withBiblioteca = phase === "deep" ? applyBibliotecaAudit(integrityChecked, biblioteca, { expectedGaps }) : integrityChecked;
-  const withTdn = applyTdnToAnalysis({ phase, result: withBiblioteca, tdn });
+  const bibliotecaChecked = phase === "deep" ? applyBibliotecaAudit(textChecked, biblioteca, { expectedGaps }) : textChecked;
+  const integrityChecked = phase === "deep"
+    ? reconcileDeepIntegrity(bibliotecaChecked, analysisHistory, {
+      documentIds: biblioteca?.documentIds || [],
+      referencePrice: analysisIntent?.referencePrice,
+      macro: analysisIntent?.macro,
+      })
+    : bibliotecaChecked;
+  const withTdn = applyTdnToAnalysis({ phase, result: integrityChecked, tdn });
   const withHdl = applyHdlToAnalysis({ phase, result: withTdn, hdl });
   const withNfi = applyNfiToAnalysis({ result: withHdl, nfi });
   const governed = applyEdgGuardrails({ phase, result: withNfi, edg });
@@ -534,6 +544,10 @@ export async function POST(req) {
       analysisHistory = {},
       analysisIntent = {},
     } = body;
+    const governedAnalysisIntent = {
+      ...(analysisIntent && typeof analysisIntent === "object" ? analysisIntent : {}),
+      referencePrice: extractReferencePrice(extraCtx),
+    };
 
     if (!phase || !assetType) {
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -560,6 +574,7 @@ export async function POST(req) {
 
     const systemPrompt = getSystemPrompt(phase, assetType);
     const nmiResult = getLatestContext();
+    governedAnalysisIntent.macro = nmiResult?.contextPackage?.brazil?.macro || null;
     const nmiContext = buildNmiPromptContext(nmiResult);
     const nfiRepository = loadNfiFlow();
     const nfi = isExternalAsset(assetType)
@@ -593,7 +608,7 @@ export async function POST(req) {
     );
     const edg = computeEDG(effectiveEdgeLedger, { availableModules: availableEdgeModules });
     const edgContext = buildEdgAnalysisContext(edg, effectiveEdgeLedger);
-    const bibliotecaGaps = phase === "deep" ? deriveExpectedDeepGaps(analysisHistory, analysisIntent?.userFocus) : [];
+    const bibliotecaGaps = phase === "deep" ? deriveExpectedDeepGaps(analysisHistory, governedAnalysisIntent.userFocus) : [];
     const biblioteca = phase === "deep" && !isExternalAsset(assetType)
       ? await loadBibliotecaContext({ ticker, gaps: bibliotecaGaps })
       : { available: false, status: isExternalAsset(assetType) ? "not_applicable" : "not_requested", documents: [], documentIds: [] };
@@ -632,7 +647,7 @@ export async function POST(req) {
       tdnContext,
       bibliotecaContext,
       analysisHistory,
-      analysisIntent,
+      analysisIntent: governedAnalysisIntent,
     });
 
     let modelResult = await requestStructuredAnalysis({ phase, systemPrompt, userMsg });
@@ -653,7 +668,7 @@ export async function POST(req) {
           tdn,
           analysisHistory,
           biblioteca,
-          analysisIntent
+          governedAnalysisIntent
         );
       }
 
@@ -671,7 +686,7 @@ export async function POST(req) {
           tdn,
           analysisHistory,
           biblioteca,
-          analysisIntent
+          governedAnalysisIntent
         );
       }
 
@@ -681,7 +696,7 @@ export async function POST(req) {
     let rawText = modelResult.rawText;
     let result = parseModelJSON(rawText);
 
-    if (!result.ok) {
+    if (!result.ok && phase !== "deep") {
       modelResult = await requestStructuredAnalysis({
         phase,
         systemPrompt,
@@ -711,7 +726,7 @@ export async function POST(req) {
           tdn,
           analysisHistory,
           biblioteca,
-          analysisIntent
+          governedAnalysisIntent
         );
       }
 
@@ -737,26 +752,13 @@ export async function POST(req) {
     }
 
     if (phase === "deep") {
-      const hdlCheck = applyHdlToAnalysis({ phase, result: result.data, hdl });
-      const semanticCheck = applyTdnToAnalysis({ phase, result: hdlCheck, tdn });
-      const hdlIncomplete = hdl.status === "ok" && semanticCheck?.hdl_integrity?.complete === false;
-      const tdnIncomplete = tdn.status === "ok" && semanticCheck?.tdn_integrity?.complete === false;
-      if (hdlIncomplete || tdnIncomplete) {
-        const semanticRetry = await requestStructuredAnalysis({
-          phase,
-          systemPrompt,
-          userMsg:
-            userMsg +
-            "\n\nA resposta anterior não completou hdl_conclusao e/ou tdn_conclusao. Gere novamente o JSON completo. Preencha hdl_conclusao quando o HDL estiver válido e tdn_conclusao quando o TDN estiver válido. Interprete apenas os valores imutáveis fornecidos pelo servidor; não recalcule números e não altere score ou veredito global automaticamente.",
-        });
-        if (semanticRetry.ok) {
-          const retried = parseModelJSON(semanticRetry.rawText);
-          if (retried.ok) result = retried;
-        }
+      const metricConflicts = findBibliotecaMetricConflicts(result.data, biblioteca);
+      if (metricConflicts.length) {
+        result = { ...result, data: reconcileBibliotecaMetricConflicts(result.data, metricConflicts) };
       }
     }
 
-    return responseWithGovernance(phase, result.data, edg, hdl, nfi, tdn, analysisHistory, biblioteca, analysisIntent);
+    return responseWithGovernance(phase, result.data, edg, hdl, nfi, tdn, analysisHistory, biblioteca, governedAnalysisIntent);
   } catch (err) {
     return safeError("Erro servidor: " + err.message);
   }

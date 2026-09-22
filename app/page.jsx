@@ -40,8 +40,10 @@ import {
   splitPriceModels,
 } from "../lib/ui/valuation_adapter.mjs";
 import { readApiJsonResponse } from "../lib/ui/api_response_adapter.mjs";
+import { evidenceDisplayLabel, evidenceSourceDisplayLabel } from "../lib/ui/evidence_labels.mjs";
 import { resolveEdgeScanGate } from "../lib/ui/edge_scan_gate.mjs";
 import {
+  buildPdfSharePayload,
   canSharePdfFile,
   choosePdfSaveHandle,
   isMobilePdfEnvironment,
@@ -455,19 +457,22 @@ function TdnAudit({ result, showUnavailable = false }) {
 function BibliotecaAudit({ result }) {
   const library = result?.nexoModules?.BIBLIOTECA;
   if (!library || library.status === "not_applicable") return null;
-  const open = asArray(library.lacunas_abertas);
   const resolved = asArray(library.lacunas_resolvidas);
+  const partial = asArray(library.lacunas_parciais);
+  const open = asArray(library.lacunas_abertas).filter((gap) => !partial.includes(gap));
   return (
     <Sec title="Biblioteca Viva · Evidências do Deep">
       <div className="grid3">
-        <MetricCard title="Documentos disponíveis" value={asText(library.documents_available || 0)} note={asText(library.version)} />
+        <MetricCard title="Documentos no acervo" value={asText(library.documents_available || 0)} note={`${asText(library.documents_indexed || 0)} indexados · ${asArray(library.chunks_consulted).length} trechos consultados`} />
         <MetricCard title="Lacunas resolvidas" value={asText(resolved.length)} note="Com documento oficial identificado" />
+        <MetricCard title="Lacunas parciais" value={asText(partial.length)} note="Há evidência, mas falta parte da resposta" />
         <MetricCard title="Lacunas abertas" value={asText(open.length)} note={open.length ? "Exigem fonte complementar" : "Nenhuma fonte adicional exigida"} />
       </div>
-      {asArray(library.documents_used).map((id, index) => <DetailBlock key={`bib-doc-${index}`} title={`Evidência ${index + 1}`} value={id} />)}
-      {asArray(library.documents_consulted).filter((id) => !asArray(library.documents_used).includes(id)).map((id, index) => <DetailBlock key={`bib-consulted-${index}`} title={`Fonte consultada ${index + 1}`} value={id} note="Disponível ao Deep; não citada como evidência conclusiva" />)}
+      {asArray(library.documents_used).map((id, index) => <DetailBlock key={`bib-doc-${index}`} title={`Evidência ${index + 1}`} value={evidenceDisplayLabel(library, id, index)} />)}
+      {asArray(library.documents_consulted).filter((id) => !asArray(library.documents_used).includes(id)).map((id, index) => <DetailBlock key={`bib-consulted-${index}`} title={`Fonte consultada ${index + 1}`} value={evidenceDisplayLabel(library, id, index)} note="Disponível ao Deep; não citada como evidência conclusiva" />)}
+      {partial.map((gap, index) => <DetailBlock key={`bib-partial-${index}`} title={`Lacuna parcialmente respondida ${index + 1}`} value={gap} note="O documento trouxe evidência útil, mas ainda não cobriu todos os componentes pedidos." />)}
       {open.map((gap, index) => <DetailBlock key={`bib-gap-${index}`} title={`Lacuna aberta ${index + 1}`} value={gap} />)}
-      <div className="edg-audit-note">A Biblioteca fornece evidências; score e veredito só mudam por ajuste novo, explícito e reconciliado pelo servidor.</div>
+      <div className="edg-audit-note">{asText(library.version)} · fonte integral preservada · recuperação {library.retrieval_mode === "selective_chunks" ? "seletiva por lacuna" : "compatível com índice anterior"} · score e veredito só mudam por ajuste novo e reconciliado.</div>
     </Sec>
   );
 }
@@ -524,6 +529,10 @@ function DeepReport({ r, showClassicValuations = false }) {
   const risks = asArray(r?.riscos);
   const steps = asArray(r?.passos || r?.proximos_passos);
   const scoreAdjustments = asArray(r?.ajustes_score);
+  const valuationAffectedLayers = [...new Set([
+    ...asArray(r?.integridade_analise?.valuation_corrected_layers),
+    ...asArray(r?.integridade_analise?.valuation_invalid_layers),
+  ])];
 
   return (
     <div style={{ fontFamily: "Inter, sans-serif", fontSize: 13, lineHeight: 1.7, color: "#D4C9A8", overflowX: "hidden" }}>
@@ -533,6 +542,12 @@ function DeepReport({ r, showClassicValuations = false }) {
         </div>
         {r?.veredito_final && <Badge text={r.veredito_final} />}
       </div>
+
+      {r?.integridade_analise?.version && (
+        <div className="edg-audit-note" style={{ marginBottom: 12 }}>
+          Motor de integridade {asText(r.integridade_analise.version)} · valuation {asText(r.integridade_analise.valuation_version)}
+        </div>
+      )}
 
       {Number.isFinite(Number(r?.score_revisado)) && (
         <Sec title="Evolução auditável do score">
@@ -544,7 +559,7 @@ function DeepReport({ r, showClassicValuations = false }) {
               key={`deep-score-${index}`}
               title={`${adjustment?.dimensao || "Dimensão"} · ${asText(adjustment?.antes)} → ${asText(adjustment?.depois)}`}
               value={adjustment?.motivo}
-              note={`Fonte: ${asText(adjustment?.fonte_nova || "DEEP")}`}
+              note={`Fonte: ${evidenceSourceDisplayLabel(r?.nexoModules?.BIBLIOTECA, adjustment?.fonte_nova, index)}`}
             />
           ))}
         </Sec>
@@ -571,6 +586,13 @@ function DeepReport({ r, showClassicValuations = false }) {
               note={item.premises}
             />
           ))}
+          {r?.integridade_analise?.valuation_zone_suppressed && (
+            <DetailBlock
+              title="Faixa de preço não consolidada"
+              value="Menos de duas camadas apresentaram valores utilizáveis. A análise qualitativa permanece válida, mas o desconto aparente não pode ser tratado como margem de segurança sem uma faixa consolidada."
+              note={valuationAffectedLayers.length ? `Camadas a revisar: ${valuationAffectedLayers.join(", ")}.` : "Revisar as premissas quantitativas antes de usar a faixa."}
+            />
+          )}
           {classics.length > 0 && <div className="valuation-subtitle">Valuations clássicos auxiliares</div>}
           {classics.map((item, i) => (
             <DetailBlock
@@ -591,9 +613,25 @@ function DeepReport({ r, showClassicValuations = false }) {
           />
           {r?.integridade_analise?.besst_corrected && (
             <DetailBlock
-              title="BESST corrigido automaticamente"
-              value={`Valor retornado pelo motor: ${asText(r.integridade_analise.besst_previous_value)}`}
-              note="A faixa foi recalculada para permanecer entre 15% e 25% abaixo da zona de convergência."
+              title="BESST alinhado à zona"
+              value={/^(?:N\/D|Não calculado)/i.test(asText(r.integridade_analise.besst_previous_value))
+                ? "A análise não trouxe uma faixa BESST utilizável; a faixa foi calculada a partir da zona validada."
+                : `Faixa recebida na análise: ${asText(r.integridade_analise.besst_previous_value)}`}
+              note="O servidor aplicou a regra de 15% a 25% abaixo do piso da zona validada. Esse ajuste não representa, isoladamente, uma nova mudança de fundamento."
+            />
+          )}
+          {!r?.integridade_analise?.valuation_zone_suppressed && r?.integridade_analise?.convergence_excluded_layers?.length > 0 && (
+            <DetailBlock
+              title="Memória da convergência"
+              value={`Camadas incluídas: ${r.integridade_analise.convergence_included_layers.join(", ")}. Camadas excluídas por justificativa metodológica: ${r.integridade_analise.convergence_excluded_layers.join(", ")}.`}
+              note={r.integridade_analise.convergence_exclusion_reason}
+            />
+          )}
+          {!r?.integridade_analise?.valuation_zone_suppressed && r?.integridade_analise?.convergence_provisional_layers?.length > 0 && (
+            <DetailBlock
+              title="Memória de cálculo parcial"
+              value={`Faixa preservada a partir dos valores declarados em ${r.integridade_analise.convergence_provisional_layers.join(", ")}.`}
+              note="Essas camadas permanecem identificadas como referências provisórias até a memória aritmética ser detalhada."
             />
           )}
         </Sec>
@@ -653,7 +691,10 @@ function FinalReport({ r }) {
         <Sec title="Preço Final">
           <DetailBlock title="Zona de convergência" value={preco?.zona_convergencia} />
           <DetailBlock title="BESST" value={preco?.besst} />
-          <DetailBlock title="Margem de segurança" value={preco?.margem_seguranca} />
+          <DetailBlock
+            title={/^(?:N\/D|Faixa não consolidada)/i.test(asText(preco?.zona_convergencia)) ? "Desconto aparente" : "Margem de segurança"}
+            value={preco?.margem_seguranca}
+          />
           <DetailBlock title="Observação" value={preco?.observacao} />
         </Sec>
       )}
@@ -1510,11 +1551,7 @@ export default function NEXOApp() {
       const file = new File([blob], filename, { type: "application/pdf" });
 
       if (canSharePdfFile(navigator, file)) {
-        await navigator.share({
-          files: [file],
-          title: `Relatório NEXO · ${normalizedTicker}`,
-          text: `Relatório final da análise NEXO de ${normalizedTicker}.`,
-        });
+        await navigator.share(buildPdfSharePayload(file));
         return;
       }
 
